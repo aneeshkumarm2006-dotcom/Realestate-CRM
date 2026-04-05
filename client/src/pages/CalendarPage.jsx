@@ -1,0 +1,631 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Calendar, momentLocalizer } from 'react-big-calendar';
+import moment from 'moment';
+import 'react-big-calendar/lib/css/react-big-calendar.css';
+import { ChevronLeft, ChevronRight, List as ListIcon, LayoutGrid } from 'lucide-react';
+import PageWrapper from '../components/layout/PageWrapper';
+import { SkeletonCalendarGrid } from '../components/ui/Skeleton';
+import CommentPanel from '../components/board/CommentPanel';
+import useOrgStore from '../store/orgStore';
+import { getCalendarTasks } from '../services/taskService';
+import { getPriorityColor } from '../utils/priorityColors';
+
+/**
+ * CalendarPage — month/week calendar view of all tasks with a due date.
+ *
+ * See Macan_Design.md Section 7.6.
+ *
+ * Admins see all org board tasks. Regular users see only assigned tasks on
+ * public boards. Personal tasks are always included for the current user.
+ * Event pills are color-coded by priority. Clicking an event opens the same
+ * CommentPanel used on the board view (Section 6.9).
+ *
+ * On mobile (<768px) the default view is a simplified list. On desktop the
+ * default is the month grid with a month/week toggle.
+ */
+
+const localizer = momentLocalizer(moment);
+
+/**
+ * Map a task to a react-big-calendar event. `start`/`end` are set to the
+ * same date (due date) so it renders as a single-day event.
+ */
+const taskToEvent = (task) => {
+  const due = task.dueDate ? new Date(task.dueDate) : null;
+  return {
+    title: task.name,
+    start: due,
+    end: due,
+    allDay: true,
+    resource: task,
+  };
+};
+
+/**
+ * Style an event pill in the calendar grid using the task's priority color.
+ * Returns a Tailwind-free inline style. react-big-calendar calls this for
+ * every event instance.
+ */
+const eventPropGetter = (event) => {
+  const priority = event.resource?.priority || 'low';
+  const { solid } = getPriorityColor(priority);
+  return {
+    style: {
+      backgroundColor: solid,
+      borderColor: solid,
+      color: '#FFFFFF',
+      border: 'none',
+      borderRadius: 4,
+      padding: '1px 6px',
+      fontSize: 11,
+      fontWeight: 500,
+      fontFamily: 'DM Sans, sans-serif',
+      height: 22,
+      lineHeight: '20px',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+  };
+};
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/**
+ * Header toolbar — month/week toggle + month navigation + grid/list (mobile).
+ */
+const CalendarToolbar = ({
+  view,
+  onViewChange,
+  date,
+  onNavigate,
+  mobileMode,
+  onMobileModeChange,
+  isMobile,
+}) => {
+  const label = view === 'week'
+    ? moment(date).startOf('week').format('MMM D') +
+      ' – ' +
+      moment(date).endOf('week').format('MMM D, YYYY')
+    : `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <h1
+        className="font-display font-bold"
+        style={{
+          fontSize: 28,
+          color: 'var(--color-text-primary)',
+          lineHeight: 1.2,
+        }}
+      >
+        Calendar
+      </h1>
+
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Mobile grid/list toggle */}
+        {isMobile && (
+          <PillToggle
+            options={[
+              { value: 'list', label: 'List', icon: ListIcon },
+              { value: 'grid', label: 'Grid', icon: LayoutGrid },
+            ]}
+            value={mobileMode}
+            onChange={onMobileModeChange}
+          />
+        )}
+
+        {/* Month/Week view toggle — hidden in mobile list mode */}
+        {(!isMobile || mobileMode === 'grid') && (
+          <PillToggle
+            options={[
+              { value: 'month', label: 'Month' },
+              { value: 'week', label: 'Week' },
+            ]}
+            value={view}
+            onChange={onViewChange}
+          />
+        )}
+
+        {/* Month navigation — always visible */}
+        <div
+          className="flex items-center gap-1 bg-surface"
+          style={{
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-full)',
+            padding: '2px 6px',
+          }}
+        >
+          <NavArrow
+            direction="prev"
+            onClick={() => onNavigate('PREV')}
+          />
+          <span
+            className="font-body font-medium"
+            style={{
+              fontSize: 13,
+              color: 'var(--color-text-primary)',
+              minWidth: 140,
+              textAlign: 'center',
+              padding: '0 8px',
+            }}
+          >
+            {label}
+          </span>
+          <NavArrow
+            direction="next"
+            onClick={() => onNavigate('NEXT')}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const NavArrow = ({ direction, onClick }) => {
+  const Icon = direction === 'prev' ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={direction === 'prev' ? 'Previous' : 'Next'}
+      className="flex items-center justify-center rounded-full transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+      style={{ width: 28, height: 28 }}
+    >
+      <Icon size={16} color="var(--color-text-secondary)" aria-hidden="true" />
+    </button>
+  );
+};
+
+/**
+ * Small pill-style segmented toggle.
+ */
+const PillToggle = ({ options, value, onChange }) => (
+  <div
+    className="flex items-center bg-surface"
+    style={{
+      border: '1px solid var(--color-border)',
+      borderRadius: 'var(--radius-full)',
+      padding: 2,
+    }}
+  >
+    {options.map((opt) => {
+      const active = opt.value === value;
+      const Icon = opt.icon;
+      return (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          aria-pressed={active}
+          className="font-body font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+          style={{
+            fontSize: 12,
+            height: 28,
+            padding: Icon ? '0 10px' : '0 14px',
+            borderRadius: 'var(--radius-full)',
+            background: active ? 'var(--color-accent)' : 'transparent',
+            color: active ? '#FFFFFF' : 'var(--color-text-secondary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            cursor: 'pointer',
+          }}
+        >
+          {Icon && <Icon size={13} aria-hidden="true" />}
+          {opt.label}
+        </button>
+      );
+    })}
+  </div>
+);
+
+/**
+ * Simplified list view — used as the default on mobile. Groups tasks by due
+ * date and displays them as rows with a priority dot.
+ */
+const TaskListView = ({ events, onSelect }) => {
+  const grouped = useMemo(() => {
+    const byDate = new Map();
+    for (const ev of events) {
+      const key = moment(ev.start).format('YYYY-MM-DD');
+      if (!byDate.has(key)) byDate.set(key, []);
+      byDate.get(key).push(ev);
+    }
+    return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [events]);
+
+  if (events.length === 0) {
+    return (
+      <div
+        className="bg-surface text-center"
+        style={{
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-card)',
+          padding: '40px 20px',
+        }}
+      >
+        <p
+          className="font-body"
+          style={{ fontSize: 14, color: 'var(--color-text-muted)' }}
+        >
+          No tasks scheduled for this month.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="bg-surface overflow-hidden"
+      style={{
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-card)',
+      }}
+    >
+      {grouped.map(([dateKey, items], groupIdx) => (
+        <div key={dateKey}>
+          <div
+            className="font-body font-semibold"
+            style={{
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'var(--color-text-secondary)',
+              padding: '10px 16px',
+              background: 'var(--color-bg-subtle)',
+              borderTop:
+                groupIdx === 0 ? 'none' : '1px solid var(--color-border)',
+              borderBottom: '1px solid var(--color-border)',
+            }}
+          >
+            {moment(dateKey).format('ddd, MMM D')}
+          </div>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {items.map((ev, i) => {
+              const task = ev.resource;
+              const { solid } = getPriorityColor(task.priority || 'low');
+              return (
+                <li
+                  key={task._id}
+                  style={{
+                    borderBottom:
+                      i === items.length - 1
+                        ? 'none'
+                        : '1px solid var(--color-border)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSelect(ev)}
+                    className="w-full flex items-center gap-3 text-left transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus:outline-none focus:bg-[color:var(--color-bg-subtle)]"
+                    style={{ padding: '12px 16px' }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        background: solid,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="font-body block truncate"
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 500,
+                          color: 'var(--color-text-primary)',
+                        }}
+                      >
+                        {task.name}
+                      </span>
+                      {task.board?.name && (
+                        <span
+                          className="font-body block truncate"
+                          style={{
+                            fontSize: 12,
+                            color: 'var(--color-text-muted)',
+                            marginTop: 2,
+                          }}
+                        >
+                          {task.board.name}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className="font-body"
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--color-text-muted)',
+                        textTransform: 'capitalize',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {(task.priority || 'low').replace(/_/g, ' ')}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CalendarPage = () => {
+  const currentOrg = useOrgStore((s) => s.currentOrg);
+  const orgId = currentOrg?._id || null;
+
+  const [view, setView] = useState('month');
+  const [date, setDate] = useState(() => new Date());
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedTask, setSelectedTask] = useState(null);
+
+  // Track viewport width to switch between calendar grid and list view
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  const [mobileMode, setMobileMode] = useState('list');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  // Fetch tasks for the currently-shown month
+  useEffect(() => {
+    let cancelled = false;
+    const month = date.getMonth() + 1;
+    const year = date.getFullYear();
+
+    // Kick off the request. setState calls only happen inside the async
+    // callbacks, guarded by `cancelled`, so no cascading renders from the
+    // effect body itself.
+    getCalendarTasks(month, year, orgId)
+      .then((tasks) => {
+        if (cancelled) return;
+        const withDates = (tasks || []).filter((t) => t.dueDate);
+        setEvents(withDates.map(taskToEvent));
+        setError('');
+      })
+      .catch((err) => {
+        console.error('Failed to fetch calendar tasks:', err);
+        if (cancelled) return;
+        setError(
+          err?.response?.data?.error ||
+            'Failed to load calendar. Please try again.'
+        );
+        setEvents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    // Mark as loading via a microtask so the setState doesn't happen
+    // synchronously inside the effect body.
+    Promise.resolve().then(() => {
+      if (!cancelled) setLoading(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [date, orgId]);
+
+  const handleNavigate = useCallback(
+    (action) => {
+      setDate((prev) => {
+        const next = new Date(prev);
+        const delta = action === 'PREV' ? -1 : 1;
+        if (view === 'week') {
+          next.setDate(prev.getDate() + delta * 7);
+        } else {
+          next.setMonth(prev.getMonth() + delta);
+          next.setDate(1);
+        }
+        return next;
+      });
+    },
+    [view]
+  );
+
+  const handleSelectEvent = useCallback((event) => {
+    setSelectedTask(event.resource);
+  }, []);
+
+  const showList = isMobile && mobileMode === 'list';
+
+  return (
+    <>
+      <PageWrapper>
+        <CalendarToolbar
+          view={view}
+          onViewChange={setView}
+          date={date}
+          onNavigate={handleNavigate}
+          mobileMode={mobileMode}
+          onMobileModeChange={setMobileMode}
+          isMobile={isMobile}
+        />
+
+        {error && (
+          <div
+            role="alert"
+            className="mt-4 font-body"
+            style={{
+              background: 'var(--color-status-stuck-bg)',
+              color: 'var(--color-status-stuck)',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div className="mt-5">
+          {showList ? (
+            <TaskListView events={events} onSelect={handleSelectEvent} />
+          ) : (
+            <div
+              className="bg-surface macan-calendar-wrap"
+              style={{
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: 'var(--shadow-card)',
+                padding: 12,
+                position: 'relative',
+              }}
+            >
+              {loading && events.length === 0 ? (
+                <SkeletonCalendarGrid />
+              ) : (
+                <Calendar
+                  localizer={localizer}
+                  events={events}
+                  date={date}
+                  view={view}
+                  onNavigate={setDate}
+                  onView={setView}
+                  onSelectEvent={handleSelectEvent}
+                  eventPropGetter={eventPropGetter}
+                  views={['month', 'week']}
+                  popup
+                  toolbar={false}
+                  style={{ height: view === 'week' ? 640 : 720 }}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </PageWrapper>
+
+      <CommentPanel
+        task={selectedTask}
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+      />
+
+      {/* react-big-calendar theming overrides to match Macan design system */}
+      <style>{`
+        .macan-calendar-wrap .rbc-calendar {
+          font-family: 'DM Sans', sans-serif;
+          color: var(--color-text-primary);
+        }
+        .macan-calendar-wrap .rbc-month-view,
+        .macan-calendar-wrap .rbc-time-view {
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          overflow: hidden;
+          background: var(--color-bg-surface);
+        }
+        .macan-calendar-wrap .rbc-header {
+          background: var(--color-bg-subtle);
+          text-transform: uppercase;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          color: var(--color-text-secondary);
+          padding: 10px 8px;
+          border-bottom: 1px solid var(--color-border);
+          border-left: 1px solid var(--color-border);
+        }
+        .macan-calendar-wrap .rbc-header:first-child {
+          border-left: none;
+        }
+        .macan-calendar-wrap .rbc-month-row {
+          border-top: 1px solid var(--color-border);
+          min-height: 100px;
+          overflow: visible;
+        }
+        .macan-calendar-wrap .rbc-day-bg {
+          border-left: 1px solid var(--color-border);
+          background: var(--color-bg-surface);
+        }
+        .macan-calendar-wrap .rbc-day-bg:first-child {
+          border-left: none;
+        }
+        .macan-calendar-wrap .rbc-off-range-bg {
+          background: var(--color-bg-base);
+        }
+        .macan-calendar-wrap .rbc-off-range {
+          color: var(--color-text-muted);
+        }
+        .macan-calendar-wrap .rbc-today {
+          background: var(--color-accent-light);
+        }
+        .macan-calendar-wrap .rbc-date-cell {
+          text-align: right;
+          padding: 6px 8px;
+          font-size: 12px;
+          color: var(--color-text-secondary);
+        }
+        .macan-calendar-wrap .rbc-date-cell.rbc-now > button,
+        .macan-calendar-wrap .rbc-date-cell.rbc-now > a {
+          color: var(--color-accent);
+          font-weight: 700;
+        }
+        .macan-calendar-wrap .rbc-date-cell > button,
+        .macan-calendar-wrap .rbc-date-cell > a {
+          background: transparent;
+          border: none;
+          color: inherit;
+          font: inherit;
+          cursor: pointer;
+          padding: 0;
+        }
+        .macan-calendar-wrap .rbc-event {
+          padding: 1px 6px !important;
+          margin-top: 1px !important;
+          margin-bottom: 1px !important;
+        }
+        .macan-calendar-wrap .rbc-event:focus {
+          outline: 2px solid var(--color-accent);
+          outline-offset: 1px;
+        }
+        .macan-calendar-wrap .rbc-show-more {
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--color-accent);
+          background: transparent;
+          padding: 2px 6px;
+        }
+        .macan-calendar-wrap .rbc-show-more:hover {
+          color: var(--color-accent-hover);
+        }
+        .macan-calendar-wrap .rbc-time-header-content,
+        .macan-calendar-wrap .rbc-time-content {
+          border-left: 1px solid var(--color-border);
+        }
+        .macan-calendar-wrap .rbc-time-slot,
+        .macan-calendar-wrap .rbc-timeslot-group {
+          border-color: var(--color-border);
+        }
+        .macan-calendar-wrap .rbc-time-view .rbc-label {
+          font-size: 11px;
+          color: var(--color-text-muted);
+        }
+        .macan-calendar-wrap .rbc-allday-cell {
+          min-height: 40px;
+        }
+        .macan-calendar-wrap .rbc-row-segment {
+          padding: 0 2px;
+        }
+      `}</style>
+    </>
+  );
+};
+
+export default CalendarPage;

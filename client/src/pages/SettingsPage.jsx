@@ -1,0 +1,751 @@
+import { useEffect, useRef, useState } from 'react';
+import { Camera, Copy, Check, RefreshCw, Trash2 } from 'lucide-react';
+import PageWrapper from '../components/layout/PageWrapper';
+import SettingsSidebar, { SettingsTabBar } from '../components/settings/SettingsSidebar';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import Modal from '../components/ui/Modal';
+import useAuthStore from '../store/authStore';
+import useOrgStore from '../store/orgStore';
+import * as orgService from '../services/orgService';
+import * as profileService from '../services/profileService';
+import { formatShortDate } from '../utils/dateUtils';
+
+/**
+ * Settings Page — org, members, profile.
+ * See Macan_Design.md Section 7.8.
+ */
+
+const AVATAR_COLORS = [
+  '#2563EB', '#16A34A', '#EA580C', '#7C3AED', '#D97706', '#DC2626',
+];
+const getInitial = (name) => (name ? name.trim().charAt(0).toUpperCase() : '?');
+const getAvatarColor = (seed = '') => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) & 0xffffffff;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+};
+
+const Avatar = ({ user, size = 40 }) => {
+  if (user?.profilePic) {
+    return (
+      <img
+        src={user.profilePic}
+        alt={user.name || 'Avatar'}
+        className="object-cover"
+        style={{ width: size, height: size, borderRadius: 9999 }}
+      />
+    );
+  }
+  const seed = user?.email || user?.name || '';
+  return (
+    <div
+      className="flex items-center justify-center font-display font-semibold text-white"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 9999,
+        background: getAvatarColor(seed),
+        fontSize: size * 0.4,
+      }}
+      aria-hidden="true"
+    >
+      {getInitial(user?.name)}
+    </div>
+  );
+};
+
+const Chip = ({ children, variant = 'grey' }) => {
+  const styles =
+    variant === 'blue'
+      ? {
+          background: 'var(--color-accent-light)',
+          color: 'var(--color-accent-text)',
+        }
+      : {
+          background: 'var(--color-bg-subtle)',
+          color: 'var(--color-text-secondary)',
+        };
+  return (
+    <span
+      className="inline-flex items-center font-body font-semibold"
+      style={{
+        height: 22,
+        padding: '0 10px',
+        fontSize: 11,
+        borderRadius: 'var(--radius-full)',
+        letterSpacing: 0.3,
+        ...styles,
+      }}
+    >
+      {children}
+    </span>
+  );
+};
+
+/* ------------------------- Organisation tab ------------------------- */
+
+const OrganisationTab = ({ org, onRegenerate }) => {
+  const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  // Build the invite URL — we surface the raw code so users can paste it
+  // into the Join flow. Include origin for convenience.
+  const inviteUrl = org?.inviteCode
+    ? `${window.location.origin}/onboarding?invite=${org.inviteCode}`
+    : '';
+
+  const handleCopy = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = inviteUrl;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      await onRegenerate();
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  return (
+    <div>
+      <header className="mb-6">
+        <h2
+          className="font-display font-bold text-[color:var(--color-text-primary)]"
+          style={{ fontSize: 20 }}
+        >
+          Organisation
+        </h2>
+        <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
+          {org?.name || 'Workspace settings'}
+        </p>
+      </header>
+
+      {/* Invite Link section */}
+      <section>
+        <h3
+          className="font-display font-semibold text-[color:var(--color-text-primary)]"
+          style={{ fontSize: 15 }}
+        >
+          Invite Link
+        </h3>
+        <p className="mt-1 font-body text-xs text-[color:var(--color-text-muted)]">
+          Share this link with teammates to let them join.
+        </p>
+
+        <div className="mt-3 flex flex-col sm:flex-row items-stretch gap-2">
+          <input
+            type="text"
+            readOnly
+            value={inviteUrl}
+            className="flex-1 font-body text-[13px] text-[color:var(--color-text-primary)] bg-[color:var(--color-bg-subtle)] px-3 focus:outline-none"
+            style={{
+              height: 38,
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+            }}
+            aria-label="Invite link"
+            onFocus={(e) => e.target.select()}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="default"
+              icon={copied ? Check : Copy}
+              onClick={handleCopy}
+            >
+              {copied ? 'Copied' : 'Copy Link'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="default"
+              icon={RefreshCw}
+              onClick={handleRegenerate}
+              disabled={regenerating}
+            >
+              {regenerating ? 'Regenerating…' : 'Regenerate'}
+            </Button>
+          </div>
+        </div>
+
+        <p className="mt-2 font-body text-xs text-[color:var(--color-text-muted)]">
+          Invite code:{' '}
+          <span
+            className="font-mono font-semibold text-[color:var(--color-text-secondary)]"
+            style={{ fontSize: 12 }}
+          >
+            {org?.inviteCode || '—'}
+          </span>
+        </p>
+      </section>
+
+      {/* Danger zone */}
+      <section
+        className="mt-8 pt-8"
+        style={{ borderTop: '1px solid var(--color-border)' }}
+      >
+        <h3
+          className="font-display font-semibold text-[color:var(--color-status-stuck)]"
+          style={{ fontSize: 15 }}
+        >
+          Danger Zone
+        </h3>
+        <p className="mt-1 font-body text-xs text-[color:var(--color-text-muted)]">
+          Irreversible actions for this organisation.
+        </p>
+        <div
+          className="mt-3 p-4 flex items-center justify-between gap-4 flex-wrap"
+          style={{
+            border: '1.5px solid var(--color-status-stuck)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-status-stuck-bg)',
+          }}
+        >
+          <div>
+            <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)]">
+              Regenerate invite code
+            </p>
+            <p className="font-body text-[12px] text-[color:var(--color-text-secondary)]">
+              Old invite links will stop working immediately.
+            </p>
+          </div>
+          <Button
+            variant="danger"
+            size="sm"
+            icon={RefreshCw}
+            onClick={handleRegenerate}
+            disabled={regenerating}
+          >
+            Regenerate
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+/* ---------------------------- Members tab ---------------------------- */
+
+const MembersTab = ({ members, adminId, currentUserId, isAdmin, onRemove }) => {
+  const [confirmMember, setConfirmMember] = useState(null);
+  const [removing, setRemoving] = useState(false);
+
+  const handleRemove = async () => {
+    if (!confirmMember) return;
+    setRemoving(true);
+    try {
+      await onRemove(confirmMember._id);
+      setConfirmMember(null);
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  return (
+    <div>
+      <header className="mb-6">
+        <h2
+          className="font-display font-bold text-[color:var(--color-text-primary)]"
+          style={{ fontSize: 20 }}
+        >
+          Members
+        </h2>
+        <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
+          {members.length} {members.length === 1 ? 'person' : 'people'} in this workspace
+        </p>
+      </header>
+
+      <div
+        className="overflow-hidden"
+        style={{
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-md)',
+        }}
+      >
+        {/* Table header */}
+        <div
+          className="hidden md:grid grid-cols-[1fr_1fr_110px_110px_110px] items-center px-4"
+          style={{
+            height: 40,
+            background: 'var(--color-bg-subtle)',
+            borderBottom: '1px solid var(--color-border)',
+          }}
+        >
+          {['Member', 'Email', 'Role', 'Joined', ''].map((h) => (
+            <span
+              key={h}
+              className="font-body font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)]"
+              style={{ fontSize: 11 }}
+            >
+              {h}
+            </span>
+          ))}
+        </div>
+
+        {members.map((m) => {
+          const isOrgAdmin = String(m._id) === String(adminId);
+          const isSelf = String(m._id) === String(currentUserId);
+          const canRemove = isAdmin && !isOrgAdmin && !isSelf;
+          return (
+            <div
+              key={m._id}
+              className="grid grid-cols-[1fr_110px] md:grid-cols-[1fr_1fr_110px_110px_110px] items-center gap-2 px-4 py-3"
+              style={{ borderBottom: '1px solid var(--color-border)' }}
+            >
+              {/* Avatar + name */}
+              <div className="flex items-center gap-3 min-w-0">
+                <Avatar user={m} size={32} />
+                <div className="min-w-0">
+                  <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)] truncate">
+                    {m.name || 'Unnamed'}
+                    {isSelf && (
+                      <span className="ml-2 font-body font-normal text-[11px] text-[color:var(--color-text-muted)]">
+                        (you)
+                      </span>
+                    )}
+                  </p>
+                  <p className="md:hidden font-body text-[11px] text-[color:var(--color-text-muted)] truncate">
+                    {m.email}
+                  </p>
+                </div>
+              </div>
+
+              {/* Email (desktop) */}
+              <div className="hidden md:block min-w-0">
+                <p className="font-body text-[13px] text-[color:var(--color-text-secondary)] truncate">
+                  {m.email}
+                </p>
+              </div>
+
+              {/* Role chip */}
+              <div className="hidden md:block">
+                {isOrgAdmin ? (
+                  <Chip variant="blue">Admin</Chip>
+                ) : (
+                  <Chip variant="grey">Member</Chip>
+                )}
+              </div>
+
+              {/* Joined date */}
+              <div className="hidden md:block">
+                <span className="font-body text-[12px] text-[color:var(--color-text-muted)]">
+                  {m.createdAt ? formatShortDate(m.createdAt) : '—'}
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end md:justify-start">
+                {canRemove ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmMember(m)}
+                    className="inline-flex items-center gap-1 font-body font-semibold text-[12px] text-[color:var(--color-status-stuck)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-status-stuck)] rounded"
+                    aria-label={`Remove ${m.name || m.email}`}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    Remove
+                  </button>
+                ) : (
+                  <span className="md:block hidden">
+                    {isOrgAdmin ? (
+                      <Chip variant="blue">Admin</Chip>
+                    ) : null}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Confirm remove modal */}
+      <Modal
+        isOpen={!!confirmMember}
+        onClose={() => (removing ? null : setConfirmMember(null))}
+        title="Remove member"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setConfirmMember(null)}
+              disabled={removing}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleRemove} disabled={removing}>
+              {removing ? 'Removing…' : 'Remove'}
+            </Button>
+          </>
+        }
+      >
+        <p className="font-body text-[14px] text-[color:var(--color-text-primary)]">
+          Remove{' '}
+          <strong>{confirmMember?.name || confirmMember?.email}</strong> from
+          this organisation? They will lose access to all boards and tasks.
+        </p>
+      </Modal>
+    </div>
+  );
+};
+
+/* ---------------------------- Profile tab ---------------------------- */
+
+const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
+  const [name, setName] = useState(user?.name || '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setName(user?.name || '');
+  }, [user?.name]);
+
+  const effectiveAvatar = previewUrl || user?.profilePic;
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be smaller than 5MB');
+      return;
+    }
+    setError('');
+
+    // Local preview
+    const localUrl = URL.createObjectURL(file);
+    setPreviewUrl(localUrl);
+    setUploading(true);
+    try {
+      await onUploadAvatar(file);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+      // Drop the blob preview now that the real Cloudinary URL is on the user
+      URL.revokeObjectURL(localUrl);
+      setPreviewUrl(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Upload failed');
+      URL.revokeObjectURL(localUrl);
+      setPreviewUrl(null);
+    } finally {
+      setUploading(false);
+      // Reset the input so the same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSaveName = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || name.trim() === user?.name) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onSaveName(name.trim());
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const dirty = name.trim() && name.trim() !== (user?.name || '');
+
+  return (
+    <div>
+      <header className="mb-6">
+        <h2
+          className="font-display font-bold text-[color:var(--color-text-primary)]"
+          style={{ fontSize: 20 }}
+        >
+          Profile
+        </h2>
+        <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
+          Manage your personal details
+        </p>
+      </header>
+
+      {/* Avatar uploader */}
+      <div className="flex items-center gap-4 mb-8">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          aria-label="Change profile picture"
+          className="relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] rounded-full"
+          style={{ width: 80, height: 80 }}
+        >
+          {effectiveAvatar ? (
+            <img
+              src={effectiveAvatar}
+              alt={user?.name || 'Avatar'}
+              className="object-cover"
+              style={{ width: 80, height: 80, borderRadius: 9999 }}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center font-display font-semibold text-white"
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 9999,
+                background: getAvatarColor(user?.email || user?.name || ''),
+                fontSize: 32,
+              }}
+            >
+              {getInitial(user?.name)}
+            </div>
+          )}
+          {/* Hover overlay */}
+          <span
+            className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+            style={{
+              borderRadius: 9999,
+              background: 'rgba(0, 0, 0, 0.5)',
+            }}
+            aria-hidden="true"
+          >
+            <Camera size={24} color="white" />
+          </span>
+          {uploading && (
+            <span
+              className="absolute inset-0 flex items-center justify-center"
+              style={{
+                borderRadius: 9999,
+                background: 'rgba(0, 0, 0, 0.5)',
+              }}
+            >
+              <span className="font-body text-[11px] font-semibold text-white">
+                Uploading…
+              </span>
+            </span>
+          )}
+        </button>
+        <div>
+          <p className="font-body font-semibold text-[14px] text-[color:var(--color-text-primary)]">
+            Profile picture
+          </p>
+          <p className="font-body text-[12px] text-[color:var(--color-text-muted)]">
+            PNG or JPG, up to 5MB
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            className="hidden"
+            aria-label="Upload avatar"
+          />
+        </div>
+      </div>
+
+      {/* Name + email form */}
+      <form onSubmit={handleSaveName} className="flex flex-col gap-4 max-w-[480px]">
+        <Input
+          label="Display name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name"
+          disabled={saving}
+          required
+        />
+        <Input
+          label="Email"
+          type="email"
+          value={user?.email || ''}
+          onChange={() => {}}
+          disabled
+          helperText="Connected via Google — cannot be changed."
+        />
+
+        {error && (
+          <p className="font-body text-[12px] text-[color:var(--color-status-stuck)]">
+            {error}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3 mt-2">
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!dirty || saving}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </Button>
+          {saved && (
+            <span className="inline-flex items-center gap-1 font-body text-[12px] font-semibold text-[color:var(--color-status-done)]">
+              <Check size={14} aria-hidden="true" />
+              Saved
+            </span>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+};
+
+/* ------------------------------ Page ------------------------------ */
+
+const SettingsPage = () => {
+  const user = useAuthStore((s) => s.user);
+  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
+  const currentOrg = useOrgStore((s) => s.currentOrg);
+  const members = useOrgStore((s) => s.members);
+  const adminId = useOrgStore((s) => s.adminId);
+  const fetchMembers = useOrgStore((s) => s.fetchMembers);
+
+  // Resolve admin-ness from currentOrg (authoritative for the UI guard)
+  const orgAdminId =
+    typeof currentOrg?.admin === 'object' && currentOrg?.admin !== null
+      ? currentOrg.admin._id || currentOrg.admin
+      : currentOrg?.admin;
+  const isAdmin =
+    !!user && !!orgAdminId && String(orgAdminId) === String(user._id);
+
+  const [activeTab, setActiveTab] = useState('organisation');
+  const [orgState, setOrgState] = useState(currentOrg || null);
+
+  // Keep local orgState in sync with currentOrg
+  useEffect(() => {
+    setOrgState(currentOrg || null);
+  }, [currentOrg]);
+
+  // If a non-admin has an admin-only tab selected, bounce them to Profile
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'organisation') {
+      setActiveTab('profile');
+    }
+  }, [isAdmin, activeTab]);
+
+  // Fetch members whenever the Members tab is active
+  useEffect(() => {
+    if (activeTab === 'members' && currentOrg?._id) {
+      fetchMembers(currentOrg._id).catch(() => {});
+    }
+  }, [activeTab, currentOrg?._id, fetchMembers]);
+
+  // Fetch org details (with inviteCode) for Organisation tab
+  useEffect(() => {
+    if (activeTab === 'organisation' && currentOrg?._id && !orgState?.inviteCode) {
+      orgService
+        .getOrg(currentOrg._id)
+        .then((o) => setOrgState(o))
+        .catch(() => {});
+    }
+  }, [activeTab, currentOrg?._id, orgState?.inviteCode]);
+
+  const handleRegenerate = async () => {
+    if (!currentOrg?._id) return;
+    const newCode = await orgService.regenerateInvite(currentOrg._id);
+    setOrgState((prev) => (prev ? { ...prev, inviteCode: newCode } : prev));
+  };
+
+  const handleRemoveMember = async (userId) => {
+    if (!currentOrg?._id) return;
+    await orgService.removeMember(currentOrg._id, userId);
+    await fetchMembers(currentOrg._id);
+  };
+
+  const handleSaveName = async (name) => {
+    await profileService.updateProfile({ name });
+    await fetchCurrentUser();
+  };
+
+  const handleUploadAvatar = async (file) => {
+    await profileService.uploadAvatar(file);
+    await fetchCurrentUser();
+  };
+
+  const renderTab = () => {
+    if (activeTab === 'organisation' && isAdmin) {
+      return <OrganisationTab org={orgState} onRegenerate={handleRegenerate} />;
+    }
+    if (activeTab === 'members') {
+      return (
+        <MembersTab
+          members={members}
+          adminId={adminId || orgAdminId}
+          currentUserId={user?._id}
+          isAdmin={isAdmin}
+          onRemove={handleRemoveMember}
+        />
+      );
+    }
+    return (
+      <ProfileTab
+        user={user}
+        onSaveName={handleSaveName}
+        onUploadAvatar={handleUploadAvatar}
+      />
+    );
+  };
+
+  return (
+    <PageWrapper>
+      <div className="mx-auto" style={{ maxWidth: 900 }}>
+        {/* Page header */}
+        <header className="mb-6">
+          <h1
+            className="font-display font-bold text-[color:var(--color-text-primary)]"
+            style={{ fontSize: 28, letterSpacing: '-0.01em' }}
+          >
+            Settings
+          </h1>
+          <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
+            Manage your organisation, members, and profile
+          </p>
+        </header>
+
+        <div
+          className="flex flex-col md:flex-row overflow-hidden bg-surface"
+          style={{
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--shadow-card)',
+            minHeight: 500,
+          }}
+        >
+          <SettingsSidebar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            showAdminTabs={isAdmin}
+          />
+          <SettingsTabBar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            showAdminTabs={isAdmin}
+          />
+          <div className="flex-1" style={{ padding: 32 }}>
+            {renderTab()}
+          </div>
+        </div>
+      </div>
+    </PageWrapper>
+  );
+};
+
+export default SettingsPage;

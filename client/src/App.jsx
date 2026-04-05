@@ -1,0 +1,147 @@
+import { useEffect } from 'react';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+} from 'react-router-dom';
+import useAuthStore from './store/authStore';
+import useOrgStore from './store/orgStore';
+import useNotificationStore from './store/notificationStore';
+import LoginPage from './pages/LoginPage';
+import AuthCallbackPage from './pages/AuthCallbackPage';
+import OnboardingPage from './pages/OnboardingPage';
+import DashboardPage from './pages/DashboardPage';
+import MyBoardsPage from './pages/MyBoardsPage';
+import BoardDetailPage from './pages/BoardDetailPage';
+import CalendarPage from './pages/CalendarPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import SettingsPage from './pages/SettingsPage';
+import NotFoundPage from './pages/NotFoundPage';
+import ToastContainer from './components/ui/Toast';
+
+/**
+ * ProtectedRoute — redirects to /login when not authenticated.
+ */
+const ProtectedRoute = () => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+};
+
+/**
+ * RequireOrg — for app pages that need a selected org. If the user has no
+ * organisations, send them to onboarding.
+ */
+const RequireOrg = () => {
+  const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+
+  // While hydrating the user, don't redirect yet
+  if (loading || !user) return <Outlet />;
+
+  const hasOrg =
+    Array.isArray(user.organisations) && user.organisations.length > 0;
+  return hasOrg ? <Outlet /> : <Navigate to="/onboarding" replace />;
+};
+
+/**
+ * RequireAdmin — admin-only routes. Non-admins are redirected to /dashboard.
+ */
+const RequireAdmin = () => {
+  const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+  const currentOrg = useOrgStore((s) => s.currentOrg);
+
+  // While hydrating, don't make a decision yet
+  if (loading || !user || !currentOrg) return <Outlet />;
+
+  const adminId =
+    typeof currentOrg.admin === 'object' && currentOrg.admin !== null
+      ? currentOrg.admin._id || currentOrg.admin
+      : currentOrg.admin;
+  const isAdmin = !!adminId && String(adminId) === String(user._id);
+  return isAdmin ? <Outlet /> : <Navigate to="/dashboard" replace />;
+};
+
+/**
+ * PublicOnlyRoute — if already logged in, bounce to /dashboard.
+ */
+const PublicOnlyRoute = ({ children }) => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
+};
+
+function App() {
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
+  const setOrgsFromUser = useOrgStore((s) => s.setOrgsFromUser);
+  const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
+  const clearNotifications = useNotificationStore((s) => s.clear);
+
+  // On mount (or token change), hydrate the user profile from the backend.
+  useEffect(() => {
+    if (token && !user) {
+      fetchCurrentUser();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // Keep orgStore synced with the user's organisations
+  useEffect(() => {
+    if (user) {
+      setOrgsFromUser(user);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Pull notifications once the user is hydrated. Clear on logout.
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    } else {
+      clearNotifications();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id]);
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public */}
+        <Route
+          path="/login"
+          element={
+            <PublicOnlyRoute>
+              <LoginPage />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+        {/* Protected */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route element={<RequireOrg />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/boards" element={<MyBoardsPage />} />
+            <Route path="/boards/:id" element={<BoardDetailPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route element={<RequireAdmin />}>
+              <Route path="/analytics" element={<AnalyticsPage />} />
+            </Route>
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
+        </Route>
+
+        {/* Default */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+      <ToastContainer />
+    </BrowserRouter>
+  );
+}
+
+export default App;
