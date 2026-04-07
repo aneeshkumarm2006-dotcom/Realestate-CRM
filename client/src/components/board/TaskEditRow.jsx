@@ -199,6 +199,9 @@ const TaskEditRow = ({
         />
       </td>
 
+      {/* Comments placeholder — keeps column alignment with TaskRow */}
+      <td style={{ width: 48 }} />
+
       {/* Save / Cancel */}
       <td style={{ width: 72, padding: '0 8px 0 0' }}>
         <div className="flex items-center gap-1 justify-end">

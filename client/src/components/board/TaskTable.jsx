@@ -34,6 +34,7 @@ const COLUMNS = [
   { key: 'status',   label: 'Status',    width: 160 },
   { key: 'owner',    label: 'Owner',     width: 160 },
   { key: 'due',      label: 'Due Date',  width: 140 },
+  { key: 'comments', label: '',          width: 48 },
   { key: 'actions',  label: '',          width: 48 },
 ];
 

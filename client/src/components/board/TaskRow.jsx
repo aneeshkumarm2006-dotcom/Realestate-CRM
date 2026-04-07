@@ -114,39 +114,41 @@ const TaskRow = ({
       </td>
 
       {/* Due Date */}
-      <td style={{ width: 170, padding: '0 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
-          {task.dueDate ? (
-            <span
-              className="font-body"
-              style={{
-                fontSize: 13,
-                fontWeight: overdue ? 600 : 500,
-                color: overdue
-                  ? 'var(--color-status-stuck)'
-                  : 'var(--color-text-primary)',
-              }}
-            >
-              {formatShortDate(task.dueDate)}
-            </span>
-          ) : (
-            <span
-              className="font-body"
-              style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
-            >
-              —
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => onOpen?.(task)}
-            aria-label="Open comments"
-            className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
-            style={{ width: 24, height: 24, flexShrink: 0, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+      <td style={{ width: 140, padding: '0 16px' }}>
+        {task.dueDate ? (
+          <span
+            className="font-body"
+            style={{
+              fontSize: 13,
+              fontWeight: overdue ? 600 : 500,
+              color: overdue
+                ? 'var(--color-status-stuck)'
+                : 'var(--color-text-primary)',
+            }}
           >
-            <MessageSquare size={15} color="var(--color-text-secondary)" aria-hidden="true" />
-          </button>
-        </div>
+            {formatShortDate(task.dueDate)}
+          </span>
+        ) : (
+          <span
+            className="font-body"
+            style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
+          >
+            —
+          </span>
+        )}
+      </td>
+
+      {/* Comments */}
+      <td style={{ width: 48, padding: '0 8px' }}>
+        <button
+          type="button"
+          onClick={() => onOpen?.(task)}
+          aria-label="Open comments"
+          className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+          style={{ width: 28, height: 28, margin: '0 auto', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <MessageSquare size={15} color="var(--color-text-secondary)" aria-hidden="true" />
+        </button>
       </td>
 
       {/* Actions — only rendered when a handler is supplied (admin only) */}
