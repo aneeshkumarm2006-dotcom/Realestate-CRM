@@ -20,6 +20,7 @@ import CalendarPage from './pages/CalendarPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import MyTasksPage from './pages/MyTasksPage';
 import SettingsPage from './pages/SettingsPage';
+import MembersPage from './pages/MembersPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ToastContainer from './components/ui/Toast';
 
@@ -152,6 +153,7 @@ function App() {
             <Route element={<RequireAdmin />}>
               <Route path="/analytics" element={<AnalyticsPage />} />
             </Route>
+            <Route path="/members" element={<MembersPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Route>

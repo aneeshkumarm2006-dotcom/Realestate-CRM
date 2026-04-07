@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
-  Settings as SettingsIcon,
   Search,
   ChevronDown,
   User as UserIcon,
@@ -69,6 +68,7 @@ const NavLinks = ({ isAdmin, onNavigate }) => {
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/boards', label: 'My Boards' },
     { to: '/my-tasks', label: 'My Tasks' },
+    { to: '/members', label: 'Members' },
     ...(isAdmin ? [{ to: '/analytics', label: 'Analytics' }] : []),
   ];
 
@@ -948,7 +948,6 @@ const Navbar = () => {
               <Search size={20} color="var(--color-text-secondary)" aria-hidden="true" />
             </button>
             <NotificationBell />
-            <IconButton icon={SettingsIcon} label="Settings" />
             <div className="ml-2">
               <AvatarDropdown user={user} onLogout={logout} />
             </div>

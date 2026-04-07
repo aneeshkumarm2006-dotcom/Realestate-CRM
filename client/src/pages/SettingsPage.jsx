@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Copy, Check, RefreshCw, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Camera, Copy, Check, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import SettingsSidebar, { SettingsTabBar } from '../components/settings/SettingsSidebar';
 import Button from '../components/ui/Button';
@@ -10,10 +10,8 @@ import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import * as orgService from '../services/orgService';
 import * as profileService from '../services/profileService';
-import { formatShortDate } from '../utils/dateUtils';
-
 /**
- * Settings Page — org, members, profile.
+ * Settings Page — org and profile.
  * See Macan_Design.md Section 7.8.
  */
 
@@ -239,272 +237,6 @@ const OrganisationTab = ({ org, onRegenerate }) => {
           </Button>
         </div>
       </section>
-    </div>
-  );
-};
-
-/* ---------------------------- Members tab ---------------------------- */
-
-const RoleDropdown = ({ currentRole, onChange, disabled }) => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const options = ['admin', 'member'];
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => !disabled && setOpen((o) => !o)}
-        disabled={disabled}
-        className="inline-flex items-center gap-1 font-body font-semibold text-[12px] rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-        style={{
-          height: 26,
-          padding: '0 8px',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-sm)',
-          background: 'var(--color-bg-surface)',
-          color: 'var(--color-text-primary)',
-          cursor: disabled ? 'default' : 'pointer',
-          opacity: disabled ? 0.6 : 1,
-        }}
-      >
-        {currentRole === 'admin' ? 'Admin' : 'Member'}
-        {!disabled && <ChevronDown size={12} aria-hidden="true" />}
-      </button>
-      {open && (
-        <div
-          className="absolute z-50 mt-1"
-          style={{
-            minWidth: 100,
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-bg-surface)',
-            boxShadow: 'var(--shadow-card)',
-          }}
-        >
-          {options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                if (opt !== currentRole) onChange(opt);
-              }}
-              className="block w-full text-left font-body text-[12px] px-3 py-1.5 hover:bg-[color:var(--color-bg-subtle)]"
-              style={{
-                color: 'var(--color-text-primary)',
-                fontWeight: opt === currentRole ? 600 : 400,
-              }}
-            >
-              {opt === 'admin' ? 'Admin' : 'Member'}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const MembersTab = ({ members, adminId, adminIds = [], currentUserId, isAdmin, isMainAdmin, onRemove, onChangeRole }) => {
-  const [confirmMember, setConfirmMember] = useState(null);
-  const [removing, setRemoving] = useState(false);
-  const [changingRole, setChangingRole] = useState(null);
-
-  const handleRemove = async () => {
-    if (!confirmMember) return;
-    setRemoving(true);
-    try {
-      await onRemove(confirmMember._id);
-      setConfirmMember(null);
-    } finally {
-      setRemoving(false);
-    }
-  };
-
-  const handleRoleChange = async (userId, newRole) => {
-    setChangingRole(userId);
-    try {
-      await onChangeRole(userId, newRole);
-    } finally {
-      setChangingRole(null);
-    }
-  };
-
-  return (
-    <div>
-      <header className="mb-6">
-        <h2
-          className="font-display font-bold text-[color:var(--color-text-primary)]"
-          style={{ fontSize: 20 }}
-        >
-          Members
-        </h2>
-        <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-          {members.length} {members.length === 1 ? 'person' : 'people'} in this workspace
-        </p>
-      </header>
-
-      <div
-        style={{
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          overflow: 'visible',
-        }}
-      >
-        {/* Table header */}
-        <div
-          className="hidden md:grid grid-cols-[1fr_1fr_110px_110px_110px] items-center px-4"
-          style={{
-            height: 40,
-            background: 'var(--color-bg-subtle)',
-            borderBottom: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
-          }}
-        >
-          {['Member', 'Email', 'Role', 'Joined', ''].map((h) => (
-            <span
-              key={h}
-              className="font-body font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)]"
-              style={{ fontSize: 11 }}
-            >
-              {h}
-            </span>
-          ))}
-        </div>
-
-        {members.map((m) => {
-          const isTheMainAdmin = String(m._id) === String(adminId);
-          const isAnAdmin = isTheMainAdmin || adminIds.includes(String(m._id));
-          const isSelf = String(m._id) === String(currentUserId);
-          const memberRole = isAnAdmin ? 'admin' : 'member';
-
-          // Can change role?
-          // - Must be an admin to change roles
-          // - Cannot change the main admin's role
-          // - Non-main admins cannot change other admins' roles
-          const canChangeRole =
-            isAdmin &&
-            !isTheMainAdmin &&
-            !isSelf &&
-            (isMainAdmin || !isAnAdmin);
-
-          const canRemove = isAdmin && !isTheMainAdmin && !isSelf;
-
-          return (
-            <div
-              key={m._id}
-              className="grid grid-cols-[1fr_110px] md:grid-cols-[1fr_1fr_110px_110px_110px] items-center gap-2 px-4 py-3"
-              style={{ borderBottom: '1px solid var(--color-border)' }}
-            >
-              {/* Avatar + name */}
-              <div className="flex items-center gap-3 min-w-0">
-                <Avatar user={m} size={32} />
-                <div className="min-w-0">
-                  <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)] truncate">
-                    {m.name || 'Unnamed'}
-                    {isSelf && (
-                      <span className="ml-2 font-body font-normal text-[11px] text-[color:var(--color-text-muted)]">
-                        (you)
-                      </span>
-                    )}
-                  </p>
-                  <p className="md:hidden font-body text-[11px] text-[color:var(--color-text-muted)] truncate">
-                    {m.email}
-                  </p>
-                </div>
-              </div>
-
-              {/* Email (desktop) */}
-              <div className="hidden md:block min-w-0">
-                <p className="font-body text-[13px] text-[color:var(--color-text-secondary)] truncate">
-                  {m.email}
-                </p>
-              </div>
-
-              {/* Role chip / dropdown */}
-              <div className="hidden md:block">
-                {isTheMainAdmin ? (
-                  <Chip variant="blue">Owner</Chip>
-                ) : canChangeRole ? (
-                  <RoleDropdown
-                    currentRole={memberRole}
-                    onChange={(newRole) => handleRoleChange(m._id, newRole)}
-                    disabled={changingRole === m._id}
-                  />
-                ) : isAnAdmin ? (
-                  <Chip variant="blue">Admin</Chip>
-                ) : (
-                  <Chip variant="grey">Member</Chip>
-                )}
-              </div>
-
-              {/* Joined date */}
-              <div className="hidden md:block">
-                <span className="font-body text-[12px] text-[color:var(--color-text-muted)]">
-                  {m.createdAt ? formatShortDate(m.createdAt) : '—'}
-                </span>
-              </div>
-
-              {/* Actions */}
-              <div className="flex justify-end md:justify-start">
-                {canRemove ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmMember(m)}
-                    className="inline-flex items-center gap-1 font-body font-semibold text-[12px] text-[color:var(--color-status-stuck)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-status-stuck)] rounded"
-                    aria-label={`Remove ${m.name || m.email}`}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                    Remove
-                  </button>
-                ) : (
-                  <span className="md:block hidden">
-                    {isTheMainAdmin ? (
-                      <Chip variant="blue">Owner</Chip>
-                    ) : null}
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Confirm remove modal */}
-      <Modal
-        isOpen={!!confirmMember}
-        onClose={() => (removing ? null : setConfirmMember(null))}
-        title="Remove member"
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => setConfirmMember(null)}
-              disabled={removing}
-            >
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={handleRemove} disabled={removing}>
-              {removing ? 'Removing…' : 'Remove'}
-            </Button>
-          </>
-        }
-      >
-        <p className="font-body text-[14px] text-[color:var(--color-text-primary)]">
-          Remove{' '}
-          <strong>{confirmMember?.name || confirmMember?.email}</strong> from
-          this organisation? They will lose access to all boards and tasks.
-        </p>
-      </Modal>
     </div>
   );
 };
@@ -824,10 +556,6 @@ const SettingsPage = () => {
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const logout = useAuthStore((s) => s.logout);
   const currentOrg = useOrgStore((s) => s.currentOrg);
-  const members = useOrgStore((s) => s.members);
-  const adminId = useOrgStore((s) => s.adminId);
-  const adminIds = useOrgStore((s) => s.adminIds);
-  const fetchMembers = useOrgStore((s) => s.fetchMembers);
 
   // Resolve admin-ness from currentOrg (authoritative for the UI guard)
   const orgAdminId =
@@ -860,13 +588,6 @@ const SettingsPage = () => {
     }
   }, [isAdmin, activeTab]);
 
-  // Fetch members whenever the Members tab is active
-  useEffect(() => {
-    if (activeTab === 'members' && currentOrg?._id) {
-      fetchMembers(currentOrg._id).catch(() => {});
-    }
-  }, [activeTab, currentOrg?._id, fetchMembers]);
-
   // Fetch org details (with inviteCode) for Organisation tab
   useEffect(() => {
     if (activeTab === 'organisation' && currentOrg?._id && !orgState?.inviteCode) {
@@ -881,18 +602,6 @@ const SettingsPage = () => {
     if (!currentOrg?._id) return;
     const newCode = await orgService.regenerateInvite(currentOrg._id);
     setOrgState((prev) => (prev ? { ...prev, inviteCode: newCode } : prev));
-  };
-
-  const handleRemoveMember = async (userId) => {
-    if (!currentOrg?._id) return;
-    await orgService.removeMember(currentOrg._id, userId);
-    await fetchMembers(currentOrg._id);
-  };
-
-  const handleChangeRole = async (userId, role) => {
-    if (!currentOrg?._id) return;
-    await orgService.changeRole(currentOrg._id, userId, role);
-    await fetchMembers(currentOrg._id);
   };
 
   const handleSaveName = async (name) => {
@@ -914,20 +623,6 @@ const SettingsPage = () => {
   const renderTab = () => {
     if (activeTab === 'organisation' && isAdmin) {
       return <OrganisationTab org={orgState} onRegenerate={handleRegenerate} />;
-    }
-    if (activeTab === 'members') {
-      return (
-        <MembersTab
-          members={members}
-          adminId={adminId || orgAdminId}
-          adminIds={adminIds}
-          currentUserId={user?._id}
-          isAdmin={isAdmin}
-          isMainAdmin={isMainAdmin}
-          onRemove={handleRemoveMember}
-          onChangeRole={handleChangeRole}
-        />
-      );
     }
     return (
       <ProfileTab
@@ -951,7 +646,7 @@ const SettingsPage = () => {
             Settings
           </h1>
           <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-            Manage your organisation, members, and profile
+            Manage your organisation and profile
           </p>
         </header>
 
