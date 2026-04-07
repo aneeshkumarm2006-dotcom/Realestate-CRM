@@ -72,7 +72,7 @@ const BoardCard = ({
       tabIndex={0}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
-      className="relative flex flex-col overflow-hidden bg-surface cursor-pointer group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+      className="relative flex flex-col bg-surface cursor-pointer group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
       style={{
         borderRadius: 'var(--radius-lg)',
         boxShadow: 'var(--shadow-card)',
@@ -90,7 +90,7 @@ const BoardCard = ({
       {/* Top accent bar */}
       <div
         aria-hidden="true"
-        style={{ height: 4, background: accentColor, width: '100%' }}
+        style={{ height: 4, background: accentColor, width: '100%', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0' }}
       />
 
       <div className="p-4 flex flex-col flex-1">
