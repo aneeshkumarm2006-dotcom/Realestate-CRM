@@ -571,7 +571,7 @@ const MembersPage = () => {
           </div>
         </div>
 
-        {isAdmin && <InviteSection currentOrg={currentOrg} />}
+        {isAdmin && <div className="mt-6"><InviteSection currentOrg={currentOrg} /></div>}
 
         {/* Confirm remove modal */}
         <Modal
