@@ -159,21 +159,27 @@ const BoardDetailPage = () => {
       return next;
     }, { replace: true });
 
-    // Set highlight and scroll after a short delay for DOM to render
+    // Set highlight, then poll until the element appears in the DOM and scroll
     setHighlightedTaskId(taskId);
     clearTimeout(highlightTimerRef.current);
 
-    requestAnimationFrame(() => {
+    let scrollAttempts = 0;
+    const tryScroll = () => {
       const el = document.querySelector(`[data-task-id="${taskId}"]`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (scrollAttempts < 20) {
+        scrollAttempts++;
+        requestAnimationFrame(tryScroll);
       }
-    });
+    };
+    // Wait one frame for the group to expand, then start polling
+    requestAnimationFrame(tryScroll);
 
     // Remove highlight after animation completes
     highlightTimerRef.current = setTimeout(() => {
       setHighlightedTaskId(null);
-    }, 3000);
+    }, 3500);
 
     return () => clearTimeout(highlightTimerRef.current);
   }, [searchParams, loading, groups, tasksByGroup, setSearchParams]);
