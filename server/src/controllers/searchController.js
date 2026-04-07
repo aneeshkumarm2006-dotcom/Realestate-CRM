@@ -4,7 +4,11 @@ const Task = require('../models/Task');
 const Organisation = require('../models/Organisation');
 
 const isOrgAdmin = (org, userId) =>
-  !!org && org.admin && org.admin.toString() === userId;
+  !!org &&
+  (
+    (org.admin && org.admin.toString() === userId) ||
+    (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId))
+  );
 
 /**
  * GET /api/search?q=:query&org=:orgId

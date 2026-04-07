@@ -37,7 +37,9 @@ const checkTaskAccess = async (task, userId) => {
     return { status: 403, error: 'Not a member of this organisation' };
   }
 
-  const isAdmin = org.admin && org.admin.toString() === userId;
+  const isAdmin =
+    (org.admin && org.admin.toString() === userId) ||
+    (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId));
   if (isAdmin) return { ok: true };
 
   // Regular user: must be an assignee on a public board

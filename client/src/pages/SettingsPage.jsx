@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Copy, Check, RefreshCw, Trash2 } from 'lucide-react';
+import { Camera, Copy, Check, RefreshCw, Trash2, ChevronDown } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import SettingsSidebar, { SettingsTabBar } from '../components/settings/SettingsSidebar';
 import Button from '../components/ui/Button';
@@ -244,9 +244,79 @@ const OrganisationTab = ({ org, onRegenerate }) => {
 
 /* ---------------------------- Members tab ---------------------------- */
 
-const MembersTab = ({ members, adminId, currentUserId, isAdmin, onRemove }) => {
+const RoleDropdown = ({ currentRole, onChange, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const options = ['admin', 'member'];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen((o) => !o)}
+        disabled={disabled}
+        className="inline-flex items-center gap-1 font-body font-semibold text-[12px] rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        style={{
+          height: 26,
+          padding: '0 8px',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+          cursor: disabled ? 'default' : 'pointer',
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        {currentRole === 'admin' ? 'Admin' : 'Member'}
+        {!disabled && <ChevronDown size={12} aria-hidden="true" />}
+      </button>
+      {open && (
+        <div
+          className="absolute z-50 mt-1"
+          style={{
+            minWidth: 100,
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-bg-surface)',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                if (opt !== currentRole) onChange(opt);
+              }}
+              className="block w-full text-left font-body text-[12px] px-3 py-1.5 hover:bg-[color:var(--color-bg-subtle)]"
+              style={{
+                color: 'var(--color-text-primary)',
+                fontWeight: opt === currentRole ? 600 : 400,
+              }}
+            >
+              {opt === 'admin' ? 'Admin' : 'Member'}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MembersTab = ({ members, adminId, adminIds = [], currentUserId, isAdmin, isMainAdmin, onRemove, onChangeRole }) => {
   const [confirmMember, setConfirmMember] = useState(null);
   const [removing, setRemoving] = useState(false);
+  const [changingRole, setChangingRole] = useState(null);
 
   const handleRemove = async () => {
     if (!confirmMember) return;
@@ -256,6 +326,15 @@ const MembersTab = ({ members, adminId, currentUserId, isAdmin, onRemove }) => {
       setConfirmMember(null);
     } finally {
       setRemoving(false);
+    }
+  };
+
+  const handleRoleChange = async (userId, newRole) => {
+    setChangingRole(userId);
+    try {
+      await onChangeRole(userId, newRole);
+    } finally {
+      setChangingRole(null);
     }
   };
 
@@ -301,9 +380,23 @@ const MembersTab = ({ members, adminId, currentUserId, isAdmin, onRemove }) => {
         </div>
 
         {members.map((m) => {
-          const isOrgAdmin = String(m._id) === String(adminId);
+          const isTheMainAdmin = String(m._id) === String(adminId);
+          const isAnAdmin = isTheMainAdmin || adminIds.includes(String(m._id));
           const isSelf = String(m._id) === String(currentUserId);
-          const canRemove = isAdmin && !isOrgAdmin && !isSelf;
+          const memberRole = isAnAdmin ? 'admin' : 'member';
+
+          // Can change role?
+          // - Must be an admin to change roles
+          // - Cannot change the main admin's role
+          // - Non-main admins cannot change other admins' roles
+          const canChangeRole =
+            isAdmin &&
+            !isTheMainAdmin &&
+            !isSelf &&
+            (isMainAdmin || !isAnAdmin);
+
+          const canRemove = isAdmin && !isTheMainAdmin && !isSelf;
+
           return (
             <div
               key={m._id}
@@ -335,9 +428,17 @@ const MembersTab = ({ members, adminId, currentUserId, isAdmin, onRemove }) => {
                 </p>
               </div>
 
-              {/* Role chip */}
+              {/* Role chip / dropdown */}
               <div className="hidden md:block">
-                {isOrgAdmin ? (
+                {isTheMainAdmin ? (
+                  <Chip variant="blue">Owner</Chip>
+                ) : canChangeRole ? (
+                  <RoleDropdown
+                    currentRole={memberRole}
+                    onChange={(newRole) => handleRoleChange(m._id, newRole)}
+                    disabled={changingRole === m._id}
+                  />
+                ) : isAnAdmin ? (
                   <Chip variant="blue">Admin</Chip>
                 ) : (
                   <Chip variant="grey">Member</Chip>
@@ -365,8 +466,8 @@ const MembersTab = ({ members, adminId, currentUserId, isAdmin, onRemove }) => {
                   </button>
                 ) : (
                   <span className="md:block hidden">
-                    {isOrgAdmin ? (
-                      <Chip variant="blue">Admin</Chip>
+                    {isTheMainAdmin ? (
+                      <Chip variant="blue">Owner</Chip>
                     ) : null}
                   </span>
                 )}
@@ -617,6 +718,7 @@ const SettingsPage = () => {
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const members = useOrgStore((s) => s.members);
   const adminId = useOrgStore((s) => s.adminId);
+  const adminIds = useOrgStore((s) => s.adminIds);
   const fetchMembers = useOrgStore((s) => s.fetchMembers);
 
   // Resolve admin-ness from currentOrg (authoritative for the UI guard)
@@ -624,8 +726,16 @@ const SettingsPage = () => {
     typeof currentOrg?.admin === 'object' && currentOrg?.admin !== null
       ? currentOrg.admin._id || currentOrg.admin
       : currentOrg?.admin;
-  const isAdmin =
+  const isMainAdmin =
     !!user && !!orgAdminId && String(orgAdminId) === String(user._id);
+  const orgAdminsArr = currentOrg?.admins || [];
+  const isExtraAdmin =
+    !!user &&
+    orgAdminsArr.some((a) => {
+      const id = typeof a === 'object' && a !== null ? a._id || a : a;
+      return String(id) === String(user._id);
+    });
+  const isAdmin = isMainAdmin || isExtraAdmin;
 
   const [activeTab, setActiveTab] = useState('organisation');
   const [orgState, setOrgState] = useState(currentOrg || null);
@@ -671,6 +781,12 @@ const SettingsPage = () => {
     await fetchMembers(currentOrg._id);
   };
 
+  const handleChangeRole = async (userId, role) => {
+    if (!currentOrg?._id) return;
+    await orgService.changeRole(currentOrg._id, userId, role);
+    await fetchMembers(currentOrg._id);
+  };
+
   const handleSaveName = async (name) => {
     await profileService.updateProfile({ name });
     await fetchCurrentUser();
@@ -690,9 +806,12 @@ const SettingsPage = () => {
         <MembersTab
           members={members}
           adminId={adminId || orgAdminId}
+          adminIds={adminIds}
           currentUserId={user?._id}
           isAdmin={isAdmin}
+          isMainAdmin={isMainAdmin}
           onRemove={handleRemoveMember}
+          onChangeRole={handleChangeRole}
         />
       );
     }

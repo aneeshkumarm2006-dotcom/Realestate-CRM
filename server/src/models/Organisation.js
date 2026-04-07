@@ -9,6 +9,10 @@ const organisationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   },
+  admins: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }],
   members: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

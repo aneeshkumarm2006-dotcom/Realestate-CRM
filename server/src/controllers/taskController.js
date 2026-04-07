@@ -17,7 +17,11 @@ const VALID_STATUSES = ['not_started', 'working_on_it', 'done', 'stuck'];
  * Whether the current user is the admin of this org.
  */
 const isOrgAdmin = (org, userId) =>
-  !!org && org.admin && org.admin.toString() === userId;
+  !!org &&
+  (
+    (org.admin && org.admin.toString() === userId) ||
+    (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId))
+  );
 
 /**
  * Load the board + its org, validating that the current user is a member

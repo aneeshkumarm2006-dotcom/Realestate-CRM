@@ -17,7 +17,12 @@ export const joinOrg = async (inviteCode) => {
 
 export const listMembers = async (orgId) => {
   const { data } = await api.get(`/api/orgs/${orgId}/members`);
-  return data; // { members, adminId }
+  return data; // { members, adminId, adminIds }
+};
+
+export const changeRole = async (orgId, userId, role) => {
+  const { data } = await api.put(`/api/orgs/${orgId}/members/${userId}/role`, { role });
+  return data; // { message, adminIds }
 };
 
 export const removeMember = async (orgId, userId) => {

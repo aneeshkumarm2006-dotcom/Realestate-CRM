@@ -7,6 +7,7 @@ const {
   joinOrg,
   listMembers,
   removeMember,
+  changeRole,
   regenerateInvite,
   sendInvite,
 } = require('../controllers/orgController');
@@ -30,6 +31,9 @@ router.get('/:id/members', listMembers);
 
 // Remove member (admin only)
 router.delete('/:id/members/:userId', requireOrgAdmin, removeMember);
+
+// Change member role (admin only)
+router.put('/:id/members/:userId/role', requireOrgAdmin, changeRole);
 
 // Regenerate invite code (admin only)
 router.post('/:id/regenerate-invite', requireOrgAdmin, regenerateInvite);

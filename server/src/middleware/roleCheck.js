@@ -29,7 +29,11 @@ const requireOrgAdmin = async (req, res, next) => {
       return res.status(404).json({ error: 'Organisation not found' });
     }
 
-    if (org.admin.toString() !== req.user.userId) {
+    const isMainAdmin = org.admin.toString() === req.user.userId;
+    const isExtraAdmin = Array.isArray(org.admins) &&
+      org.admins.some((a) => a.toString() === req.user.userId);
+
+    if (!isMainAdmin && !isExtraAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

@@ -120,9 +120,14 @@ const listMembers = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
+    const adminIds = Array.isArray(org.admins)
+      ? org.admins.map((a) => a.toString())
+      : [];
+
     return res.json({
       members: org.members,
       adminId: org.admin.toString(),
+      adminIds,
     });
   } catch (err) {
     console.error('listMembers error:', err);
@@ -142,11 +147,13 @@ const removeMember = async (req, res) => {
       return res.status(404).json({ error: 'Organisation not found' });
     }
 
-    // Admin cannot remove themselves
+    // Main admin cannot be removed
     if (org.admin.toString() === targetUserId) {
-      return res.status(400).json({ error: 'Admin cannot be removed' });
+      return res.status(400).json({ error: 'Main admin cannot be removed' });
     }
 
+    // Also remove from admins array if they were an admin
+    org.admins = (org.admins || []).filter((a) => a.toString() !== targetUserId);
     org.members = org.members.filter((m) => m.toString() !== targetUserId);
     await org.save();
 
@@ -213,12 +220,75 @@ const sendInvite = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/orgs/:id/members/:userId/role — Change a member's role (admin only).
+ * Body: { role: 'admin' | 'member' }
+ *
+ * Rules:
+ *  - Only admins can change roles.
+ *  - Only the main admin can change another admin's role.
+ *  - The main admin's own role cannot be changed by anyone.
+ */
+const changeRole = async (req, res) => {
+  try {
+    const { id: orgId, userId: targetUserId } = req.params;
+    const { role } = req.body;
+
+    if (!['admin', 'member'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be "admin" or "member"' });
+    }
+
+    const org = await Organisation.findById(orgId);
+    if (!org) {
+      return res.status(404).json({ error: 'Organisation not found' });
+    }
+
+    const requesterId = req.user.userId;
+    const isMainAdmin = org.admin.toString() === requesterId;
+
+    // No one can change the main admin's role
+    if (org.admin.toString() === targetUserId) {
+      return res.status(400).json({ error: 'Cannot change the main admin\'s role' });
+    }
+
+    // Non-main admins cannot change another admin's role
+    const targetIsAdmin = (org.admins || []).some(
+      (a) => a.toString() === targetUserId
+    );
+    if (targetIsAdmin && !isMainAdmin) {
+      return res.status(403).json({ error: 'Only the main admin can change another admin\'s role' });
+    }
+
+    if (role === 'admin') {
+      // Promote to admin
+      if (!targetIsAdmin) {
+        org.admins = org.admins || [];
+        org.admins.push(targetUserId);
+      }
+    } else {
+      // Demote to member
+      org.admins = (org.admins || []).filter(
+        (a) => a.toString() !== targetUserId
+      );
+    }
+
+    await org.save();
+
+    const adminIds = org.admins.map((a) => a.toString());
+    return res.json({ message: 'Role updated', adminIds });
+  } catch (err) {
+    console.error('changeRole error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   createOrg,
   getOrg,
   joinOrg,
   listMembers,
   removeMember,
+  changeRole,
   regenerateInvite,
   sendInvite,
 };

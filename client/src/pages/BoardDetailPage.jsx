@@ -49,7 +49,13 @@ const useIsCurrentOrgAdmin = () => {
     typeof currentOrg.admin === 'object' && currentOrg.admin !== null
       ? currentOrg.admin._id || currentOrg.admin
       : currentOrg.admin;
-  return !!adminId && String(adminId) === String(user._id);
+  const isMainAdmin = !!adminId && String(adminId) === String(user._id);
+  const isExtraAdmin = Array.isArray(currentOrg.admins) &&
+    currentOrg.admins.some((a) => {
+      const id = typeof a === 'object' && a !== null ? a._id || a : a;
+      return String(id) === String(user._id);
+    });
+  return isMainAdmin || isExtraAdmin;
 };
 
 const BoardDetailPage = () => {

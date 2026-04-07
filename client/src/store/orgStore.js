@@ -9,6 +9,7 @@ const useOrgStore = create((set, get) => ({
   orgs: [],
   members: [],
   adminId: null,
+  adminIds: [],
   loading: false,
 
   /**
@@ -81,7 +82,7 @@ const useOrgStore = create((set, get) => ({
     set({ loading: true });
     try {
       const data = await orgService.listMembers(orgId);
-      set({ members: data.members, adminId: data.adminId, loading: false });
+      set({ members: data.members, adminId: data.adminId, adminIds: data.adminIds || [], loading: false });
       return data;
     } catch (err) {
       set({ loading: false });
@@ -91,7 +92,7 @@ const useOrgStore = create((set, get) => ({
 
   clearOrgs: () => {
     localStorage.removeItem(CURRENT_ORG_KEY);
-    set({ currentOrg: null, orgs: [], members: [], adminId: null });
+    set({ currentOrg: null, orgs: [], members: [], adminId: null, adminIds: [] });
   },
 }));
 

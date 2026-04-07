@@ -11,7 +11,11 @@ const VALID_VISIBILITIES = ['public', 'private'];
  * Resolve whether the current user is the admin of the given org.
  */
 const isOrgAdmin = (org, userId) =>
-  !!org && org.admin && org.admin.toString() === userId;
+  !!org &&
+  (
+    (org.admin && org.admin.toString() === userId) ||
+    (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId))
+  );
 
 /**
  * Confirm the user is a member of the org. Returns the org doc or null.

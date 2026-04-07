@@ -55,7 +55,10 @@ const getAnalytics = async (req, res) => {
 
     const org = await Organisation.findById(orgId);
     if (!org) return res.status(404).json({ error: 'Organisation not found' });
-    if (!org.admin || org.admin.toString() !== userId) {
+    const isAdmin =
+      (org.admin && org.admin.toString() === userId) ||
+      (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId));
+    if (!isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
