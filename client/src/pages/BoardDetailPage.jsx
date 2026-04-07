@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight,
@@ -106,7 +106,6 @@ const BoardDetailPage = () => {
 
   // --- Notification highlight (scroll-to + glow) --------------------------
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
-  const highlightTimerRef = useRef(null);
 
   const board = getBoardById(boardId) || null;
   const orgId = currentOrg?._id || null;
@@ -159,30 +158,33 @@ const BoardDetailPage = () => {
       return next;
     }, { replace: true });
 
-    // Set highlight, then poll until the element appears in the DOM and scroll
+    // Set highlight — the auto-remove timer is handled by a separate effect below
     setHighlightedTaskId(taskId);
-    clearTimeout(highlightTimerRef.current);
 
-    let scrollAttempts = 0;
-    const tryScroll = () => {
-      const el = document.querySelector(`[data-task-id="${taskId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (scrollAttempts < 20) {
-        scrollAttempts++;
-        requestAnimationFrame(tryScroll);
-      }
-    };
-    // Wait one frame for the group to expand, then start polling
-    requestAnimationFrame(tryScroll);
+    // Wait for React to re-render the expanded group, then scroll to the task
+    const scrollTimer = setTimeout(() => {
+      let scrollAttempts = 0;
+      const tryScroll = () => {
+        const el = document.querySelector(`[data-task-id="${taskId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else if (scrollAttempts < 15) {
+          scrollAttempts++;
+          requestAnimationFrame(tryScroll);
+        }
+      };
+      requestAnimationFrame(tryScroll);
+    }, 150);
 
-    // Remove highlight after animation completes
-    highlightTimerRef.current = setTimeout(() => {
-      setHighlightedTaskId(null);
-    }, 3500);
-
-    return () => clearTimeout(highlightTimerRef.current);
+    return () => clearTimeout(scrollTimer);
   }, [searchParams, loading, groups, tasksByGroup, setSearchParams]);
+
+  // --- Auto-remove highlight after animation completes -------------------
+  useEffect(() => {
+    if (!highlightedTaskId) return;
+    const timer = setTimeout(() => setHighlightedTaskId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightedTaskId]);
 
   // Fetch org members (used by assignee picker) — admin only actually needs
   // them, but caching them doesn't hurt and useful for future features.
