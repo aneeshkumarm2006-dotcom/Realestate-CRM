@@ -1,4 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
+
+const NAVBAR_HEIGHT = 56;
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
 
@@ -46,26 +49,49 @@ const TaskCardList = ({
       }}
     >
       {tasks.map((task, i) => (
-        <li
+        <TaskCardItem
           key={task._id}
-          data-task-id={task._id}
-          className={highlightedTaskId === task._id ? 'macan-task-highlight' : ''}
-          style={{
-            borderBottom:
-              i === tasks.length - 1
-                ? 'none'
-                : '1px solid var(--color-border)',
-          }}
-        >
-          <TaskCard
-            task={task}
-            onOpen={onOpenTask}
-            onStatusClick={onStatusClick}
-            onActionsClick={onActionsClick}
-          />
-        </li>
+          task={task}
+          highlighted={highlightedTaskId === task._id}
+          isLast={i === tasks.length - 1}
+          onOpenTask={onOpenTask}
+          onStatusClick={onStatusClick}
+          onActionsClick={onActionsClick}
+        />
       ))}
     </ul>
+  );
+};
+
+const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, onActionsClick }) => {
+  const liRef = useRef(null);
+
+  useEffect(() => {
+    if (!highlighted || !liRef.current) return;
+    const el = liRef.current;
+    const timer = setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const targetY = scrollTop + rect.top - NAVBAR_HEIGHT - (window.innerHeight / 2 - el.offsetHeight / 2);
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [highlighted]);
+
+  return (
+    <li
+      ref={liRef}
+      data-task-id={task._id}
+      className={highlighted ? 'macan-task-highlight' : ''}
+      style={{ borderBottom: isLast ? 'none' : '1px solid var(--color-border)' }}
+    >
+      <TaskCard
+        task={task}
+        onOpen={onOpenTask}
+        onStatusClick={onStatusClick}
+        onActionsClick={onActionsClick}
+      />
+    </li>
   );
 };
 

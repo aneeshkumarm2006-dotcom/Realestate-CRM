@@ -1,6 +1,9 @@
+import { useEffect, useRef } from 'react';
 import { MoreHorizontal, MessageSquare } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
+
+const NAVBAR_HEIGHT = 56;
 
 /**
  * TaskRow — a single row in the board task table.
@@ -28,11 +31,25 @@ const TaskRow = ({
   isLast = false,
   highlighted = false,
 }) => {
+  const rowRef = useRef(null);
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const overdue = isOverdue(task.dueDate) && task.status !== 'done';
 
+  useEffect(() => {
+    if (!highlighted || !rowRef.current) return;
+    const el = rowRef.current;
+    const timer = setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const targetY = scrollTop + rect.top - NAVBAR_HEIGHT - (window.innerHeight / 2 - el.offsetHeight / 2);
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [highlighted]);
+
   return (
     <tr
+      ref={rowRef}
       data-task-id={task._id}
       className={[
         'transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]',
