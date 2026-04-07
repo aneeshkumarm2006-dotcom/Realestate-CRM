@@ -573,9 +573,11 @@ const BoardDetailPage = () => {
             return (
               <div
                 key={group._id}
-                className={`bg-surface ${
-                  needsOverflowVisible ? 'overflow-visible' : 'overflow-hidden'
-                }`}
+                className={[
+                  'bg-surface',
+                  needsOverflowVisible ? 'overflow-visible' : 'overflow-hidden',
+                  groupHasHighlight ? 'macan-group-has-highlight' : '',
+                ].filter(Boolean).join(' ')}
                 style={{
                   borderRadius: 'var(--radius-lg)',
                   boxShadow: 'var(--shadow-card)',

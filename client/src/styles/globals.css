@@ -293,40 +293,60 @@ select:focus-visible {
   to   { opacity: 1; }
 }
 
-/* The highlighted task row — works for both <tr> and <li>/<div> elements.
-   <tr> doesn't support box-shadow/position, so we animate td cells. */
+/* --- Group-level dimming ---
+   The group card sits above the overlay (z-index 31), but we dim
+   everything inside it (header, non-target rows) so only the
+   highlighted task stands out. */
 
-/* For table rows: animate the background on each cell */
+.macan-group-has-highlight > * {
+  opacity: 0.25;
+  transition: opacity 300ms ease-out;
+}
+
+/* The table/card-list wrapper that contains the highlighted row
+   stays fully visible — the per-row dimming below handles the rest. */
+.macan-group-has-highlight > *:has(.macan-task-highlight) {
+  opacity: 1;
+}
+
+/* Dim every row inside the table except the highlighted one */
+.macan-group-has-highlight tr:not(.macan-task-highlight) {
+  opacity: 0.2;
+  transition: opacity 300ms ease-out;
+}
+.macan-group-has-highlight thead tr {
+  opacity: 0.2;
+}
+
+/* Mobile card list: dim non-highlighted cards */
+.macan-group-has-highlight li:not(.macan-task-highlight) {
+  opacity: 0.2;
+  transition: opacity 300ms ease-out;
+}
+
+/* --- Highlighted task row glow --- */
+
+/* For table rows: animate each cell's background */
 tr.macan-task-highlight > td {
   animation: macan-task-glow-bg 2.5s ease-in-out both;
 }
 
-/* First td gets a left accent border as a visual anchor */
+/* Left accent stripe on the first cell */
 tr.macan-task-highlight > td:first-child {
   box-shadow: inset 4px 0 0 0 var(--color-accent);
 }
 
-/* For mobile card list items (<li>) — full box-shadow works here */
+/* For mobile cards (<li>) — full box-shadow works */
 li.macan-task-highlight {
-  position: relative;
-  z-index: 31;
   animation: macan-task-glow 2.5s ease-in-out both;
   border-radius: var(--radius-sm);
 }
 
 @keyframes macan-task-glow-bg {
-  0% {
-    background-color: rgba(37, 99, 235, 0.0);
-  }
-  10% {
-    background-color: rgba(37, 99, 235, 0.15);
-  }
-  40% {
-    background-color: rgba(37, 99, 235, 0.10);
-  }
-  100% {
-    background-color: rgba(37, 99, 235, 0.0);
-  }
+  0%   { background-color: rgba(37, 99, 235, 0.0); }
+  10%  { background-color: rgba(37, 99, 235, 0.18); }
+  40%  { background-color: rgba(37, 99, 235, 0.12); }
+  100% { background-color: rgba(37, 99, 235, 0.0); }
 }
 
 @keyframes macan-task-glow {
@@ -337,12 +357,12 @@ li.macan-task-highlight {
   10% {
     box-shadow: 0 0 20px 6px rgba(37, 99, 235, 0.35),
                 0 0 40px 12px rgba(37, 99, 235, 0.15);
-    background-color: rgba(37, 99, 235, 0.12);
+    background-color: rgba(37, 99, 235, 0.15);
   }
   40% {
     box-shadow: 0 0 16px 4px rgba(37, 99, 235, 0.25),
                 0 0 32px 8px rgba(37, 99, 235, 0.10);
-    background-color: rgba(37, 99, 235, 0.08);
+    background-color: rgba(37, 99, 235, 0.10);
   }
   100% {
     box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.0);
@@ -353,6 +373,11 @@ li.macan-task-highlight {
 @media (prefers-reduced-motion: reduce) {
   .macan-highlight-overlay {
     animation: none;
+  }
+  .macan-group-has-highlight > *,
+  .macan-group-has-highlight tr:not(.macan-task-highlight),
+  .macan-group-has-highlight li:not(.macan-task-highlight) {
+    transition: none;
   }
   tr.macan-task-highlight > td {
     animation: none;
