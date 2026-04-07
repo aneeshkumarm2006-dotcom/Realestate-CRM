@@ -264,7 +264,6 @@ const createTask = async (req, res) => {
       dueDate,
       note,
       isPersonal,
-      sendEmailNotification,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -345,8 +344,8 @@ const createTask = async (req, res) => {
       });
     }
 
-    // Optionally send email notifications to each assignee
-    if (sendEmailNotification && assigneeIds.length > 0) {
+    // Send email notifications to each assignee
+    if (assigneeIds.length > 0) {
       const taskLink = `${process.env.CLIENT_URL}/boards/${boardId}`;
       const assigneeUsers = await User.find({ _id: { $in: assigneeIds } }).select('email').lean();
       const emailResults = await Promise.allSettled(
@@ -390,7 +389,7 @@ const updateTask = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
-    const { sendEmailNotification, ...body } = req.body || {};
+    const body = req.body || {};
 
     const task = await Task.findById(id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -549,8 +548,8 @@ const updateTask = async (req, res) => {
       });
     }
 
-    // Optionally send email to newly-added assignees
-    if (sendEmailNotification && newAssigneeIds && newAssigneeIds.length > 0) {
+    // Send email to newly-added assignees
+    if (newAssigneeIds && newAssigneeIds.length > 0) {
       const taskLink = `${process.env.CLIENT_URL}/boards/${task.board}`;
       const assigneeUsers = await User.find({ _id: { $in: newAssigneeIds } }).select('email').lean();
       const emailResults = await Promise.allSettled(
