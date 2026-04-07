@@ -566,24 +566,16 @@ const BoardDetailPage = () => {
               editingTaskId != null &&
               groupTasks.some((t) => t._id === editingTaskId);
             const needsOverflowVisible = isCreatingHere || isEditingHere;
-            const groupHasHighlight =
-              highlightedTaskId &&
-              groupTasks.some((t) => t._id === highlightedTaskId);
 
             return (
               <div
                 key={group._id}
-                className={[
-                  'bg-surface',
-                  needsOverflowVisible ? 'overflow-visible' : 'overflow-hidden',
-                  groupHasHighlight ? 'macan-group-has-highlight' : '',
-                ].filter(Boolean).join(' ')}
+                className={`bg-surface ${
+                  needsOverflowVisible ? 'overflow-visible' : 'overflow-hidden'
+                }`}
                 style={{
                   borderRadius: 'var(--radius-lg)',
                   boxShadow: 'var(--shadow-card)',
-                  ...(groupHasHighlight
-                    ? { position: 'relative', zIndex: 31 }
-                    : {}),
                 }}
               >
                 <TaskGroupHeader
