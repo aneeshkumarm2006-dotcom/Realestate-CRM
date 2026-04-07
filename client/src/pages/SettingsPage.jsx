@@ -353,10 +353,10 @@ const MembersTab = ({ members, adminId, adminIds = [], currentUserId, isAdmin, i
       </header>
 
       <div
-        className="overflow-hidden"
         style={{
           border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-md)',
+          overflow: 'visible',
         }}
       >
         {/* Table header */}
@@ -366,6 +366,7 @@ const MembersTab = ({ members, adminId, adminIds = [], currentUserId, isAdmin, i
             height: 40,
             background: 'var(--color-bg-subtle)',
             borderBottom: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
           }}
         >
           {['Member', 'Email', 'Role', 'Joined', ''].map((h) => (

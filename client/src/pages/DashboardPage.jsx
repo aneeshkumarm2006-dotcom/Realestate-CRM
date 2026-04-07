@@ -12,7 +12,6 @@ import {
 import GreetingBanner from '../components/dashboard/GreetingBanner';
 import RecentBoards from '../components/dashboard/RecentBoards';
 import QuickActions from '../components/dashboard/QuickActions';
-import PersonalTaskModal from '../components/board/PersonalTaskModal';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -121,8 +120,6 @@ const DashboardPage = () => {
 
   const [stats, setStats] = useState(INITIAL_STATS);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [personalTaskModalOpen, setPersonalTaskModalOpen] = useState(false);
-
   const orgId = currentOrg?._id || null;
 
   // Fetch boards + stats whenever the current org changes
@@ -229,19 +226,13 @@ const DashboardPage = () => {
             </>
           ) : (
             <>
-              <QuickActions
-                onCreatePersonalTask={() => setPersonalTaskModalOpen(true)}
-              />
+              <QuickActions />
               <RecentActivity boards={boards} />
             </>
           )}
         </div>
       </div>
 
-      <PersonalTaskModal
-        isOpen={personalTaskModalOpen}
-        onClose={() => setPersonalTaskModalOpen(false)}
-      />
     </PageWrapper>
   );
 };

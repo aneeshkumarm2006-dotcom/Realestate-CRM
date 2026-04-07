@@ -18,6 +18,7 @@ import MyBoardsPage from './pages/MyBoardsPage';
 import BoardDetailPage from './pages/BoardDetailPage';
 import CalendarPage from './pages/CalendarPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import MyTasksPage from './pages/MyTasksPage';
 import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ToastContainer from './components/ui/Toast';
@@ -146,6 +147,7 @@ function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/boards" element={<MyBoardsPage />} />
             <Route path="/boards/:id" element={<BoardDetailPage />} />
+            <Route path="/my-tasks" element={<MyTasksPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="/analytics" element={<AnalyticsPage />} />

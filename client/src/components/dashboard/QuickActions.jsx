@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Plus, UserPlus, Calendar, BarChart2, Zap, ClipboardList } from 'lucide-react';
+import { Plus, UserPlus, Calendar, BarChart2, Zap } from 'lucide-react';
 
 /**
  * QuickActions — colored shortcut buttons stacked in the dashboard sidebar.
@@ -42,13 +42,6 @@ const ACTIONS = [
     color: '#7C3AED',
     to: '/analytics',
   },
-  {
-    id: 'create-personal-task',
-    icon: ClipboardList,
-    title: 'My Task',
-    subtitle: 'Create a personal task',
-    color: '#0891B2',
-  },
 ];
 
 const ActionButton = ({ icon: Icon, title, subtitle, color, onClick }) => (
@@ -82,16 +75,12 @@ const ActionButton = ({ icon: Icon, title, subtitle, color, onClick }) => (
   </button>
 );
 
-const QuickActions = ({ onCreateBoard, onCreatePersonalTask }) => {
+const QuickActions = ({ onCreateBoard }) => {
   const navigate = useNavigate();
 
   const handleAction = (action) => {
     if (action.id === 'create-board' && typeof onCreateBoard === 'function') {
       onCreateBoard();
-      return;
-    }
-    if (action.id === 'create-personal-task' && typeof onCreatePersonalTask === 'function') {
-      onCreatePersonalTask();
       return;
     }
     if (action.to) navigate(action.to);
