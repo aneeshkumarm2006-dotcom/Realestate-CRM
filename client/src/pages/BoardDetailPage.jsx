@@ -158,26 +158,42 @@ const BoardDetailPage = () => {
       return next;
     }, { replace: true });
 
-    // Set highlight — the auto-remove timer is handled by a separate effect below
+    // Set highlight — scroll + auto-remove are handled by separate effects below
     setHighlightedTaskId(taskId);
-
-    // Wait for React to re-render the expanded group, then scroll to the task
-    const scrollTimer = setTimeout(() => {
-      let scrollAttempts = 0;
-      const tryScroll = () => {
-        const el = document.querySelector(`[data-task-id="${taskId}"]`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else if (scrollAttempts < 15) {
-          scrollAttempts++;
-          requestAnimationFrame(tryScroll);
-        }
-      };
-      requestAnimationFrame(tryScroll);
-    }, 150);
-
-    return () => clearTimeout(scrollTimer);
   }, [searchParams, loading, groups, tasksByGroup, setSearchParams]);
+
+  // --- Scroll to highlighted task (runs once when highlightedTaskId is set) -
+  useEffect(() => {
+    if (!highlightedTaskId) return;
+
+    let attempts = 0;
+    let rafId;
+    let timerId;
+
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-task-id="${highlightedTaskId}"]`);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const navbarHeight = 56;
+        const targetY = scrollTop + rect.top - navbarHeight - (window.innerHeight / 2 - rect.height / 2);
+        window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+      } else if (attempts < 20) {
+        attempts++;
+        rafId = requestAnimationFrame(tryScroll);
+      }
+    };
+
+    // Short delay so React can finish re-rendering the expanded group
+    timerId = setTimeout(() => {
+      rafId = requestAnimationFrame(tryScroll);
+    }, 200);
+
+    return () => {
+      clearTimeout(timerId);
+      cancelAnimationFrame(rafId);
+    };
+  }, [highlightedTaskId]);
 
   // --- Auto-remove highlight after animation completes -------------------
   useEffect(() => {
