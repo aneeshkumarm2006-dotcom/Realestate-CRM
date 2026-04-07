@@ -271,3 +271,64 @@ select:focus-visible {
     padding-bottom: 20px !important;
   }
 }
+
+/* ==========================================================
+   NOTIFICATION TASK HIGHLIGHT — glow + dim overlay
+   When a user clicks a notification, the page dims and the
+   target task row glows to draw attention.
+   ========================================================== */
+
+/* Full-screen dim overlay behind the highlighted task */
+.macan-highlight-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.35);
+  animation: macan-overlay-fade-in 300ms ease-out both;
+  cursor: pointer;
+}
+
+@keyframes macan-overlay-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* The highlighted task row/card pops above the overlay */
+.macan-task-highlight {
+  position: relative;
+  z-index: 31;
+  animation: macan-task-glow 2.5s ease-in-out both;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes macan-task-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.0);
+    background-color: rgba(37, 99, 235, 0.0);
+  }
+  15% {
+    box-shadow: 0 0 20px 6px rgba(37, 99, 235, 0.35),
+                0 0 40px 12px rgba(37, 99, 235, 0.15);
+    background-color: rgba(37, 99, 235, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(37, 99, 235, 0.25),
+                0 0 32px 8px rgba(37, 99, 235, 0.10);
+    background-color: rgba(37, 99, 235, 0.06);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.0);
+    background-color: rgba(37, 99, 235, 0.0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .macan-highlight-overlay {
+    animation: none;
+  }
+  .macan-task-highlight {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--color-accent);
+    background-color: var(--color-accent-light);
+  }
+}

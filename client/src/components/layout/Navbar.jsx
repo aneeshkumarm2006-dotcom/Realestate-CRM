@@ -532,6 +532,7 @@ const NotificationItem = ({ notif, onClick }) => {
 const NotificationBell = () => {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
+  const navigate = useNavigate();
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const loading = useNotificationStore((s) => s.loading);
@@ -567,6 +568,13 @@ const NotificationBell = () => {
 
   const handleItemClick = (notif) => {
     if (!notif.isRead) markRead(notif._id);
+    // Navigate to the board and highlight the task
+    const taskId = notif.task?._id || notif.task;
+    const boardId = notif.task?.board;
+    if (boardId && taskId) {
+      setOpen(false);
+      navigate(`/boards/${boardId}?highlightTask=${taskId}`);
+    }
   };
 
   return (

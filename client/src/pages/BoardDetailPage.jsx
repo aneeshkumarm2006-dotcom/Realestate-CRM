@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight,
   Lock,
@@ -60,6 +60,7 @@ const useIsCurrentOrgAdmin = () => {
 
 const BoardDetailPage = () => {
   const { id: boardId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const isAdmin = useIsCurrentOrgAdmin();
   const currentUser = useAuthStore((s) => s.user);
@@ -103,6 +104,10 @@ const BoardDetailPage = () => {
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupModalError, setGroupModalError] = useState(null);
 
+  // --- Notification highlight (scroll-to + glow) --------------------------
+  const [highlightedTaskId, setHighlightedTaskId] = useState(null);
+  const highlightTimerRef = useRef(null);
+
   const board = getBoardById(boardId) || null;
   const orgId = currentOrg?._id || null;
 
@@ -127,6 +132,51 @@ const BoardDetailPage = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
+
+  // --- Handle highlightTask query param from notification click -----------
+  useEffect(() => {
+    const taskId = searchParams.get('highlightTask');
+    if (!taskId || loading || groups.length === 0) return;
+
+    // Find which group contains the task and ensure it's expanded
+    for (const group of groups) {
+      const groupTasks = tasksByGroup[group._id] || [];
+      if (groupTasks.some((t) => t._id === taskId)) {
+        // Expand the group if collapsed
+        setCollapsed((prev) => {
+          const next = new Set(prev);
+          next.delete(group._id);
+          return next;
+        });
+        break;
+      }
+    }
+
+    // Clear the query param so refreshing doesn't re-trigger
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('highlightTask');
+      return next;
+    }, { replace: true });
+
+    // Set highlight and scroll after a short delay for DOM to render
+    setHighlightedTaskId(taskId);
+    clearTimeout(highlightTimerRef.current);
+
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-task-id="${taskId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+
+    // Remove highlight after animation completes
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedTaskId(null);
+    }, 3000);
+
+    return () => clearTimeout(highlightTimerRef.current);
+  }, [searchParams, loading, groups, tasksByGroup, setSearchParams]);
 
   // Fetch org members (used by assignee picker) — admin only actually needs
   // them, but caching them doesn't hurt and useful for future features.
@@ -545,6 +595,7 @@ const BoardDetailPage = () => {
                     editingTaskId={editingTaskId}
                     isCreating={isCreatingHere}
                     isAdmin={isAdmin}
+                    highlightedTaskId={highlightedTaskId}
                     onOpenTask={handleOpenTask}
                     onStatusClick={handleStatusClick}
                     onActionsClick={isAdmin ? handleActionsClick : undefined}
@@ -656,6 +707,14 @@ const BoardDetailPage = () => {
           <button type="submit" className="hidden" aria-hidden="true" />
         </form>
       </Modal>
+
+      {/* Dim overlay for notification highlight */}
+      {highlightedTaskId && (
+        <div
+          className="macan-highlight-overlay"
+          onClick={() => setHighlightedTaskId(null)}
+        />
+      )}
 
       {/* Task comment panel */}
       <CommentPanel

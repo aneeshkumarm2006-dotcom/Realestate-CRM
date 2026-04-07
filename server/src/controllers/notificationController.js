@@ -71,7 +71,8 @@ const getNotifications = async (req, res) => {
 
     const notifications = await Notification.find({ user: userId })
       .sort({ createdAt: -1 })
-      .limit(NOTIFICATION_LIMIT);
+      .limit(NOTIFICATION_LIMIT)
+      .populate('task', 'board');
 
     const unreadCount = await Notification.countDocuments({
       user: userId,

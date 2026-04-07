@@ -18,6 +18,7 @@ const TaskCardList = ({
   onOpenTask,
   onStatusClick,
   onActionsClick,
+  highlightedTaskId,
   emptyLabel = 'No tasks in this group yet',
 }) => {
   if (tasks.length === 0) {
@@ -47,6 +48,8 @@ const TaskCardList = ({
       {tasks.map((task, i) => (
         <li
           key={task._id}
+          data-task-id={task._id}
+          className={highlightedTaskId === task._id ? 'macan-task-highlight' : ''}
           style={{
             borderBottom:
               i === tasks.length - 1

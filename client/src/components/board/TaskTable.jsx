@@ -44,6 +44,7 @@ const TaskTable = ({
   editingTaskId = null,
   isCreating = false,
   isAdmin = false,
+  highlightedTaskId = null,
   onOpenTask,
   onStatusClick,
   onActionsClick,
@@ -86,6 +87,7 @@ const TaskTable = ({
             onOpenTask={onOpenTask}
             onStatusClick={onStatusClick}
             onActionsClick={onActionsClick}
+            highlightedTaskId={highlightedTaskId}
             emptyLabel={emptyLabel}
           />
         </div>
@@ -198,6 +200,7 @@ const TaskTable = ({
                   onStatusClick={onStatusClick}
                   onActionsClick={onActionsClick}
                   isLast={isLastRow}
+                  highlighted={highlightedTaskId === task._id}
                 />
               );
             })

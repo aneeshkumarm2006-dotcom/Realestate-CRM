@@ -26,13 +26,18 @@ const TaskRow = ({
   onStatusClick,
   onActionsClick,
   isLast = false,
+  highlighted = false,
 }) => {
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const overdue = isOverdue(task.dueDate) && task.status !== 'done';
 
   return (
     <tr
-      className="transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
+      data-task-id={task._id}
+      className={[
+        'transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]',
+        highlighted ? 'macan-task-highlight' : '',
+      ].join(' ')}
       style={{
         height: 48,
         borderBottom: isLast ? 'none' : '1px solid var(--color-border)',
