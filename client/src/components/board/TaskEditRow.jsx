@@ -60,7 +60,6 @@ const TaskEditRow = ({
   const [dueDate, setDueDate] = useState(() =>
     toDateInputValue(initialTask?.dueDate)
   );
-  const [sendEmail, setSendEmail] = useState(false);
   const [saving, setSaving] = useState(false);
   const nameInputRef = useRef(null);
 
@@ -80,7 +79,7 @@ const TaskEditRow = ({
         status,
         assignedTo,
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-        sendEmailNotification: isAdmin ? sendEmail : false,
+        sendEmailNotification: true,
       });
     } catch (err) {
       // Parent surfaces the error; we just release the spinner so user can retry
@@ -98,13 +97,7 @@ const TaskEditRow = ({
     }
   };
 
-  // When the admin email toggle row is rendered below, the main row always
-  // has a border; the toggle row handles the isLast treatment instead.
-  const mainRowBorder = isAdmin
-    ? '1px solid var(--color-border)'
-    : isLast
-    ? 'none'
-    : '1px solid var(--color-border)';
+  const mainRowBorder = isLast ? 'none' : '1px solid var(--color-border)';
 
   return (
     <>
@@ -241,39 +234,7 @@ const TaskEditRow = ({
       </td>
     </tr>
 
-    {/* Email notification toggle — admin-only sub-row */}
-    {isAdmin && (
-      <tr
-        style={{
-          background: 'var(--color-bg-subtle)',
-          borderBottom: isLast ? 'none' : '1px solid var(--color-border)',
-        }}
-      >
-        <td
-          colSpan={7}
-          style={{ padding: '0 16px 10px 56px' }}
-        >
-          <label
-            className="flex items-center gap-2"
-            style={{ fontSize: 12, color: 'var(--color-text-secondary)', cursor: 'pointer', userSelect: 'none' }}
-          >
-            <input
-              type="checkbox"
-              checked={sendEmail}
-              onChange={(e) => setSendEmail(e.target.checked)}
-              style={{
-                width: 14,
-                height: 14,
-                accentColor: 'var(--color-accent)',
-                cursor: 'pointer',
-              }}
-            />
-            Send email notification to assignees
-          </label>
-        </td>
-      </tr>
-    )}
-    </>
+</>
   );
 };
 
