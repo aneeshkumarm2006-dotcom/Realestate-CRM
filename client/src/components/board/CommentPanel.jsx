@@ -5,6 +5,7 @@ import Chip from '../ui/Chip';
 import { formatDate, timeAgo } from '../../utils/dateUtils';
 import * as commentService from '../../services/commentService';
 import useNotificationStore from '../../store/notificationStore';
+import useOrgStore from '../../store/orgStore';
 
 /**
  * CommentPanel — right-edge slide-out panel showing task detail + comments.
@@ -34,7 +35,38 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
   const textareaRef = useRef(null);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
 
+  // @mention state
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+  const [mentionedUsers, setMentionedUsers] = useState([]); // [{_id, name}]
+  const [mentionHighlight, setMentionHighlight] = useState(0);
+  const mentionDropdownRef = useRef(null);
+
+  // Org members for @mention
+  const currentOrg = useOrgStore((s) => s.currentOrg);
+  const orgMembers = useOrgStore((s) => s.members);
+  const fetchMembers = useOrgStore((s) => s.fetchMembers);
+
   const taskId = task?._id || null;
+
+  // Fetch org members when panel opens (if not already loaded)
+  useEffect(() => {
+    if (isOpen && currentOrg?._id && orgMembers.length === 0) {
+      fetchMembers(currentOrg._id).catch(() => {});
+    }
+  }, [isOpen, currentOrg?._id, orgMembers.length, fetchMembers]);
+
+  // Filter members based on mention query
+  const filteredMembers = useMemo(() => {
+    if (!showMentionDropdown) return [];
+    const q = mentionQuery.toLowerCase();
+    return orgMembers.filter(
+      (m) =>
+        m.name?.toLowerCase().includes(q) &&
+        !mentionedUsers.some((mu) => mu._id === m._id)
+    );
+  }, [orgMembers, mentionQuery, showMentionDropdown, mentionedUsers]);
 
   // Reset state when the panel is opened for a new task
   useEffect(() => {
@@ -42,6 +74,8 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
       setComments([]);
       setText('');
       setError('');
+      setMentionedUsers([]);
+      setShowMentionDropdown(false);
       return;
     }
 
@@ -106,9 +140,11 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
       setSubmitting(true);
       setError('');
       try {
-        const created = await commentService.addComment(taskId, trimmed);
+        const mentionIds = mentionedUsers.map((u) => u._id);
+        const created = await commentService.addComment(taskId, trimmed, mentionIds);
         setComments((prev) => [...prev, created]);
         setText('');
+        setMentionedUsers([]);
         // Return focus to the textarea for rapid posting
         textareaRef.current?.focus();
         // Repoll notifications — the comment may have created one for the
@@ -124,10 +160,92 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
         setSubmitting(false);
       }
     },
-    [text, submitting, taskId, refreshNotifications]
+    [text, submitting, taskId, refreshNotifications, mentionedUsers]
+  );
+
+  // Insert a selected mention into the text
+  const insertMention = useCallback(
+    (member) => {
+      const before = text.slice(0, mentionStartIndex);
+      const after = text.slice(
+        mentionStartIndex + mentionQuery.length + 1 // +1 for the @ char
+      );
+      const newText = `${before}@${member.name} ${after}`;
+      setText(newText);
+      setMentionedUsers((prev) => {
+        if (prev.some((u) => u._id === member._id)) return prev;
+        return [...prev, { _id: member._id, name: member.name }];
+      });
+      setShowMentionDropdown(false);
+      setMentionQuery('');
+      setMentionStartIndex(-1);
+      setMentionHighlight(0);
+      // Refocus textarea
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    },
+    [text, mentionStartIndex, mentionQuery]
+  );
+
+  // Detect @ in textarea input
+  const handleTextChange = useCallback(
+    (e) => {
+      const val = e.target.value;
+      setText(val);
+
+      const cursorPos = e.target.selectionStart;
+      // Look backwards from cursor for an unmatched @
+      const textBeforeCursor = val.slice(0, cursorPos);
+      const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
+      if (lastAtIndex >= 0) {
+        // Check that the @ is at start or preceded by whitespace
+        const charBefore = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
+        if (charBefore === ' ' || charBefore === '\n' || lastAtIndex === 0) {
+          const query = textBeforeCursor.slice(lastAtIndex + 1);
+          // Only show dropdown if query has no spaces (still typing the name)
+          if (!query.includes(' ')) {
+            setMentionStartIndex(lastAtIndex);
+            setMentionQuery(query);
+            setShowMentionDropdown(true);
+            setMentionHighlight(0);
+            return;
+          }
+        }
+      }
+      setShowMentionDropdown(false);
+      setMentionQuery('');
+    },
+    []
   );
 
   const handleKeyDown = (e) => {
+    // Mention dropdown keyboard navigation
+    if (showMentionDropdown && filteredMembers.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionHighlight((prev) =>
+          prev < filteredMembers.length - 1 ? prev + 1 : 0
+        );
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionHighlight((prev) =>
+          prev > 0 ? prev - 1 : filteredMembers.length - 1
+        );
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertMention(filteredMembers[mentionHighlight]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowMentionDropdown(false);
+        return;
+      }
+    }
     // Cmd/Ctrl + Enter to submit from the textarea
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -375,26 +493,87 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
               {error}
             </p>
           ) : null}
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Add a comment..."
-            rows={3}
-            disabled={submitting}
-            className="w-full font-body transition-colors duration-150 focus:outline-none focus:border-[color:var(--color-accent)] focus:shadow-[0_0_0_3px_var(--color-accent-light)]"
-            style={{
-              resize: 'none',
-              fontSize: 14,
-              padding: '10px 12px',
-              color: 'var(--color-text-primary)',
-              background: 'var(--color-bg-surface, #FFFFFF)',
-              border: '1.5px solid var(--color-border-strong)',
-              borderRadius: 'var(--radius-md)',
-              lineHeight: 1.5,
-            }}
-          />
+          <div style={{ position: 'relative' }}>
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Add a comment... (type @ to mention)"
+              rows={3}
+              disabled={submitting}
+              className="w-full font-body transition-colors duration-150 focus:outline-none focus:border-[color:var(--color-accent)] focus:shadow-[0_0_0_3px_var(--color-accent-light)]"
+              style={{
+                resize: 'none',
+                fontSize: 14,
+                padding: '10px 12px',
+                color: 'var(--color-text-primary)',
+                background: 'var(--color-bg-surface, #FFFFFF)',
+                border: '1.5px solid var(--color-border-strong)',
+                borderRadius: 'var(--radius-md)',
+                lineHeight: 1.5,
+              }}
+            />
+            {/* @mention dropdown */}
+            {showMentionDropdown && filteredMembers.length > 0 && (
+              <ul
+                ref={mentionDropdownRef}
+                style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  right: 0,
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  background: '#FFFFFF',
+                  border: '1.5px solid var(--color-border-strong)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-lg)',
+                  margin: '0 0 4px 0',
+                  padding: '4px 0',
+                  listStyle: 'none',
+                  zIndex: 110,
+                }}
+              >
+                {filteredMembers.map((member, idx) => (
+                  <li
+                    key={member._id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertMention(member);
+                    }}
+                    onMouseEnter={() => setMentionHighlight(idx)}
+                    className="flex items-center gap-2 cursor-pointer"
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: 'var(--color-text-primary)',
+                      background:
+                        idx === mentionHighlight
+                          ? 'var(--color-bg-subtle, #F3F4F6)'
+                          : 'transparent',
+                      transition: 'background 100ms',
+                    }}
+                  >
+                    <Avatar user={member} size={22} />
+                    <span>{member.name}</span>
+                    {member.email && (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--color-text-muted)',
+                          marginLeft: 'auto',
+                        }}
+                      >
+                        {member.email}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <div className="mt-2 flex items-center justify-between gap-3">
             <span
               className="font-body"
@@ -470,6 +649,57 @@ const MetaRow = ({ label, children }) => (
 );
 
 /**
+ * Render comment text with @mentions highlighted.
+ * Matches @Name patterns against the comment's populated mentions array.
+ */
+const RenderCommentText = ({ text, mentions }) => {
+  if (!mentions || mentions.length === 0) {
+    return <>{text}</>;
+  }
+
+  // Build a regex that matches any mentioned name prefixed by @
+  const mentionNames = mentions
+    .map((m) => m.name)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length); // longest first to avoid partial matches
+
+  if (mentionNames.length === 0) return <>{text}</>;
+
+  const escaped = mentionNames.map((n) =>
+    n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  );
+  const regex = new RegExp(`(@(?:${escaped.join('|')}))`, 'g');
+
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (regex.test(part)) {
+          // Reset lastIndex since we reuse the regex
+          regex.lastIndex = 0;
+          return (
+            <span
+              key={i}
+              style={{
+                color: 'var(--color-accent)',
+                fontWeight: 600,
+                background: 'var(--color-accent-light, rgba(37,99,235,0.08))',
+                borderRadius: 3,
+                padding: '0 2px',
+              }}
+            >
+              {part}
+            </span>
+          );
+        }
+        regex.lastIndex = 0;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+};
+
+/**
  * One comment entry inside the thread.
  */
 const CommentItem = ({ comment }) => {
@@ -508,7 +738,7 @@ const CommentItem = ({ comment }) => {
             wordBreak: 'break-word',
           }}
         >
-          {comment.text}
+          <RenderCommentText text={comment.text} mentions={comment.mentions} />
         </p>
       </div>
     </div>

@@ -1,10 +1,12 @@
 const Task = require('../models/Task');
 const Board = require('../models/Board');
 const Comment = require('../models/Comment');
+const User = require('../models/User');
 const Organisation = require('../models/Organisation');
 const {
   createNotificationsForUsers,
 } = require('../services/notificationService');
+const { sendMentionEmail } = require('../services/emailService');
 
 /**
  * Check if a user has read access to the given task. Returns
@@ -62,6 +64,7 @@ const getComments = async (req, res) => {
 
     const comments = await Comment.find({ task: taskId })
       .populate('author', 'name profilePic email')
+      .populate('mentions', 'name profilePic email')
       .sort({ createdAt: 1 });
 
     return res.json({ comments });
@@ -81,7 +84,7 @@ const addComment = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { taskId } = req.params;
-    const { text } = req.body || {};
+    const { text, mentions } = req.body || {};
 
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Comment text is required' });
@@ -95,16 +98,29 @@ const addComment = async (req, res) => {
       return res.status(access.status).json({ error: access.error });
     }
 
+    // Validate mention IDs — only allow mentioning org members
+    let validMentions = [];
+    if (Array.isArray(mentions) && mentions.length > 0 && !task.isPersonal) {
+      const board = await Board.findById(task.board);
+      if (board) {
+        const org = await Organisation.findById(board.organisation);
+        if (org) {
+          const memberSet = new Set(org.members.map((m) => m.toString()));
+          validMentions = mentions.filter((id) => memberSet.has(id.toString()));
+        }
+      }
+    }
+
     const comment = await Comment.create({
       task: taskId,
       author: userId,
       text: text.trim(),
+      mentions: validMentions,
     });
 
-    const populated = await Comment.findById(comment._id).populate(
-      'author',
-      'name profilePic email'
-    );
+    const populated = await Comment.findById(comment._id)
+      .populate('author', 'name profilePic email')
+      .populate('mentions', 'name profilePic email');
 
     // Notify task assignees (except the commenter) about the new comment.
     // Personal tasks have no other assignees — they're skipped naturally.
@@ -116,6 +132,48 @@ const addComment = async (req, res) => {
         message: `${authorName} commented on "${task.name}"`,
         taskId: task._id,
         excludeUserId: userId,
+      });
+    }
+
+    // Notify mentioned users (separate from assignee notifications)
+    if (validMentions.length > 0) {
+      const authorName = populated.author?.name || 'Someone';
+      await createNotificationsForUsers({
+        userIds: validMentions,
+        type: 'mentioned',
+        message: `${authorName} mentioned you in a comment on "${task.name}"`,
+        taskId: task._id,
+        excludeUserId: userId,
+      });
+
+      // Send email to each mentioned user (best-effort)
+      const mentionIds = validMentions.filter((id) => id.toString() !== userId);
+      const mentionedUsers = await User.find(
+        { _id: { $in: mentionIds } },
+        'email name'
+      );
+
+      const boardId = task.board?.toString?.() || task.board;
+      const taskLink = `${process.env.CLIENT_URL || 'http://localhost:5173'}/boards/${boardId}`;
+
+      const emailResults = await Promise.allSettled(
+        mentionedUsers.map((u) =>
+          sendMentionEmail({
+            to: u.email,
+            mentionedByName: authorName,
+            taskName: task.name,
+            commentText: text.trim(),
+            taskLink,
+          })
+        )
+      );
+      emailResults.forEach((result, i) => {
+        if (result.status === 'rejected') {
+          console.error(
+            `[email] Failed to send mention email to ${mentionedUsers[i]?.email}:`,
+            result.reason
+          );
+        }
       });
     }
 

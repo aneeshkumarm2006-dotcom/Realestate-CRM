@@ -16,8 +16,12 @@ export const getComments = async (taskId) => {
  *
  * Add a new comment to a task. The current user is attached server-side
  * as the author. Returns the populated comment.
+ *
+ * @param {string}   taskId   — task to comment on
+ * @param {string}   text     — comment body
+ * @param {string[]} mentions — array of user IDs that were @mentioned
  */
-export const addComment = async (taskId, text) => {
-  const { data } = await api.post(`/api/tasks/${taskId}/comments`, { text });
+export const addComment = async (taskId, text, mentions = []) => {
+  const { data } = await api.post(`/api/tasks/${taskId}/comments`, { text, mentions });
   return data.comment;
 };

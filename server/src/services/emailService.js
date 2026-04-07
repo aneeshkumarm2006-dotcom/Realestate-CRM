@@ -195,4 +195,74 @@ const sendInviteEmail = async ({ to, orgName, inviteLink, inviteCode }) => {
   });
 };
 
-module.exports = { sendTaskAssignmentEmail, sendInviteEmail };
+const buildMentionHtml = ({ mentionedByName, taskName, commentText, taskLink }) => {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You were mentioned in a comment</title>
+  <style>
+    body { margin: 0; padding: 0; background: #F3F4F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif; }
+    .wrapper { max-width: 560px; margin: 40px auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .header { background: #2563EB; padding: 28px 32px; }
+    .header-logo { font-size: 22px; font-weight: 800; color: #FFFFFF; letter-spacing: -0.02em; }
+    .body { padding: 32px; }
+    .title { font-size: 20px; font-weight: 700; color: #111827; margin: 0 0 6px; }
+    .subtitle { font-size: 14px; color: #6B7280; margin: 0 0 24px; line-height: 1.5; }
+    .comment-card { background: #F9FAFB; border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 20px 24px; margin-bottom: 28px; }
+    .comment-author { font-size: 13px; font-weight: 600; color: #374151; margin: 0 0 8px; }
+    .comment-text { font-size: 14px; color: #111827; line-height: 1.55; margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .task-name { font-size: 12px; font-weight: 600; color: #6B7280; margin: 16px 0 0; }
+    .cta { text-align: center; }
+    .cta a { display: inline-block; background: #2563EB; color: #FFFFFF !important; font-size: 14px; font-weight: 600; padding: 13px 32px; border-radius: 8px; text-decoration: none; }
+    .footer { background: #F9FAFB; border-top: 1px solid #E5E7EB; padding: 18px 32px; }
+    .footer p { font-size: 12px; color: #9CA3AF; margin: 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="header-logo">Macan</div>
+    </div>
+    <div class="body">
+      <p class="title">You were mentioned in a comment</p>
+      <p class="subtitle"><strong>${escapeHtml(mentionedByName)}</strong> mentioned you in a comment on a task.</p>
+      <div class="comment-card">
+        <p class="comment-author">${escapeHtml(mentionedByName)} wrote:</p>
+        <p class="comment-text">${escapeHtml(commentText)}</p>
+        <p class="task-name">Task: ${escapeHtml(taskName)}</p>
+      </div>
+      <div class="cta">
+        <a href="${taskLink}">View Task &rarr;</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>You received this email because you were mentioned in a comment in Macan. If you believe this is an error, contact your administrator.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+};
+
+/**
+ * Send a mention-notification email to a single recipient.
+ *
+ * @param {object} opts
+ * @param {string} opts.to              — recipient email address
+ * @param {string} opts.mentionedByName — name of the person who mentioned them
+ * @param {string} opts.taskName        — task title
+ * @param {string} opts.commentText     — the comment body
+ * @param {string} opts.taskLink        — direct URL to the board/task
+ */
+const sendMentionEmail = async ({ to, mentionedByName, taskName, commentText, taskLink }) => {
+  const html = buildMentionHtml({ mentionedByName, taskName, commentText, taskLink });
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || 'noreply@davnoot.com',
+    to,
+    subject: `${mentionedByName} mentioned you in "${taskName}"`,
+    html,
+  });
+};
+
+module.exports = { sendTaskAssignmentEmail, sendInviteEmail, sendMentionEmail };
