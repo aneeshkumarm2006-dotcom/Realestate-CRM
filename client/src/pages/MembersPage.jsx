@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Trash2, ChevronDown } from 'lucide-react';
+import { Trash2, ChevronDown, Copy, Check, Mail, Send, Link, Hash } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -146,6 +146,227 @@ const RoleDropdown = ({ currentRole, onChange, disabled }) => {
   );
 };
 
+const InviteSection = ({ currentOrg }) => {
+  const inviteCode = currentOrg?.inviteCode || '';
+  const inviteLink = inviteCode
+    ? `${window.location.origin}/onboarding?invite=${inviteCode}`
+    : '';
+
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleCopy = (text, type) => {
+    navigator.clipboard.writeText(text).then(() => {
+      if (type === 'link') {
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+      } else {
+        setCopiedCode(true);
+        setTimeout(() => setCopiedCode(false), 2000);
+      }
+    });
+  };
+
+  const handleSend = async () => {
+    if (!email.trim() || !currentOrg?._id) return;
+    setSending(true);
+    setError('');
+    setSent(false);
+    try {
+      await orgService.sendInvite(currentOrg._id, email.trim());
+      setSent(true);
+      setEmail('');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to send invite. Try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleSend();
+  };
+
+  return (
+    <div
+      className="mb-6"
+      style={{
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-lg)',
+        background: 'var(--color-bg-surface)',
+        boxShadow: 'var(--shadow-card)',
+        padding: '20px 24px',
+      }}
+    >
+      <h2
+        className="font-display font-bold text-[15px] mb-4"
+        style={{ color: 'var(--color-text-primary)' }}
+      >
+        Invite People
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        {/* Invite Link */}
+        <div>
+          <p
+            className="font-body text-[11px] font-semibold uppercase tracking-widest mb-1.5 flex items-center gap-1.5"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <Link size={12} />
+            Invite Link
+          </p>
+          <div
+            className="flex items-center gap-2"
+            style={{
+              border: '1.5px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 10px',
+              background: 'var(--color-bg-input)',
+              height: 36,
+            }}
+          >
+            <span
+              className="flex-1 font-body text-[12px] truncate select-all"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              {inviteLink || 'Loading…'}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleCopy(inviteLink, 'link')}
+              disabled={!inviteLink}
+              aria-label="Copy invite link"
+              className="flex items-center gap-1 font-body text-[12px] font-medium shrink-0 transition-colors"
+              style={{
+                color: copiedLink ? 'var(--color-success, #16a34a)' : 'var(--color-accent)',
+                background: 'none',
+                border: 'none',
+                cursor: inviteLink ? 'pointer' : 'not-allowed',
+                padding: '2px 4px',
+              }}
+            >
+              {copiedLink ? <Check size={13} /> : <Copy size={13} />}
+              {copiedLink ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+
+        {/* Invite Code */}
+        <div>
+          <p
+            className="font-body text-[11px] font-semibold uppercase tracking-widest mb-1.5 flex items-center gap-1.5"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <Hash size={12} />
+            Invite Code
+          </p>
+          <div
+            className="flex items-center gap-2"
+            style={{
+              border: '1.5px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 10px',
+              background: 'var(--color-bg-input)',
+              height: 36,
+            }}
+          >
+            <span
+              className="flex-1 font-body text-[14px] font-semibold tracking-widest select-all"
+              style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15em' }}
+            >
+              {inviteCode || 'Loading…'}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleCopy(inviteCode, 'code')}
+              disabled={!inviteCode}
+              aria-label="Copy invite code"
+              className="flex items-center gap-1 font-body text-[12px] font-medium shrink-0 transition-colors"
+              style={{
+                color: copiedCode ? 'var(--color-success, #16a34a)' : 'var(--color-accent)',
+                background: 'none',
+                border: 'none',
+                cursor: inviteCode ? 'pointer' : 'not-allowed',
+                padding: '2px 4px',
+              }}
+            >
+              {copiedCode ? <Check size={13} /> : <Copy size={13} />}
+              {copiedCode ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Send invite via email */}
+      <div>
+        <p
+          className="font-body text-[11px] font-semibold uppercase tracking-widest mb-1.5 flex items-center gap-1.5"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          <Mail size={12} />
+          Send Invite via Email
+        </p>
+        <div className="flex gap-2">
+          <div
+            className="flex items-center flex-1"
+            style={{
+              border: '1.5px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '0 10px',
+              background: 'var(--color-bg-input)',
+              height: 36,
+            }}
+          >
+            <Mail size={14} style={{ color: 'var(--color-text-muted)', marginRight: 6, flexShrink: 0 }} />
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setSent(false); setError(''); }}
+              onKeyDown={handleKeyDown}
+              placeholder="colleague@example.com"
+              className="flex-1 font-body bg-transparent focus:outline-none"
+              style={{ fontSize: 13, color: 'var(--color-text-primary)', border: 'none' }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!email.trim() || sending}
+            className="flex items-center gap-1.5 font-body font-semibold text-[13px] shrink-0 transition-colors"
+            style={{
+              height: 36,
+              padding: '0 16px',
+              background: 'var(--color-accent)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              cursor: !email.trim() || sending ? 'not-allowed' : 'pointer',
+              opacity: !email.trim() || sending ? 0.6 : 1,
+            }}
+          >
+            <Send size={13} />
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+        {sent && (
+          <p className="font-body text-[13px] mt-2" style={{ color: 'var(--color-success, #16a34a)' }}>
+            Invite sent successfully!
+          </p>
+        )}
+        {error && (
+          <p className="font-body text-[13px] mt-2" style={{ color: 'var(--color-error, #dc2626)' }}>
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const MembersPage = () => {
   const user = useAuthStore((s) => s.user);
   const currentOrg = useOrgStore((s) => s.currentOrg);
@@ -219,6 +440,8 @@ const MembersPage = () => {
             {members.length} {members.length === 1 ? 'person' : 'people'} in this workspace
           </p>
         </header>
+
+        {isAdmin && <InviteSection currentOrg={currentOrg} />}
 
         <div
           className="bg-surface"
