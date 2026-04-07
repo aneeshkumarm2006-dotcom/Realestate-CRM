@@ -493,9 +493,9 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
               {error}
             </p>
           ) : null}
-          <div style={{ position: 'relative' }}>
-            {/* Highlight backdrop — renders behind the textarea to show
-                coloured @mentions while the textarea handles actual input. */}
+          <div style={{ position: 'relative', background: 'var(--color-bg-surface, #FFFFFF)', borderRadius: 'var(--radius-md)' }}>
+            {/* Highlight backdrop — sits behind the transparent textarea
+                and paints the actual visible text + coloured @mentions. */}
             <div
               aria-hidden="true"
               className="font-body"
@@ -514,7 +514,6 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
                 wordBreak: 'break-word',
                 overflowY: 'auto',
                 pointerEvents: 'none',
-                color: 'transparent',
               }}
             >
               <HighlightedText text={text} mentionedUsers={mentionedUsers} />
@@ -525,7 +524,6 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
               onChange={handleTextChange}
               onKeyDown={handleKeyDown}
               onScroll={(e) => {
-                // Sync scroll between textarea and highlight backdrop
                 const backdrop = e.target.previousElementSibling;
                 if (backdrop) backdrop.scrollTop = e.target.scrollTop;
               }}
@@ -537,9 +535,9 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
                 resize: 'none',
                 fontSize: 14,
                 padding: '10px 12px',
-                color: text && mentionedUsers.length > 0 ? 'transparent' : 'var(--color-text-primary)',
+                color: 'transparent',
                 caretColor: 'var(--color-text-primary)',
-                background: 'var(--color-bg-surface, #FFFFFF)',
+                background: 'transparent',
                 border: '1.5px solid var(--color-border-strong)',
                 borderRadius: 'var(--radius-md)',
                 lineHeight: 1.5,
