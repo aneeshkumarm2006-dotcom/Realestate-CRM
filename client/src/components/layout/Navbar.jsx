@@ -119,7 +119,7 @@ const NavLinks = ({ isAdmin, onNavigate }) => {
 
 /* ----------------------------- Org Switcher ----------------------------- */
 
-const OrgSwitcher = () => {
+const OrgSwitcherPanel = ({ open, onClose }) => {
   const navigate = useNavigate();
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const orgs = useOrgStore((s) => s.orgs);
@@ -128,34 +128,33 @@ const OrgSwitcher = () => {
   const joinOrg = useOrgStore((s) => s.joinOrg);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
 
-  const [open, setOpen] = useState(false);
   const [mode, setMode] = useState(null); // null | 'create' | 'join'
   const [orgName, setOrgName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const ref = useRef(null);
 
   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-        setMode(null);
-        setError('');
-      }
+    if (!open) {
+      setMode(null);
+      setError('');
+      setOrgName('');
+      setInviteCode('');
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'Escape') onClose();
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
 
   const handleSwitch = (orgId) => {
-    if (orgId === currentOrg?._id) {
-      setOpen(false);
-      return;
-    }
+    if (orgId === currentOrg?._id) { onClose(); return; }
     setCurrentOrg(orgId);
-    setOpen(false);
-    setMode(null);
+    onClose();
     navigate('/dashboard');
   };
 
@@ -169,7 +168,7 @@ const OrgSwitcher = () => {
       await fetchCurrentUser();
       setOrgName('');
       setMode(null);
-      setOpen(false);
+      onClose();
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.error || 'Could not create organisation');
@@ -188,7 +187,7 @@ const OrgSwitcher = () => {
       await fetchCurrentUser();
       setInviteCode('');
       setMode(null);
-      setOpen(false);
+      onClose();
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid invite code');
@@ -197,62 +196,53 @@ const OrgSwitcher = () => {
     }
   };
 
-  const orgInitial = currentOrg?.name
-    ? currentOrg.name.trim().charAt(0).toUpperCase()
-    : '?';
+  if (!open) return null;
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((v) => !v);
-          if (open) { setMode(null); setError(''); }
-        }}
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
-        aria-label="Switch organisation"
-      >
-        <div
-          className="flex items-center justify-center font-display font-bold text-white shrink-0"
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--color-accent)',
-            fontSize: 12,
-          }}
-          aria-hidden="true"
-        >
-          {orgInitial}
-        </div>
-        <span className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)] truncate max-w-[120px]">
-          {currentOrg?.name || 'Select org'}
-        </span>
-        <ChevronDown size={14} color="var(--color-text-muted)" aria-hidden="true" />
-      </button>
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-50"
+        style={{ background: 'rgba(0,0,0,0.25)' }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
-      {open && (
+      {/* Side panel */}
+      <div
+        className="fixed left-0 top-0 bottom-0 z-50 flex flex-col"
+        style={{
+          width: 300,
+          background: 'var(--color-bg-surface)',
+          borderRight: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-lg)',
+        }}
+      >
+        {/* Panel header */}
         <div
-          className="absolute left-0 top-full mt-1 z-50"
-          style={{
-            minWidth: 260,
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-lg)',
-            background: 'var(--color-bg-surface)',
-            boxShadow: 'var(--shadow-lg)',
-            overflow: 'hidden',
-          }}
+          className="flex items-center justify-between px-4 py-3 shrink-0"
+          style={{ borderBottom: '1px solid var(--color-border)' }}
         >
-          {/* Org list */}
+          <span className="font-display font-bold text-[15px] text-[color:var(--color-text-primary)]">
+            Organisations
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+            style={{ width: 28, height: 28 }}
+          >
+            <XIcon size={16} color="var(--color-text-muted)" aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Panel body */}
+        <div className="flex-1 overflow-y-auto">
           {!mode && (
             <>
-              <div
-                className="px-3 py-2 font-body font-semibold text-[11px] uppercase tracking-wide text-[color:var(--color-text-muted)]"
-                style={{ borderBottom: '1px solid var(--color-border)' }}
-              >
-                Organisations
-              </div>
-              <div className="max-h-[200px] overflow-y-auto">
+              {/* Org list */}
+              <div className="py-2">
                 {orgs.map((org) => {
                   const isActive = org._id === currentOrg?._id;
                   const initial = org.name ? org.name.trim().charAt(0).toUpperCase() : '?';
@@ -261,22 +251,22 @@ const OrgSwitcher = () => {
                       key={org._id}
                       type="button"
                       onClick={() => handleSwitch(org._id)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
                     >
                       <div
                         className="flex items-center justify-center font-display font-bold text-white shrink-0"
                         style={{
-                          width: 28,
-                          height: 28,
+                          width: 32,
+                          height: 32,
                           borderRadius: 'var(--radius-sm)',
                           background: isActive ? 'var(--color-accent)' : getAvatarColor(org.name || ''),
-                          fontSize: 13,
+                          fontSize: 14,
                         }}
                         aria-hidden="true"
                       >
                         {initial}
                       </div>
-                      <span className="flex-1 font-body text-[13px] text-[color:var(--color-text-primary)] truncate font-medium">
+                      <span className="flex-1 font-body text-[14px] text-[color:var(--color-text-primary)] truncate font-medium">
                         {org.name}
                       </span>
                       {isActive && (
@@ -286,24 +276,49 @@ const OrgSwitcher = () => {
                   );
                 })}
               </div>
-              <div style={{ borderTop: '1px solid var(--color-border)' }}>
+
+              {/* Actions */}
+              <div
+                className="py-2"
+                style={{ borderTop: '1px solid var(--color-border)' }}
+              >
                 <button
                   type="button"
                   onClick={() => { setMode('create'); setError(''); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
                 >
-                  <Plus size={16} color="var(--color-accent)" aria-hidden="true" />
-                  <span className="font-body text-[13px] font-medium text-[color:var(--color-accent)]">
+                  <div
+                    className="flex items-center justify-center shrink-0"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1.5px dashed var(--color-accent)',
+                    }}
+                  >
+                    <Plus size={16} color="var(--color-accent)" aria-hidden="true" />
+                  </div>
+                  <span className="font-body text-[14px] font-medium text-[color:var(--color-accent)]">
                     Create Organisation
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setMode('join'); setError(''); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
                 >
-                  <Users size={16} color="var(--color-text-secondary)" aria-hidden="true" />
-                  <span className="font-body text-[13px] font-medium text-[color:var(--color-text-secondary)]">
+                  <div
+                    className="flex items-center justify-center shrink-0"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1.5px dashed var(--color-border)',
+                    }}
+                  >
+                    <Users size={16} color="var(--color-text-secondary)" aria-hidden="true" />
+                  </div>
+                  <span className="font-body text-[14px] font-medium text-[color:var(--color-text-secondary)]">
                     Join Organisation
                   </span>
                 </button>
@@ -317,12 +332,12 @@ const OrgSwitcher = () => {
               <button
                 type="button"
                 onClick={() => { setMode(null); setError(''); }}
-                className="flex items-center gap-1 font-body text-[12px] text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] mb-3"
+                className="flex items-center gap-1 font-body text-[12px] text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] mb-4"
               >
                 <ArrowLeft size={14} aria-hidden="true" />
                 Back
               </button>
-              <p className="font-display font-bold text-[14px] text-[color:var(--color-text-primary)] mb-3">
+              <p className="font-display font-bold text-[15px] text-[color:var(--color-text-primary)] mb-4">
                 Create Organisation
               </p>
               <form onSubmit={handleCreate}>
@@ -360,12 +375,12 @@ const OrgSwitcher = () => {
               <button
                 type="button"
                 onClick={() => { setMode(null); setError(''); }}
-                className="flex items-center gap-1 font-body text-[12px] text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] mb-3"
+                className="flex items-center gap-1 font-body text-[12px] text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] mb-4"
               >
                 <ArrowLeft size={14} aria-hidden="true" />
                 Back
               </button>
-              <p className="font-display font-bold text-[14px] text-[color:var(--color-text-primary)] mb-3">
+              <p className="font-display font-bold text-[15px] text-[color:var(--color-text-primary)] mb-4">
                 Join Organisation
               </p>
               <form onSubmit={handleJoin}>
@@ -400,8 +415,48 @@ const OrgSwitcher = () => {
             </div>
           )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
+  );
+};
+
+const OrgSwitcher = () => {
+  const currentOrg = useOrgStore((s) => s.currentOrg);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  const orgInitial = currentOrg?.name
+    ? currentOrg.name.trim().charAt(0).toUpperCase()
+    : '?';
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setPanelOpen(true)}
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+        aria-label="Switch organisation"
+      >
+        <div
+          className="flex items-center justify-center font-display font-bold text-white shrink-0"
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--color-accent)',
+            fontSize: 12,
+          }}
+          aria-hidden="true"
+        >
+          {orgInitial}
+        </div>
+        <span className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)] truncate max-w-[120px]">
+          {currentOrg?.name || 'Select org'}
+        </span>
+        <ChevronDown size={14} color="var(--color-text-muted)" aria-hidden="true" />
+      </button>
+
+      <OrgSwitcherPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+    </>
   );
 };
 
