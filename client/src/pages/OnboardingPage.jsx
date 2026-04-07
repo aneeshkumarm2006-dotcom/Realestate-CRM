@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, Users } from 'lucide-react';
 import useOrgStore from '../store/orgStore';
@@ -17,6 +17,23 @@ const OnboardingPage = () => {
   const [inviteCode, setInviteCode] = useState(prefilledCode);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const autoJoinAttempted = useRef(false);
+
+  // Auto-join when arriving with an invite code from the URL
+  useEffect(() => {
+    if (prefilledCode && !autoJoinAttempted.current) {
+      autoJoinAttempted.current = true;
+      setSubmitting(true);
+      joinOrg(prefilledCode)
+        .then(() => fetchCurrentUser())
+        .then(() => navigate('/dashboard', { replace: true }))
+        .catch((err) => {
+          setError(err.response?.data?.error || 'Invalid invite code');
+          setSubmitting(false);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();

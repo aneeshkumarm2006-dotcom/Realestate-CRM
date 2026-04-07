@@ -24,6 +24,16 @@ const AuthCallbackPage = () => {
         return;
       }
 
+      // If the user arrived via an invite link (or any protected page) before
+      // being redirected to login, honour that original destination.
+      const savedRedirect = sessionStorage.getItem('postLoginRedirect');
+      sessionStorage.removeItem('postLoginRedirect');
+
+      if (savedRedirect) {
+        navigate(savedRedirect, { replace: true });
+        return;
+      }
+
       const hasOrg =
         Array.isArray(user.organisations) && user.organisations.length > 0;
       navigate(hasOrg ? '/dashboard' : '/onboarding', { replace: true });

@@ -5,6 +5,7 @@ import {
   Route,
   Navigate,
   Outlet,
+  useLocation,
 } from 'react-router-dom';
 import useAuthStore from './store/authStore';
 import useOrgStore from './store/orgStore';
@@ -26,7 +27,19 @@ import ToastContainer from './components/ui/Toast';
  */
 const ProtectedRoute = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    // Save intended destination (e.g. /onboarding?invite=xxx) so we can
+    // redirect back after login instead of losing query params.
+    const intended = location.pathname + location.search;
+    if (intended !== '/login') {
+      sessionStorage.setItem('postLoginRedirect', intended);
+    }
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
 };
 
 /**
