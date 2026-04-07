@@ -1,4 +1,4 @@
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, MessageSquare } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
 
@@ -115,27 +115,38 @@ const TaskRow = ({
 
       {/* Due Date */}
       <td style={{ width: 140, padding: '0 16px' }}>
-        {task.dueDate ? (
-          <span
-            className="font-body"
-            style={{
-              fontSize: 13,
-              fontWeight: overdue ? 600 : 500,
-              color: overdue
-                ? 'var(--color-status-stuck)'
-                : 'var(--color-text-primary)',
-            }}
+        <div className="flex items-center gap-2">
+          {task.dueDate ? (
+            <span
+              className="font-body"
+              style={{
+                fontSize: 13,
+                fontWeight: overdue ? 600 : 500,
+                color: overdue
+                  ? 'var(--color-status-stuck)'
+                  : 'var(--color-text-primary)',
+              }}
+            >
+              {formatShortDate(task.dueDate)}
+            </span>
+          ) : (
+            <span
+              className="font-body"
+              style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
+            >
+              —
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => onOpen?.(task)}
+            aria-label="Open comments"
+            className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+            style={{ width: 24, height: 24, flexShrink: 0, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
           >
-            {formatShortDate(task.dueDate)}
-          </span>
-        ) : (
-          <span
-            className="font-body"
-            style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
-          >
-            —
-          </span>
-        )}
+            <MessageSquare size={14} color="var(--color-text-muted)" aria-hidden="true" />
+          </button>
+        </div>
       </td>
 
       {/* Actions — only rendered when a handler is supplied (admin only) */}
