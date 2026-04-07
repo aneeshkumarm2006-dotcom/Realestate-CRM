@@ -494,11 +494,41 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
             </p>
           ) : null}
           <div style={{ position: 'relative' }}>
+            {/* Highlight backdrop — renders behind the textarea to show
+                coloured @mentions while the textarea handles actual input. */}
+            <div
+              aria-hidden="true"
+              className="font-body"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                padding: '10px 12px',
+                fontSize: 14,
+                lineHeight: 1.5,
+                border: '1.5px solid transparent',
+                borderRadius: 'var(--radius-md)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflowY: 'auto',
+                pointerEvents: 'none',
+                color: 'transparent',
+              }}
+            >
+              <HighlightedText text={text} mentionedUsers={mentionedUsers} />
+            </div>
             <textarea
               ref={textareaRef}
               value={text}
               onChange={handleTextChange}
               onKeyDown={handleKeyDown}
+              onScroll={(e) => {
+                // Sync scroll between textarea and highlight backdrop
+                const backdrop = e.target.previousElementSibling;
+                if (backdrop) backdrop.scrollTop = e.target.scrollTop;
+              }}
               placeholder="Add a comment... (type @ to mention)"
               rows={3}
               disabled={submitting}
@@ -507,11 +537,14 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
                 resize: 'none',
                 fontSize: 14,
                 padding: '10px 12px',
-                color: 'var(--color-text-primary)',
+                color: text && mentionedUsers.length > 0 ? 'transparent' : 'var(--color-text-primary)',
+                caretColor: 'var(--color-text-primary)',
                 background: 'var(--color-bg-surface, #FFFFFF)',
                 border: '1.5px solid var(--color-border-strong)',
                 borderRadius: 'var(--radius-md)',
                 lineHeight: 1.5,
+                position: 'relative',
+                zIndex: 1,
               }}
             />
             {/* @mention dropdown */}
@@ -647,6 +680,62 @@ const MetaRow = ({ label, children }) => (
     </dd>
   </div>
 );
+
+/**
+ * Live highlight overlay for the composer textarea.
+ * Renders the same text with @mentions shown as coloured spans.
+ * Non-mention text is transparent so only the highlights are visible.
+ */
+const HighlightedText = ({ text, mentionedUsers }) => {
+  if (!text || mentionedUsers.length === 0) {
+    return <span style={{ color: 'var(--color-text-primary)' }}>{text}</span>;
+  }
+
+  const names = mentionedUsers
+    .map((u) => u.name)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  if (names.length === 0) {
+    return <span style={{ color: 'var(--color-text-primary)' }}>{text}</span>;
+  }
+
+  const escaped = names.map((n) =>
+    n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  );
+  const regex = new RegExp(`(@(?:${escaped.join('|')}))`, 'g');
+
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (regex.test(part)) {
+          regex.lastIndex = 0;
+          return (
+            <span
+              key={i}
+              style={{
+                color: 'var(--color-accent, #2563EB)',
+                fontWeight: 600,
+                background: 'rgba(37,99,235,0.1)',
+                borderRadius: 3,
+                padding: '1px 2px',
+              }}
+            >
+              {part}
+            </span>
+          );
+        }
+        regex.lastIndex = 0;
+        return (
+          <span key={i} style={{ color: 'var(--color-text-primary)' }}>
+            {part}
+          </span>
+        );
+      })}
+    </>
+  );
+};
 
 /**
  * Render comment text with @mentions highlighted.
