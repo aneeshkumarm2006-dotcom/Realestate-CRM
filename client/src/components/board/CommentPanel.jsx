@@ -141,7 +141,10 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
       setError('');
       try {
         const mentionIds = mentionedUsers.map((u) => u._id);
-        const created = await commentService.addComment(taskId, trimmed, mentionIds);
+        // Prepend @mentions to the text so the stored comment shows them
+        const mentionPrefix = mentionedUsers.map((u) => `@${u.name}`).join(' ');
+        const fullText = mentionPrefix ? `${mentionPrefix} ${trimmed}` : trimmed;
+        const created = await commentService.addComment(taskId, fullText, mentionIds);
         setComments((prev) => [...prev, created]);
         setText('');
         setMentionedUsers([]);
@@ -163,28 +166,32 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
     [text, submitting, taskId, refreshNotifications, mentionedUsers]
   );
 
-  // Insert a selected mention into the text
+  // Insert a selected mention — replace the @query with a chip
   const insertMention = useCallback(
     (member) => {
+      // Remove the @query from the current text
       const before = text.slice(0, mentionStartIndex);
-      const after = text.slice(
-        mentionStartIndex + mentionQuery.length + 1 // +1 for the @ char
-      );
-      const newText = `${before}@${member.name} ${after}`;
-      setText(newText);
+      const after = text.slice(mentionStartIndex + mentionQuery.length + 1);
+      setText(before + after);
       setMentionedUsers((prev) => {
         if (prev.some((u) => u._id === member._id)) return prev;
-        return [...prev, { _id: member._id, name: member.name }];
+        // Store with insertIndex so chips render at the right spot
+        return [...prev, { _id: member._id, name: member.name, index: mentionStartIndex }];
       });
       setShowMentionDropdown(false);
       setMentionQuery('');
       setMentionStartIndex(-1);
       setMentionHighlight(0);
-      // Refocus textarea
       setTimeout(() => textareaRef.current?.focus(), 0);
     },
     [text, mentionStartIndex, mentionQuery]
   );
+
+  // Remove a mention chip
+  const removeMention = useCallback((userId) => {
+    setMentionedUsers((prev) => prev.filter((u) => u._id !== userId));
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   // Detect @ in textarea input
   const handleTextChange = useCallback(
@@ -193,16 +200,13 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
       setText(val);
 
       const cursorPos = e.target.selectionStart;
-      // Look backwards from cursor for an unmatched @
       const textBeforeCursor = val.slice(0, cursorPos);
       const lastAtIndex = textBeforeCursor.lastIndexOf('@');
 
       if (lastAtIndex >= 0) {
-        // Check that the @ is at start or preceded by whitespace
         const charBefore = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
         if (charBefore === ' ' || charBefore === '\n' || lastAtIndex === 0) {
           const query = textBeforeCursor.slice(lastAtIndex + 1);
-          // Only show dropdown if query has no spaces (still typing the name)
           if (!query.includes(' ')) {
             setMentionStartIndex(lastAtIndex);
             setMentionQuery(query);
@@ -493,58 +497,68 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
               {error}
             </p>
           ) : null}
-          <div style={{ position: 'relative', background: 'var(--color-bg-surface, #FFFFFF)', borderRadius: 'var(--radius-md)' }}>
-            {/* Highlight backdrop — sits behind the transparent textarea
-                and paints the actual visible text + coloured @mentions. */}
+          <div style={{ position: 'relative' }}>
+            {/* Mention chips + textarea wrapper */}
             <div
-              aria-hidden="true"
-              className="font-body"
+              className="font-body transition-colors duration-150 focus-within:border-[color:var(--color-accent)] focus-within:shadow-[0_0_0_3px_var(--color-accent-light)]"
               style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                padding: '10px 12px',
-                fontSize: 14,
-                lineHeight: 1.5,
-                border: '1.5px solid transparent',
-                borderRadius: 'var(--radius-md)',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                overflowY: 'auto',
-                pointerEvents: 'none',
-              }}
-            >
-              <HighlightedText text={text} mentionedUsers={mentionedUsers} />
-            </div>
-            <textarea
-              ref={textareaRef}
-              value={text}
-              onChange={handleTextChange}
-              onKeyDown={handleKeyDown}
-              onScroll={(e) => {
-                const backdrop = e.target.previousElementSibling;
-                if (backdrop) backdrop.scrollTop = e.target.scrollTop;
-              }}
-              placeholder="Add a comment... (type @ to mention)"
-              rows={3}
-              disabled={submitting}
-              className="w-full font-body transition-colors duration-150 focus:outline-none focus:border-[color:var(--color-accent)] focus:shadow-[0_0_0_3px_var(--color-accent-light)]"
-              style={{
-                resize: 'none',
-                fontSize: 14,
-                padding: '10px 12px',
-                color: 'transparent',
-                caretColor: 'var(--color-text-primary)',
-                background: 'transparent',
                 border: '1.5px solid var(--color-border-strong)',
                 borderRadius: 'var(--radius-md)',
-                lineHeight: 1.5,
-                position: 'relative',
-                zIndex: 1,
+                background: 'var(--color-bg-surface, #FFFFFF)',
+                padding: '8px 10px',
+                cursor: 'text',
               }}
-            />
+              onClick={() => textareaRef.current?.focus()}
+            >
+              {/* Mention chips rendered above the input */}
+              {mentionedUsers.length > 0 && (
+                <div className="flex flex-wrap gap-1" style={{ marginBottom: 6 }}>
+                  {mentionedUsers.map((u) => (
+                    <span
+                      key={u._id}
+                      className="inline-flex items-center gap-1 font-body"
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'var(--color-accent, #2563EB)',
+                        background: 'var(--color-accent-light, rgba(37,99,235,0.1))',
+                        borderRadius: 9999,
+                        padding: '2px 8px 2px 10px',
+                        cursor: 'pointer',
+                        transition: 'background 150ms',
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeMention(u._id);
+                      }}
+                      title="Click to remove"
+                    >
+                      @{u.name}
+                      <X size={12} style={{ opacity: 0.6 }} />
+                    </span>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={handleTextChange}
+                onKeyDown={handleKeyDown}
+                placeholder={mentionedUsers.length > 0 ? 'Continue typing...' : 'Add a comment... (type @ to mention)'}
+                rows={2}
+                disabled={submitting}
+                className="w-full font-body focus:outline-none"
+                style={{
+                  resize: 'none',
+                  fontSize: 14,
+                  padding: 0,
+                  color: 'var(--color-text-primary)',
+                  background: 'transparent',
+                  border: 'none',
+                  lineHeight: 1.5,
+                }}
+              />
+            </div>
             {/* @mention dropdown */}
             {showMentionDropdown && filteredMembers.length > 0 && (
               <ul
@@ -678,62 +692,6 @@ const MetaRow = ({ label, children }) => (
     </dd>
   </div>
 );
-
-/**
- * Live highlight overlay for the composer textarea.
- * Renders the same text with @mentions shown as coloured spans.
- * Non-mention text is transparent so only the highlights are visible.
- */
-const HighlightedText = ({ text, mentionedUsers }) => {
-  if (!text || mentionedUsers.length === 0) {
-    return <span style={{ color: 'var(--color-text-primary)' }}>{text}</span>;
-  }
-
-  const names = mentionedUsers
-    .map((u) => u.name)
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
-
-  if (names.length === 0) {
-    return <span style={{ color: 'var(--color-text-primary)' }}>{text}</span>;
-  }
-
-  const escaped = names.map((n) =>
-    n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  );
-  const regex = new RegExp(`(@(?:${escaped.join('|')}))`, 'g');
-
-  const parts = text.split(regex);
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (regex.test(part)) {
-          regex.lastIndex = 0;
-          return (
-            <span
-              key={i}
-              style={{
-                color: 'var(--color-accent, #2563EB)',
-                fontWeight: 600,
-                background: 'rgba(37,99,235,0.1)',
-                borderRadius: 3,
-                padding: '1px 2px',
-              }}
-            >
-              {part}
-            </span>
-          );
-        }
-        regex.lastIndex = 0;
-        return (
-          <span key={i} style={{ color: 'var(--color-text-primary)' }}>
-            {part}
-          </span>
-        );
-      })}
-    </>
-  );
-};
 
 /**
  * Render comment text with @mentions highlighted.
