@@ -36,12 +36,14 @@ const TaskRow = ({
   const overdue = isOverdue(task.dueDate) && task.status !== 'done';
 
   useEffect(() => {
+    console.log('[TaskRow] highlighted effect fired', highlighted, !!rowRef.current);
     if (!highlighted || !rowRef.current) return;
     const el = rowRef.current;
     const timer = setTimeout(() => {
       const rect = el.getBoundingClientRect();
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
       const targetY = scrollTop + rect.top - NAVBAR_HEIGHT - (window.innerHeight / 2 - el.offsetHeight / 2);
+      console.log('[TaskRow] scrolling', { rect, scrollTop, targetY, innerHeight: window.innerHeight });
       window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
     }, 100);
     return () => clearTimeout(timer);
