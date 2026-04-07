@@ -441,8 +441,6 @@ const MembersPage = () => {
           </p>
         </header>
 
-        {isAdmin && <InviteSection currentOrg={currentOrg} />}
-
         <div
           className="bg-surface"
           style={{
@@ -572,6 +570,8 @@ const MembersPage = () => {
             })}
           </div>
         </div>
+
+        {isAdmin && <InviteSection currentOrg={currentOrg} />}
 
         {/* Confirm remove modal */}
         <Modal
