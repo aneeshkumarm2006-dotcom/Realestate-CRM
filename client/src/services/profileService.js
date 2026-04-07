@@ -13,3 +13,7 @@ export const uploadAvatar = async (file) => {
   });
   return data;
 };
+
+export const deleteAccount = async () => {
+  await api.delete('/api/profile');
+};

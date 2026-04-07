@@ -4,6 +4,7 @@ const { avatarUpload } = require('../config/cloudinary');
 const {
   updateProfile,
   uploadAvatar,
+  deleteAccount,
 } = require('../controllers/profileController');
 
 const router = express.Router();
@@ -15,5 +16,8 @@ router.put('/', updateProfile);
 
 // POST /api/profile/upload-avatar — multipart upload
 router.post('/upload-avatar', avatarUpload.single('avatar'), uploadAvatar);
+
+// DELETE /api/profile — permanently delete account and all associated data
+router.delete('/', deleteAccount);
 
 module.exports = router;

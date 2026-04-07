@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Copy, Check, RefreshCw, Trash2, ChevronDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Camera, Copy, Check, RefreshCw, Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import SettingsSidebar, { SettingsTabBar } from '../components/settings/SettingsSidebar';
 import Button from '../components/ui/Button';
@@ -510,7 +511,7 @@ const MembersTab = ({ members, adminId, adminIds = [], currentUserId, isAdmin, i
 
 /* ---------------------------- Profile tab ---------------------------- */
 
-const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
+const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
   const [name, setName] = useState(user?.name || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -518,6 +519,9 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     setName(user?.name || '');
@@ -577,6 +581,17 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
   };
 
   const dirty = name.trim() && name.trim() !== (user?.name || '');
+
+  const handleDeleteConfirm = async () => {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await onDeleteAccount();
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || 'Failed to delete account. Please try again.');
+      setDeleting(false);
+    }
+  };
 
   return (
     <div>
@@ -667,7 +682,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
       </div>
 
       {/* Name + email form */}
-      <form onSubmit={handleSaveName} className="flex flex-col gap-4 max-w-[480px]">
+      <form onSubmit={handleSaveName} className="flex flex-col gap-4 max-w-[480px]" style={{ maxWidth: 480 }}>
         <Input
           label="Display name"
           value={name}
@@ -707,6 +722,96 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
           )}
         </div>
       </form>
+
+      {/* Danger Zone */}
+      <div
+        className="mt-10"
+        style={{
+          maxWidth: 480,
+          border: '1px solid #fca5a5',
+          borderRadius: 'var(--radius-lg)',
+          padding: 20,
+          background: '#fff5f5',
+        }}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <AlertTriangle size={16} color="#dc2626" aria-hidden="true" />
+          <h3
+            className="font-display font-semibold"
+            style={{ fontSize: 14, color: '#dc2626' }}
+          >
+            Danger Zone
+          </h3>
+        </div>
+        <p className="font-body text-[13px] mb-4" style={{ color: '#6b7280' }}>
+          Permanently delete your account and all associated data. This cannot be undone.
+        </p>
+        <Button
+          type="button"
+          variant="danger"
+          onClick={() => {
+            setDeleteError('');
+            setShowDeleteModal(true);
+          }}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+          Delete Account
+        </Button>
+      </div>
+
+      {/* Delete confirmation modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => !deleting && setShowDeleteModal(false)}
+        title="Delete Account"
+        closeOnOverlayClick={!deleting}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowDeleteModal(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Yes, Delete My Account'}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div
+            className="flex items-start gap-3 rounded-lg p-3"
+            style={{ background: '#fff5f5', border: '1px solid #fca5a5' }}
+          >
+            <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p className="font-body text-[13px]" style={{ color: '#374151' }}>
+              <strong>This action is permanent and cannot be undone.</strong>
+            </p>
+          </div>
+          <p className="font-body text-[14px] text-[color:var(--color-text-primary)]">
+            Deleting your account will:
+          </p>
+          <ul className="font-body text-[13px] text-[color:var(--color-text-secondary)] flex flex-col gap-1" style={{ paddingLeft: 16, listStyleType: 'disc' }}>
+            <li>Delete all organisations you own (including all their boards, tasks, and members)</li>
+            <li>Remove you from all other organisations</li>
+            <li>Delete all your personal tasks and comments</li>
+            <li>Delete your profile and all account data</li>
+          </ul>
+          {deleteError && (
+            <p className="font-body text-[12px] text-[color:var(--color-status-stuck)]">
+              {deleteError}
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -714,8 +819,10 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar }) => {
 /* ------------------------------ Page ------------------------------ */
 
 const SettingsPage = () => {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
+  const logout = useAuthStore((s) => s.logout);
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const members = useOrgStore((s) => s.members);
   const adminId = useOrgStore((s) => s.adminId);
@@ -798,6 +905,12 @@ const SettingsPage = () => {
     await fetchCurrentUser();
   };
 
+  const handleDeleteAccount = async () => {
+    await profileService.deleteAccount();
+    await logout();
+    navigate('/login');
+  };
+
   const renderTab = () => {
     if (activeTab === 'organisation' && isAdmin) {
       return <OrganisationTab org={orgState} onRegenerate={handleRegenerate} />;
@@ -821,6 +934,7 @@ const SettingsPage = () => {
         user={user}
         onSaveName={handleSaveName}
         onUploadAvatar={handleUploadAvatar}
+        onDeleteAccount={handleDeleteAccount}
       />
     );
   };
