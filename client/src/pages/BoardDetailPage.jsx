@@ -566,6 +566,9 @@ const BoardDetailPage = () => {
               editingTaskId != null &&
               groupTasks.some((t) => t._id === editingTaskId);
             const needsOverflowVisible = isCreatingHere || isEditingHere;
+            const groupHasHighlight =
+              highlightedTaskId &&
+              groupTasks.some((t) => t._id === highlightedTaskId);
 
             return (
               <div
@@ -576,6 +579,9 @@ const BoardDetailPage = () => {
                 style={{
                   borderRadius: 'var(--radius-lg)',
                   boxShadow: 'var(--shadow-card)',
+                  ...(groupHasHighlight
+                    ? { position: 'relative', zIndex: 31 }
+                    : {}),
                 }}
               >
                 <TaskGroupHeader

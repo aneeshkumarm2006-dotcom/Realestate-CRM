@@ -293,12 +293,40 @@ select:focus-visible {
   to   { opacity: 1; }
 }
 
-/* The highlighted task row/card pops above the overlay */
-.macan-task-highlight {
+/* The highlighted task row — works for both <tr> and <li>/<div> elements.
+   <tr> doesn't support box-shadow/position, so we animate td cells. */
+
+/* For table rows: animate the background on each cell */
+tr.macan-task-highlight > td {
+  animation: macan-task-glow-bg 2.5s ease-in-out both;
+}
+
+/* First td gets a left accent border as a visual anchor */
+tr.macan-task-highlight > td:first-child {
+  box-shadow: inset 4px 0 0 0 var(--color-accent);
+}
+
+/* For mobile card list items (<li>) — full box-shadow works here */
+li.macan-task-highlight {
   position: relative;
   z-index: 31;
   animation: macan-task-glow 2.5s ease-in-out both;
   border-radius: var(--radius-sm);
+}
+
+@keyframes macan-task-glow-bg {
+  0% {
+    background-color: rgba(37, 99, 235, 0.0);
+  }
+  10% {
+    background-color: rgba(37, 99, 235, 0.15);
+  }
+  40% {
+    background-color: rgba(37, 99, 235, 0.10);
+  }
+  100% {
+    background-color: rgba(37, 99, 235, 0.0);
+  }
 }
 
 @keyframes macan-task-glow {
@@ -306,15 +334,15 @@ select:focus-visible {
     box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.0);
     background-color: rgba(37, 99, 235, 0.0);
   }
-  15% {
+  10% {
     box-shadow: 0 0 20px 6px rgba(37, 99, 235, 0.35),
                 0 0 40px 12px rgba(37, 99, 235, 0.15);
-    background-color: rgba(37, 99, 235, 0.08);
+    background-color: rgba(37, 99, 235, 0.12);
   }
-  50% {
+  40% {
     box-shadow: 0 0 16px 4px rgba(37, 99, 235, 0.25),
                 0 0 32px 8px rgba(37, 99, 235, 0.10);
-    background-color: rgba(37, 99, 235, 0.06);
+    background-color: rgba(37, 99, 235, 0.08);
   }
   100% {
     box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.0);
@@ -326,7 +354,11 @@ select:focus-visible {
   .macan-highlight-overlay {
     animation: none;
   }
-  .macan-task-highlight {
+  tr.macan-task-highlight > td {
+    animation: none;
+    background-color: var(--color-accent-light);
+  }
+  li.macan-task-highlight {
     animation: none;
     box-shadow: 0 0 0 3px var(--color-accent);
     background-color: var(--color-accent-light);
