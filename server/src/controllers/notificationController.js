@@ -133,8 +133,34 @@ const markAllAsRead = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/notifications/:id
+ *
+ * Delete a single notification. Must belong to the current user.
+ */
+const deleteNotification = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid notification id' });
+    }
+
+    const result = await Notification.deleteOne({ _id: id, user: userId });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('deleteNotification error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getNotifications,
   markAsRead,
   markAllAsRead,
+  deleteNotification,
 };

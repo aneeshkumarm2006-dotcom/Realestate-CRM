@@ -76,6 +76,28 @@ const useNotificationStore = create((set, get) => ({
     }
   },
 
+  /**
+   * Optimistically remove a notification from the list, then sync to server.
+   * Rolls back on failure.
+   */
+  deleteNotification: async (id) => {
+    const prev = get().notifications;
+    const prevUnread = get().unreadCount;
+    const target = prev.find((n) => n._id === id);
+    set({
+      notifications: prev.filter((n) => n._id !== id),
+      unreadCount: target && !target.isRead
+        ? Math.max(0, prevUnread - 1)
+        : prevUnread,
+    });
+    try {
+      await notificationService.deleteNotification(id);
+    } catch (err) {
+      set({ notifications: prev, unreadCount: prevUnread });
+      throw err;
+    }
+  },
+
   clear: () => set({ notifications: [], unreadCount: 0, error: null }),
 }));
 

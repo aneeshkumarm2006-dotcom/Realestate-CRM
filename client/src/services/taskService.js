@@ -81,3 +81,11 @@ export const createGroup = async (boardId, payload) => {
   const { data } = await api.post(`/api/boards/${boardId}/groups`, payload);
   return data.group;
 };
+
+/**
+ * DELETE /api/groups/:id — delete a group and all its tasks (admin only).
+ */
+export const deleteGroup = async (groupId) => {
+  const { data } = await api.delete(`/api/groups/${groupId}`);
+  return data;
+};

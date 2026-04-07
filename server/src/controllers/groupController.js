@@ -2,6 +2,7 @@ const Board = require('../models/Board');
 const TaskGroup = require('../models/TaskGroup');
 const Task = require('../models/Task');
 const Comment = require('../models/Comment');
+const Notification = require('../models/Notification');
 const Organisation = require('../models/Organisation');
 
 /**
@@ -162,6 +163,7 @@ const deleteGroup = async (req, res) => {
     const taskIds = await Task.distinct('_id', { group: id });
     if (taskIds.length > 0) {
       await Comment.deleteMany({ task: { $in: taskIds } });
+      await Notification.deleteMany({ task: { $in: taskIds } });
     }
     await Task.deleteMany({ group: id });
     await TaskGroup.deleteOne({ _id: id });

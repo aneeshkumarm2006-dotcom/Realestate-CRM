@@ -24,3 +24,11 @@ export const markAllAsRead = async () => {
   const { data } = await api.put('/api/notifications/read-all');
   return data;
 };
+
+/**
+ * DELETE /api/notifications/:id — delete a single notification.
+ */
+export const deleteNotification = async (id) => {
+  const { data } = await api.delete(`/api/notifications/${id}`);
+  return data;
+};

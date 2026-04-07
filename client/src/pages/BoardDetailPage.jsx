@@ -81,6 +81,7 @@ const BoardDetailPage = () => {
   const updateTaskLocal = useTaskStore((s) => s.updateTask);
   const deleteTaskLocal = useTaskStore((s) => s.deleteTask);
   const addGroupLocal = useTaskStore((s) => s.addGroup);
+  const removeGroupLocal = useTaskStore((s) => s.removeGroup);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
   const toastError = useToastStore((s) => s.error);
 
@@ -103,6 +104,9 @@ const BoardDetailPage = () => {
   const [newGroupName, setNewGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupModalError, setGroupModalError] = useState(null);
+  // Delete-group confirmation state
+  const [groupPendingDelete, setGroupPendingDelete] = useState(null);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
   // --- Notification highlight (scroll-to + glow) --------------------------
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
@@ -405,6 +409,31 @@ const BoardDetailPage = () => {
     }
   };
 
+  // --- Group deletion -----------------------------------------------------
+
+  const handleDeleteGroup = (group) => {
+    setGroupPendingDelete(group);
+  };
+
+  const handleConfirmDeleteGroup = async () => {
+    if (!groupPendingDelete) return;
+    const group = groupPendingDelete;
+    setGroupPendingDelete(null);
+    setDeletingGroup(true);
+    try {
+      await taskService.deleteGroup(group._id);
+      removeGroupLocal(group._id);
+    } catch (err) {
+      console.error('Failed to delete group:', err);
+      toastError(
+        err?.response?.data?.error ||
+          'Failed to delete group. Please try again.'
+      );
+    } finally {
+      setDeletingGroup(false);
+    }
+  };
+
   const isPublic = board?.visibility === 'public';
   const VisibilityIcon = isPublic ? Globe : Lock;
   const hasGroups = groups.length > 0;
@@ -578,6 +607,7 @@ const BoardDetailPage = () => {
                   onToggle={() => toggleGroup(group._id)}
                   canAddItem={isAdmin}
                   onAddItem={() => handleStartCreate(group._id)}
+                  onDeleteGroup={isAdmin ? () => handleDeleteGroup(group) : undefined}
                 />
                 {!isCollapsed && (
                   <TaskTable
@@ -650,6 +680,39 @@ const BoardDetailPage = () => {
           </strong>
           ? This will also remove any comments attached to it. This action
           cannot be undone.
+        </p>
+      </Modal>
+
+      {/* Delete group confirmation */}
+      <Modal
+        isOpen={!!groupPendingDelete}
+        onClose={() => { if (!deletingGroup) setGroupPendingDelete(null); }}
+        title="Delete group?"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setGroupPendingDelete(null)}
+              disabled={deletingGroup}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleConfirmDeleteGroup} disabled={deletingGroup}>
+              {deletingGroup ? 'Deleting…' : 'Delete'}
+            </Button>
+          </>
+        }
+      >
+        <p
+          className="font-body"
+          style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}
+        >
+          Are you sure you want to delete the group{' '}
+          <strong style={{ color: 'var(--color-text-primary)' }}>
+            {groupPendingDelete?.name}
+          </strong>
+          ? This will permanently delete all tasks and comments inside it. This
+          action cannot be undone.
         </p>
       </Modal>
 

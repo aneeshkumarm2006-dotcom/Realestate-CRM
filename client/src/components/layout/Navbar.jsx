@@ -488,14 +488,16 @@ const NOTIF_TYPE_COLOR = {
   dueSoon: 'var(--color-status-stuck)',
 };
 
-const NotificationItem = ({ notif, onClick }) => {
+const NotificationItem = ({ notif, onClick, onDelete }) => {
   const unread = !notif.isRead;
   const color = NOTIF_TYPE_COLOR[notif.type] || 'var(--color-accent)';
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-bg-subtle)] focus:outline-none focus:bg-[color:var(--color-bg-subtle)]"
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+      className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-bg-subtle)] focus:outline-none focus:bg-[color:var(--color-bg-subtle)] cursor-pointer"
       style={{
         background: unread ? 'var(--color-accent-light)' : 'white',
         borderLeft: unread
@@ -525,7 +527,16 @@ const NotificationItem = ({ notif, onClick }) => {
           {timeAgo(notif.createdAt)}
         </span>
       </span>
-    </button>
+      <button
+        type="button"
+        aria-label="Dismiss notification"
+        onClick={(e) => { e.stopPropagation(); onDelete(notif._id); }}
+        className="shrink-0 flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color:var(--color-accent)]"
+        style={{ width: 20, height: 20, marginTop: 2 }}
+      >
+        <XIcon size={12} color="var(--color-text-muted)" aria-hidden="true" />
+      </button>
+    </div>
   );
 };
 
@@ -539,6 +550,7 @@ const NotificationBell = () => {
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const deleteNotification = useNotificationStore((s) => s.deleteNotification);
 
   // Close on outside click / Escape
   useEffect(() => {
@@ -652,6 +664,7 @@ const NotificationBell = () => {
                     key={n._id}
                     notif={n}
                     onClick={() => handleItemClick(n)}
+                    onDelete={deleteNotification}
                   />
                 ))}
               </div>

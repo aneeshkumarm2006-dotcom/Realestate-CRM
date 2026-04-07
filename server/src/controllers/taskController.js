@@ -9,6 +9,7 @@ const {
   createNotificationsForUsers,
 } = require('../services/notificationService');
 const { sendTaskAssignmentEmail } = require('../services/emailService');
+const Notification = require('../models/Notification');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const VALID_STATUSES = ['not_started', 'working_on_it', 'done', 'stuck'];
@@ -571,6 +572,7 @@ const deleteTask = async (req, res) => {
     }
 
     await Comment.deleteMany({ task: id });
+    await Notification.deleteMany({ task: id });
     await Task.deleteOne({ _id: id });
 
     return res.json({ success: true });

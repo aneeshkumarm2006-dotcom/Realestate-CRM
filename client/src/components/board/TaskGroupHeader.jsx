@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 
 /**
  * TaskGroupHeader — collapsible header for a group within a board.
@@ -27,6 +27,7 @@ const TaskGroupHeader = ({
   onToggle,
   onAddItem,
   canAddItem = false,
+  onDeleteGroup,
 }) => {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const progressPct =
@@ -148,6 +149,23 @@ const TaskGroupHeader = ({
         >
           <Plus size={14} aria-hidden="true" />
           Add Item
+        </button>
+      )}
+
+      {/* Delete group (admin only) */}
+      {onDeleteGroup && (
+        <button
+          type="button"
+          onClick={onDeleteGroup}
+          aria-label={`Delete group ${name}`}
+          className="inline-flex items-center justify-center transition-colors duration-150 hover:bg-[#FFF0F0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-status-stuck)]"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 'var(--radius-sm)',
+          }}
+        >
+          <Trash2 size={14} color="var(--color-status-stuck)" aria-hidden="true" />
         </button>
       )}
     </div>
