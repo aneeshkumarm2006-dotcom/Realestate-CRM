@@ -96,18 +96,8 @@ const getTasks = async (req, res) => {
     const ctx = await loadBoardContext(boardId, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
-    // Regular users can only view tasks on public boards
-    if (!ctx.isAdmin && ctx.board.visibility !== 'public') {
-      return res.status(403).json({ error: 'Board not accessible' });
-    }
-
     const filter = { board: boardId, isPersonal: { $ne: true } };
     if (groupId) filter.group = groupId;
-
-    // Regular users only see their own assigned tasks within this board
-    if (!ctx.isAdmin) {
-      filter.assignedTo = new mongoose.Types.ObjectId(userId);
-    }
 
     const tasks = await populateTask(Task.find(filter)).sort({ createdAt: 1 });
 
@@ -189,33 +179,15 @@ const getCalendarTasks = async (req, res) => {
       if (org) {
         const isMember = org.members.some((m) => m.toString() === userId);
         if (isMember) {
-          const isAdmin = isOrgAdmin(org, userId);
-          if (isAdmin) {
-            // Admin: all board tasks within the org
-            const boards = await Board.find({ organisation: orgId }).select('_id');
-            const boardIds = boards.map((b) => b._id);
-            if (boardIds.length > 0) {
-              boardTaskFilter = {
-                board: { $in: boardIds },
-                isPersonal: { $ne: true },
-                dueDate: { $gte: start, $lt: end },
-              };
-            }
-          } else {
-            // Regular user: assigned tasks on public boards within the org
-            const publicBoards = await Board.find({
-              organisation: orgId,
-              visibility: 'public',
-            }).select('_id');
-            const boardIds = publicBoards.map((b) => b._id);
-            if (boardIds.length > 0) {
-              boardTaskFilter = {
-                board: { $in: boardIds },
-                assignedTo: userObjectId,
-                isPersonal: { $ne: true },
-                dueDate: { $gte: start, $lt: end },
-              };
-            }
+          // All org members see all board tasks within the org
+          const boards = await Board.find({ organisation: orgId }).select('_id');
+          const boardIds = boards.map((b) => b._id);
+          if (boardIds.length > 0) {
+            boardTaskFilter = {
+              board: { $in: boardIds },
+              isPersonal: { $ne: true },
+              dueDate: { $gte: start, $lt: end },
+            };
           }
         }
       }
@@ -433,20 +405,12 @@ const updateTask = async (req, res) => {
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
     if (!ctx.isAdmin) {
-      // Regular users can only change status, only if they're assigned,
-      // and only on public boards
-      if (ctx.board.visibility !== 'public') {
-        return res.status(403).json({ error: 'Board not accessible' });
-      }
-      const isAssignee = task.assignedTo.some((u) => u.toString() === userId);
-      if (!isAssignee) {
-        return res.status(403).json({ error: 'Not authorised' });
-      }
+      // Regular members can change status on any task in the org
       const allowedKeys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (allowedKeys.length !== 1 || allowedKeys[0] !== 'status') {
         return res
           .status(403)
-          .json({ error: 'Only status can be changed by assignees' });
+          .json({ error: 'Only status can be changed by members' });
       }
       if (!VALID_STATUSES.includes(body.status)) {
         return res.status(400).json({ error: 'Invalid status' });

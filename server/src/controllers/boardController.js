@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
 const TaskGroup = require('../models/TaskGroup');
@@ -30,9 +29,7 @@ const loadOrgForMember = async (orgId, userId) => {
 /**
  * GET /api/boards?org=:orgId
  *
- * Admins: all boards in the org.
- * Regular users: only public boards that contain at least one task they are
- * assigned to. Sorted by updatedAt desc.
+ * All org members can see all boards. Sorted by updatedAt desc.
  */
 const getBoards = async (req, res) => {
   try {
@@ -48,24 +45,9 @@ const getBoards = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    if (isOrgAdmin(org, userId)) {
-      const boards = await Board.find({ organisation: orgId })
-        .sort({ updatedAt: -1 });
-      return res.json({ boards });
-    }
-
-    // Regular user: limit to public boards where they have at least one assigned task
-    const assignedBoardIds = await Task.distinct('board', {
-      assignedTo: new mongoose.Types.ObjectId(userId),
-      board: { $ne: null },
-    });
-
-    const boards = await Board.find({
-      organisation: orgId,
-      visibility: 'public',
-      _id: { $in: assignedBoardIds },
-    }).sort({ updatedAt: -1 });
-
+    // All org members (admin or regular) can see all boards in the org
+    const boards = await Board.find({ organisation: orgId })
+      .sort({ updatedAt: -1 });
     return res.json({ boards });
   } catch (err) {
     console.error('getBoards error:', err);
@@ -94,38 +76,15 @@ const getDashboardStats = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    const isAdmin = isOrgAdmin(org, userId);
-
-    // Boards in this org
+    // All org members see org-wide stats
     const orgBoardIds = await Board.distinct('_id', { organisation: orgId });
 
-    // Filter set of boards the user can see
-    let visibleBoardIds = orgBoardIds;
-    if (!isAdmin) {
-      const publicBoardIds = await Board.distinct('_id', {
-        organisation: orgId,
-        visibility: 'public',
-      });
-      visibleBoardIds = publicBoardIds;
-    }
-
-    // Task filter — admin = all org tasks, user = own assigned tasks on public boards
-    const taskFilter = isAdmin
-      ? { board: { $in: orgBoardIds } }
-      : {
-          board: { $in: visibleBoardIds },
-          assignedTo: new mongoose.Types.ObjectId(userId),
-        };
+    const taskFilter = { board: { $in: orgBoardIds } };
 
     const [completedTasks, pendingTasks, totalBoards] = await Promise.all([
       Task.countDocuments({ ...taskFilter, status: 'done' }),
       Task.countDocuments({ ...taskFilter, status: { $ne: 'done' } }),
-      isAdmin
-        ? Board.countDocuments({ organisation: orgId })
-        : // For regular users, only count boards they actually have tasks on
-          Task.distinct('board', taskFilter).then((ids) =>
-            ids.filter(Boolean).length
-          ),
+      Board.countDocuments({ organisation: orgId }),
     ]);
 
     const totalTasks = completedTasks + pendingTasks;

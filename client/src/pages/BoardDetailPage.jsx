@@ -252,14 +252,9 @@ const BoardDetailPage = () => {
 
   // --- Inline status change --------------------------------------------
 
-  const canChangeStatus = (task) => {
-    if (isAdmin) return true;
-    if (!currentUser) return false;
-    // Regular user can only change status on their own assigned tasks
-    const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
-    return assignees.some(
-      (a) => (typeof a === 'string' ? a : a._id) === currentUser._id
-    );
+  const canChangeStatus = () => {
+    // All org members can change task status
+    return !!currentUser;
   };
 
   const handleStatusClick = (task, event) => {

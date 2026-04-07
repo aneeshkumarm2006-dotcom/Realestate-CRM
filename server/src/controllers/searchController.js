@@ -1,14 +1,6 @@
-const mongoose = require('mongoose');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
 const Organisation = require('../models/Organisation');
-
-const isOrgAdmin = (org, userId) =>
-  !!org &&
-  (
-    (org.admin && org.admin.toString() === userId) ||
-    (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId))
-  );
 
 /**
  * GET /api/search?q=:query&org=:orgId
@@ -36,58 +28,26 @@ const search = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    const admin = isOrgAdmin(org, userId);
-
     // Escape special regex characters to prevent ReDoS
     const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const queryRegex = new RegExp(escaped, 'i');
 
-    let boards;
-    let tasks;
+    // All org members can search all boards and tasks
+    const boards = await Board.find({ organisation: orgId, name: queryRegex })
+      .select('name visibility')
+      .limit(10)
+      .lean();
 
-    if (admin) {
-      // Admin: all boards in the org
-      boards = await Board.find({ organisation: orgId, name: queryRegex })
-        .select('name visibility')
-        .limit(10)
-        .lean();
-
-      const orgBoardIds = await Board.distinct('_id', { organisation: orgId });
-      tasks = await Task.find({
-        board: { $in: orgBoardIds },
-        name: queryRegex,
-        isPersonal: { $ne: true },
-      })
-        .select('name status priority board')
-        .populate('board', 'name')
-        .limit(20)
-        .lean();
-    } else {
-      // Regular user: public boards + tasks assigned to them
-      boards = await Board.find({
-        organisation: orgId,
-        visibility: 'public',
-        name: queryRegex,
-      })
-        .select('name visibility')
-        .limit(10)
-        .lean();
-
-      const publicBoardIds = await Board.distinct('_id', {
-        organisation: orgId,
-        visibility: 'public',
-      });
-      tasks = await Task.find({
-        board: { $in: publicBoardIds },
-        assignedTo: new mongoose.Types.ObjectId(userId),
-        name: queryRegex,
-        isPersonal: { $ne: true },
-      })
-        .select('name status priority board')
-        .populate('board', 'name')
-        .limit(20)
-        .lean();
-    }
+    const orgBoardIds = await Board.distinct('_id', { organisation: orgId });
+    const tasks = await Task.find({
+      board: { $in: orgBoardIds },
+      name: queryRegex,
+      isPersonal: { $ne: true },
+    })
+      .select('name status priority board')
+      .populate('board', 'name')
+      .limit(20)
+      .lean();
 
     return res.json({ boards, tasks });
   } catch (err) {

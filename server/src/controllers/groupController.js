@@ -48,11 +48,6 @@ const getGroups = async (req, res) => {
     const ctx = await loadBoardContext(boardId, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
-    // Regular users can only see groups on public boards
-    if (!ctx.isAdmin && ctx.board.visibility !== 'public') {
-      return res.status(403).json({ error: 'Board not accessible' });
-    }
-
     const groups = await TaskGroup.find({ board: boardId }).sort({
       order: 1,
       createdAt: 1,
