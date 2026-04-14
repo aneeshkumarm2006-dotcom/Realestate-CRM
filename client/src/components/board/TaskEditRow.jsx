@@ -88,6 +88,11 @@ const TaskEditRow = ({
   };
 
   const handleKeyDown = (e) => {
+    // Ignore keyboard events that originate inside a listbox (AssigneePicker
+    // dropdown) so selecting members with Enter/Escape doesn't save/cancel the form.
+    if (e.target.closest('[role="listbox"]') || e.target.closest('[role="option"]')) {
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       handleSave();

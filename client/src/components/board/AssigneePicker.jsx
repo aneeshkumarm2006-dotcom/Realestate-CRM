@@ -101,6 +101,13 @@ const AssigneePicker = ({
         <ul
           role="listbox"
           aria-multiselectable="true"
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              setOpen(false);
+              triggerRef.current?.focus();
+            }
+          }}
           className="absolute z-40 left-0 mt-1 bg-white overflow-auto"
           style={{
             minWidth: 220,
