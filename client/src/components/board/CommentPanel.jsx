@@ -795,24 +795,25 @@ const CommentItem = ({ comment, onReply }) => {
       <Avatar user={author} size={28} />
       <div className="min-w-0 flex-1">
         {/* "Replying to" reference block */}
-        {comment.replyTo && (
-          <div
-            className="flex items-center gap-1 font-body"
-            style={{
-              fontSize: 11,
-              color: 'var(--color-text-muted)',
-              marginBottom: 3,
-            }}
-          >
-            <CornerDownLeft size={11} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
-            <span>
-              Replying to{' '}
-              <strong style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-                {comment.replyTo.author?.name || 'Unknown'}
-              </strong>
-            </span>
-          </div>
-        )}
+        {comment.replyTo && (() => {
+          const parentText = comment.replyTo.text || '';
+          const truncated = parentText.length > 60 ? parentText.slice(0, 60).trimEnd() + '…' : parentText;
+          return (
+            <div
+              className="flex items-start gap-1 font-body"
+              style={{
+                fontSize: 11,
+                color: 'var(--color-text-muted)',
+                marginBottom: 4,
+                borderLeft: '2px solid var(--color-accent)',
+                paddingLeft: 6,
+              }}
+            >
+              <CornerDownLeft size={11} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
+              <span style={{ color: 'var(--color-text-secondary)' }}>{truncated}</span>
+            </div>
+          );
+        })()}
         <div className="flex items-center gap-2 flex-wrap">
           <span
             className="font-body"
