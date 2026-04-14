@@ -798,9 +798,10 @@ const CommentItem = ({ comment, onReply }) => {
         {comment.replyTo && (() => {
           const parentText = comment.replyTo.text || '';
           const truncated = parentText.length > 60 ? parentText.slice(0, 60).trimEnd() + '…' : parentText;
+          const parentAuthor = comment.replyTo.author?.name || 'Unknown';
           return (
             <div
-              className="flex items-start gap-1 font-body"
+              className="flex items-center gap-1 font-body"
               style={{
                 fontSize: 11,
                 color: 'var(--color-text-muted)',
@@ -809,8 +810,14 @@ const CommentItem = ({ comment, onReply }) => {
                 paddingLeft: 6,
               }}
             >
-              <CornerDownLeft size={11} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
-              <span style={{ color: 'var(--color-text-secondary)' }}>{truncated}</span>
+              <CornerDownLeft size={11} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
+              <span style={{ fontWeight: 600, color: 'var(--color-text-secondary)', flexShrink: 0 }}>
+                {parentAuthor}
+              </span>
+              <span style={{ color: 'var(--color-border-strong)', flexShrink: 0 }}>|</span>
+              <span style={{ color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {truncated}
+              </span>
             </div>
           );
         })()}
