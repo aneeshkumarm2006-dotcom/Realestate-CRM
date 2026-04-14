@@ -806,8 +806,6 @@ const CommentItem = ({ comment, onReply }) => {
                 fontSize: 11,
                 color: 'var(--color-text-muted)',
                 marginBottom: 4,
-                borderLeft: '2px solid var(--color-accent)',
-                paddingLeft: 6,
               }}
             >
               <CornerDownLeft size={11} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
