@@ -65,6 +65,7 @@ const getComments = async (req, res) => {
     const comments = await Comment.find({ task: taskId })
       .populate('author', 'name profilePic email')
       .populate('mentions', 'name profilePic email')
+      .populate({ path: 'replyTo', select: 'author text', populate: { path: 'author', select: 'name' } })
       .sort({ createdAt: 1 });
 
     return res.json({ comments });
@@ -84,7 +85,7 @@ const addComment = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { taskId } = req.params;
-    const { text, mentions } = req.body || {};
+    const { text, mentions, replyTo } = req.body || {};
 
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Comment text is required' });
@@ -111,16 +112,25 @@ const addComment = async (req, res) => {
       }
     }
 
+    // Validate replyTo — must belong to the same task
+    let replyToId = null;
+    if (replyTo) {
+      const parentComment = await Comment.findOne({ _id: replyTo, task: taskId });
+      if (parentComment) replyToId = parentComment._id;
+    }
+
     const comment = await Comment.create({
       task: taskId,
       author: userId,
       text: text.trim(),
       mentions: validMentions,
+      replyTo: replyToId,
     });
 
     const populated = await Comment.findById(comment._id)
       .populate('author', 'name profilePic email')
-      .populate('mentions', 'name profilePic email');
+      .populate('mentions', 'name profilePic email')
+      .populate({ path: 'replyTo', select: 'author text', populate: { path: 'author', select: 'name' } });
 
     // Notify task assignees (except the commenter) about the new comment.
     // Personal tasks have no other assignees — they're skipped naturally.

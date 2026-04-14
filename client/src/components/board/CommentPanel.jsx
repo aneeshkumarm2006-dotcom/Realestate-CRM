@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send } from 'lucide-react';
+import { X, Send, CornerDownLeft } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatDate, timeAgo } from '../../utils/dateUtils';
 import * as commentService from '../../services/commentService';
@@ -43,6 +43,9 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
   const [mentionHighlight, setMentionHighlight] = useState(0);
   const mentionDropdownRef = useRef(null);
 
+  // Reply state — which comment the user is replying to
+  const [replyingTo, setReplyingTo] = useState(null);
+
   // Org members for @mention
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const orgMembers = useOrgStore((s) => s.members);
@@ -76,6 +79,7 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
       setError('');
       setMentionedUsers([]);
       setShowMentionDropdown(false);
+      setReplyingTo(null);
       return;
     }
 
@@ -144,10 +148,11 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
         // Prepend @mentions to the text so the stored comment shows them
         const mentionPrefix = mentionedUsers.map((u) => `@${u.name}`).join(' ');
         const fullText = mentionPrefix ? `${mentionPrefix} ${trimmed}` : trimmed;
-        const created = await commentService.addComment(taskId, fullText, mentionIds);
+        const created = await commentService.addComment(taskId, fullText, mentionIds, replyingTo?._id || null);
         setComments((prev) => [...prev, created]);
         setText('');
         setMentionedUsers([]);
+        setReplyingTo(null);
         // Return focus to the textarea for rapid posting
         textareaRef.current?.focus();
         // Repoll notifications — the comment may have created one for the
@@ -163,7 +168,7 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
         setSubmitting(false);
       }
     },
-    [text, submitting, taskId, refreshNotifications, mentionedUsers]
+    [text, submitting, taskId, refreshNotifications, mentionedUsers, replyingTo]
   );
 
   // Insert a selected mention — replace the @query with a chip
@@ -468,7 +473,7 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
                         : '1px solid var(--color-border)',
                   }}
                 >
-                  <CommentItem comment={c} />
+                  <CommentItem comment={c} onReply={setReplyingTo} />
                 </li>
               ))}
             </ul>
@@ -497,6 +502,37 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
               {error}
             </p>
           ) : null}
+          {/* Replying-to banner */}
+          {replyingTo && (
+            <div
+              className="flex items-center gap-2 font-body"
+              style={{
+                fontSize: 12,
+                color: 'var(--color-text-secondary)',
+                background: 'var(--color-bg-subtle, #F3F4F6)',
+                borderRadius: 'var(--radius-md)',
+                padding: '5px 10px',
+                marginBottom: 8,
+              }}
+            >
+              <CornerDownLeft size={12} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
+              <span>
+                Replying to{' '}
+                <strong style={{ color: 'var(--color-text-primary)' }}>
+                  {replyingTo.author?.name || 'Unknown'}
+                </strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setReplyingTo(null)}
+                aria-label="Cancel reply"
+                className="ml-auto flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-border)]"
+                style={{ width: 18, height: 18, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}
+              >
+                <X size={11} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
+              </button>
+            </div>
+          )}
           <div style={{ position: 'relative' }}>
             {/* Mention chips + textarea wrapper */}
             <div
@@ -747,13 +783,37 @@ const RenderCommentText = ({ text, mentions }) => {
 /**
  * One comment entry inside the thread.
  */
-const CommentItem = ({ comment }) => {
+const CommentItem = ({ comment, onReply }) => {
   const author = comment.author || {};
+  const [hovered, setHovered] = useState(false);
   return (
-    <div className="flex items-start gap-3">
+    <div
+      className="flex items-start gap-3"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <Avatar user={author} size={28} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2 flex-wrap">
+        {/* "Replying to" reference block */}
+        {comment.replyTo && (
+          <div
+            className="flex items-center gap-1 font-body"
+            style={{
+              fontSize: 11,
+              color: 'var(--color-text-muted)',
+              marginBottom: 3,
+            }}
+          >
+            <CornerDownLeft size={11} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
+            <span>
+              Replying to{' '}
+              <strong style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                {comment.replyTo.author?.name || 'Unknown'}
+              </strong>
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
           <span
             className="font-body"
             style={{
@@ -771,6 +831,27 @@ const CommentItem = ({ comment }) => {
           >
             {timeAgo(comment.createdAt)}
           </span>
+          {/* Reply button */}
+          <button
+            type="button"
+            onClick={() => onReply?.(comment)}
+            aria-label={`Reply to ${author.name || 'this comment'}`}
+            className="inline-flex items-center gap-1 font-body transition-opacity duration-150"
+            style={{
+              fontSize: 11,
+              color: 'var(--color-accent)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '1px 4px',
+              borderRadius: 4,
+              opacity: hovered ? 1 : 0,
+              pointerEvents: hovered ? 'auto' : 'none',
+            }}
+          >
+            <CornerDownLeft size={12} aria-hidden="true" />
+            Reply
+          </button>
         </div>
         <p
           className="font-body"

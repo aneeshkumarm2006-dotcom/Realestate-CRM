@@ -19,6 +19,11 @@ const commentSchema = new mongoose.Schema({
       ref: 'User',
     },
   ],
+  replyTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Comment',
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

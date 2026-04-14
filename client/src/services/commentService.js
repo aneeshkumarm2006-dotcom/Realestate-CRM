@@ -21,7 +21,7 @@ export const getComments = async (taskId) => {
  * @param {string}   text     — comment body
  * @param {string[]} mentions — array of user IDs that were @mentioned
  */
-export const addComment = async (taskId, text, mentions = []) => {
-  const { data } = await api.post(`/api/tasks/${taskId}/comments`, { text, mentions });
+export const addComment = async (taskId, text, mentions = [], replyTo = null) => {
+  const { data } = await api.post(`/api/tasks/${taskId}/comments`, { text, mentions, replyTo });
   return data.comment;
 };
