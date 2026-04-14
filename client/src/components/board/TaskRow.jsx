@@ -27,6 +27,7 @@ const TaskRow = ({
   onSelect,
   onOpen,
   onStatusClick,
+  onPriorityClick,
   onActionsClick,
   isLast = false,
   highlighted = false,
@@ -101,14 +102,29 @@ const TaskRow = ({
       {/* Priority */}
       <td style={{ width: 130, padding: '0 16px' }}>
         {task.priority ? (
-          <Chip type="priority" value={task.priority} />
+          <Chip
+            type="priority"
+            value={task.priority}
+            onClick={
+              onPriorityClick ? (e) => onPriorityClick(task, e) : undefined
+            }
+          />
         ) : (
-          <span
-            className="font-body"
-            style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
+          <button
+            type="button"
+            onClick={onPriorityClick ? (e) => onPriorityClick(task, e) : undefined}
+            className="font-body transition-colors duration-150 hover:text-[color:var(--color-accent)]"
+            style={{
+              fontSize: 13,
+              color: 'var(--color-text-muted)',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: onPriorityClick ? 'pointer' : 'default',
+            }}
           >
             —
-          </span>
+          </button>
         )}
       </td>
 

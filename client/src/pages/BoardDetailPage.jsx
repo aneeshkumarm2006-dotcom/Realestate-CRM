@@ -16,6 +16,7 @@ import { SkeletonTaskGroup } from '../components/ui/Skeleton';
 import TaskGroupHeader from '../components/board/TaskGroupHeader';
 import TaskTable from '../components/board/TaskTable';
 import StatusMenu from '../components/board/StatusMenu';
+import PriorityMenu from '../components/board/PriorityMenu';
 import TaskActionsMenu from '../components/board/TaskActionsMenu';
 import CommentPanel from '../components/board/CommentPanel';
 import useAuthStore from '../store/authStore';
@@ -93,6 +94,8 @@ const BoardDetailPage = () => {
   const [editingTaskId, setEditingTaskId] = useState(null);
   // Status chip menu state
   const [statusMenu, setStatusMenu] = useState(null); // { task, anchor }
+  // Priority chip menu state
+  const [priorityMenu, setPriorityMenu] = useState(null); // { task, anchor }
   // Row actions menu state
   const [actionsMenu, setActionsMenu] = useState(null); // { task, anchor }
   // Delete confirmation
@@ -328,6 +331,36 @@ const BoardDetailPage = () => {
       toastError(
         err?.response?.data?.error ||
           'Failed to update status. Please try again.'
+      );
+    }
+  };
+
+  // --- Inline priority change ------------------------------------------
+
+  const handlePriorityClick = (task, event) => {
+    if (!currentUser) return;
+    const anchor = event?.currentTarget || null;
+    setPriorityMenu({ task, anchor });
+  };
+
+  const handlePrioritySelect = async (newPriority) => {
+    if (!priorityMenu) return;
+    const { task } = priorityMenu;
+    setPriorityMenu(null);
+    if (newPriority === task.priority) return;
+    const prev = task;
+    updateTaskLocal({ ...task, priority: newPriority });
+    try {
+      const updated = await taskService.updateTask(task._id, {
+        priority: newPriority,
+      });
+      updateTaskLocal(updated);
+    } catch (err) {
+      console.error('Failed to update priority:', err);
+      updateTaskLocal(prev);
+      toastError(
+        err?.response?.data?.error ||
+          'Failed to update priority. Please try again.'
       );
     }
   };
@@ -619,6 +652,7 @@ const BoardDetailPage = () => {
                     highlightedTaskId={highlightedTaskId}
                     onOpenTask={handleOpenTask}
                     onStatusClick={handleStatusClick}
+                    onPriorityClick={handlePriorityClick}
                     onActionsClick={isAdmin ? handleActionsClick : undefined}
                     onSaveNew={handleSaveNewTask}
                     onSaveEdit={handleSaveEditTask}
@@ -638,6 +672,16 @@ const BoardDetailPage = () => {
           value={statusMenu.task.status}
           onSelect={handleStatusSelect}
           onClose={() => setStatusMenu(null)}
+        />
+      )}
+
+      {/* Priority chip menu */}
+      {priorityMenu && (
+        <PriorityMenu
+          anchorEl={priorityMenu.anchor}
+          value={priorityMenu.task.priority}
+          onSelect={handlePrioritySelect}
+          onClose={() => setPriorityMenu(null)}
         />
       )}
 

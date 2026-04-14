@@ -47,6 +47,7 @@ const TaskTable = ({
   highlightedTaskId = null,
   onOpenTask,
   onStatusClick,
+  onPriorityClick,
   onActionsClick,
   onSaveNew,
   onSaveEdit,
@@ -86,6 +87,7 @@ const TaskTable = ({
             tasks={tasks}
             onOpenTask={onOpenTask}
             onStatusClick={onStatusClick}
+            onPriorityClick={onPriorityClick}
             onActionsClick={onActionsClick}
             highlightedTaskId={highlightedTaskId}
             emptyLabel={emptyLabel}
@@ -198,6 +200,7 @@ const TaskTable = ({
                   onSelect={toggleSelect}
                   onOpen={onOpenTask}
                   onStatusClick={onStatusClick}
+                  onPriorityClick={onPriorityClick}
                   onActionsClick={onActionsClick}
                   isLast={isLastRow}
                   highlighted={highlightedTaskId === task._id}

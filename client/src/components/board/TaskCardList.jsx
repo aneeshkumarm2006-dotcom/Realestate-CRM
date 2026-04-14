@@ -20,6 +20,7 @@ const TaskCardList = ({
   tasks = [],
   onOpenTask,
   onStatusClick,
+  onPriorityClick,
   onActionsClick,
   highlightedTaskId,
   emptyLabel = 'No tasks in this group yet',
@@ -56,6 +57,7 @@ const TaskCardList = ({
           isLast={i === tasks.length - 1}
           onOpenTask={onOpenTask}
           onStatusClick={onStatusClick}
+          onPriorityClick={onPriorityClick}
           onActionsClick={onActionsClick}
         />
       ))}
@@ -63,7 +65,7 @@ const TaskCardList = ({
   );
 };
 
-const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, onActionsClick }) => {
+const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, onPriorityClick, onActionsClick }) => {
   const liRef = useRef(null);
 
   useEffect(() => {
@@ -89,6 +91,7 @@ const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, on
         task={task}
         onOpen={onOpenTask}
         onStatusClick={onStatusClick}
+        onPriorityClick={onPriorityClick}
         onActionsClick={onActionsClick}
       />
     </li>
@@ -100,7 +103,7 @@ const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, on
  * opens the comment panel; tapping the status chip (or the ⋯ button for
  * admins) opens the corresponding menu.
  */
-const TaskCard = ({ task, onOpen, onStatusClick, onActionsClick }) => {
+const TaskCard = ({ task, onOpen, onStatusClick, onPriorityClick, onActionsClick }) => {
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const overdue = isOverdue(task.dueDate) && task.status !== 'done';
 
@@ -150,7 +153,15 @@ const TaskCard = ({ task, onOpen, onStatusClick, onActionsClick }) => {
 
       {/* Middle row — priority + status chips */}
       <div className="flex items-center gap-2 flex-wrap">
-        {task.priority && <Chip type="priority" value={task.priority} />}
+        {task.priority && (
+          <Chip
+            type="priority"
+            value={task.priority}
+            onClick={
+              onPriorityClick ? (e) => onPriorityClick(task, e) : undefined
+            }
+          />
+        )}
         <Chip
           type="status"
           value={task.status || 'not_started'}
