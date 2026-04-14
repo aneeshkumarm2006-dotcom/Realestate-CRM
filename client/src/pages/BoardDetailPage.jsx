@@ -642,8 +642,6 @@ const BoardDetailPage = () => {
                   doneCount={doneCount}
                   collapsed={isCollapsed}
                   onToggle={() => toggleGroup(group._id)}
-                  canAddItem={isAdmin}
-                  onAddItem={() => handleStartCreate(group._id)}
                   onDeleteGroup={isAdmin ? () => handleDeleteGroup(group) : undefined}
                 />
                 {!isCollapsed && (

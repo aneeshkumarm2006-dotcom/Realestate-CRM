@@ -1,10 +1,10 @@
-import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 
 /**
  * TaskGroupHeader — collapsible header for a group within a board.
  *
  * Layout (left → right):
- *   [▾ chevron]  [● dot]  [GROUP NAME]  [N items]  [progress bar]  [+ Add Item]
+ *   [▾ chevron]  [● dot]  [GROUP NAME]  [N items]  [progress bar]
  *
  * See Macan_Design.md Section 6.8.
  *
@@ -15,8 +15,6 @@ import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
  *   doneCount     — done tasks in group
  *   collapsed     — whether the group is currently collapsed
  *   onToggle      — called when chevron (or the header) is clicked
- *   onAddItem     — called when "+ Add Item" is clicked (admin only)
- *   canAddItem    — whether to render the Add Item button
  */
 const TaskGroupHeader = ({
   name,
@@ -25,8 +23,6 @@ const TaskGroupHeader = ({
   doneCount = 0,
   collapsed = false,
   onToggle,
-  onAddItem,
-  canAddItem = false,
   onDeleteGroup,
 }) => {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
@@ -132,25 +128,6 @@ const TaskGroupHeader = ({
 
       {/* Spacer pushes the add button to the right */}
       <div className="flex-1" />
-
-      {/* + Add Item (admin only) */}
-      {canAddItem && (
-        <button
-          type="button"
-          onClick={onAddItem}
-          className="inline-flex items-center gap-1 font-body font-semibold transition-colors duration-150 hover:bg-[color:var(--color-accent-light)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
-          style={{
-            height: 28,
-            padding: '0 10px',
-            fontSize: 13,
-            color: 'var(--color-accent)',
-            borderRadius: 'var(--radius-sm)',
-          }}
-        >
-          <Plus size={14} aria-hidden="true" />
-          Add Item
-        </button>
-      )}
 
       {/* Delete group (admin only) */}
       {onDeleteGroup && (
