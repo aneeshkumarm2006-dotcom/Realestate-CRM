@@ -49,6 +49,7 @@ const TaskEditRow = ({
   onCancel,
   isLast = false,
   isAdmin = false,
+  autoFocus = true,
 }) => {
   const [name, setName] = useState(initialTask?.name || '');
   const [priority, setPriority] = useState(initialTask?.priority || 'medium');
@@ -64,8 +65,8 @@ const TaskEditRow = ({
   const nameInputRef = useRef(null);
 
   useEffect(() => {
-    nameInputRef.current?.focus();
-  }, []);
+    if (autoFocus) nameInputRef.current?.focus();
+  }, [autoFocus]);
 
   const canSave = name.trim().length > 0 && !saving;
 
@@ -87,6 +88,19 @@ const TaskEditRow = ({
     }
   };
 
+  const handleCancel = () => {
+    if (!initialTask) {
+      // Always-visible creation row — just reset the form fields
+      setName('');
+      setPriority('medium');
+      setStatus('not_started');
+      setAssignedTo([]);
+      setDueDate('');
+    } else {
+      onCancel?.();
+    }
+  };
+
   const handleKeyDown = (e) => {
     // Ignore keyboard events that originate inside a listbox (AssigneePicker
     // dropdown) so selecting members with Enter/Escape doesn't save/cancel the form.
@@ -98,7 +112,7 @@ const TaskEditRow = ({
       handleSave();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel?.();
+      handleCancel();
     }
   };
 
@@ -222,7 +236,7 @@ const TaskEditRow = ({
           </button>
           <button
             type="button"
-            onClick={() => onCancel?.()}
+            onClick={handleCancel}
             aria-label="Cancel"
             className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
             style={{

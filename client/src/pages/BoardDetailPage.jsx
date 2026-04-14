@@ -90,6 +90,8 @@ const BoardDetailPage = () => {
   const [collapsed, setCollapsed] = useState(() => new Set());
   // Which group (if any) is currently creating a new task inline
   const [creatingInGroup, setCreatingInGroup] = useState(null);
+  // Key counter per group — increment after each save to reset the inline creation row
+  const [newTaskKeysByGroup, setNewTaskKeysByGroup] = useState({});
   // Task currently being edited inline
   const [editingTaskId, setEditingTaskId] = useState(null);
   // Status chip menu state
@@ -244,16 +246,19 @@ const BoardDetailPage = () => {
   };
 
   const handleSaveNewTask = useCallback(
-    async (payload) => {
-      if (!creatingInGroup) return;
+    async (groupId, payload) => {
       try {
         const created = await taskService.createTask({
           ...payload,
           board: boardId,
-          group: creatingInGroup,
+          group: groupId,
         });
         addTaskLocal(created);
-        setCreatingInGroup(null);
+        // Increment the key for this group so the creation row resets
+        setNewTaskKeysByGroup((prev) => ({
+          ...prev,
+          [groupId]: (prev[groupId] || 0) + 1,
+        }));
         refreshNotifications();
       } catch (err) {
         console.error('Failed to create task:', err);
@@ -264,7 +269,7 @@ const BoardDetailPage = () => {
         throw err;
       }
     },
-    [creatingInGroup, boardId, addTaskLocal, refreshNotifications, toastError]
+    [boardId, addTaskLocal, refreshNotifications, toastError]
   );
 
   // --- Inline edit ------------------------------------------------------
@@ -614,11 +619,10 @@ const BoardDetailPage = () => {
               (t) => t.status === 'done'
             ).length;
             const isCollapsed = collapsed.has(group._id);
-            const isCreatingHere = creatingInGroup === group._id;
             const isEditingHere =
               editingTaskId != null &&
               groupTasks.some((t) => t._id === editingTaskId);
-            const needsOverflowVisible = isCreatingHere || isEditingHere;
+            const needsOverflowVisible = !isCollapsed;
 
             return (
               <div
@@ -647,14 +651,15 @@ const BoardDetailPage = () => {
                     tasks={groupTasks}
                     members={members}
                     editingTaskId={editingTaskId}
-                    isCreating={isCreatingHere}
+                    isCreating={isAdmin}
+                    createKey={newTaskKeysByGroup[group._id] || 0}
                     isAdmin={isAdmin}
                     highlightedTaskId={highlightedTaskId}
                     onOpenTask={handleOpenTask}
                     onStatusClick={handleStatusClick}
                     onPriorityClick={handlePriorityClick}
                     onActionsClick={isAdmin ? handleActionsClick : undefined}
-                    onSaveNew={handleSaveNewTask}
+                    onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
                     onSaveEdit={handleSaveEditTask}
                     onCancelEdit={handleCancelEdit}
                   />

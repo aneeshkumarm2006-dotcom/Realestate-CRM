@@ -43,6 +43,7 @@ const TaskTable = ({
   members = [],
   editingTaskId = null,
   isCreating = false,
+  createKey = 0,
   isAdmin = false,
   highlightedTaskId = null,
   onOpenTask,
@@ -211,11 +212,12 @@ const TaskTable = ({
 
           {isCreating && (
             <TaskEditRow
-              key="__new__"
+              key={`__new__-${createKey}`}
               members={members}
               initialTask={null}
               isLast
               isAdmin={isAdmin}
+              autoFocus={false}
               onSave={onSaveNew}
               onCancel={onCancelEdit}
             />
