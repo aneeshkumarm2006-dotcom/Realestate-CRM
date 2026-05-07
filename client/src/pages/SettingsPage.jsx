@@ -28,13 +28,15 @@ const getAvatarColor = (seed = '') => {
 };
 
 const Avatar = ({ user, size = 40 }) => {
-  if (user?.profilePic) {
+  const [imgError, setImgError] = useState(false);
+  if (user?.profilePic && !imgError) {
     return (
       <img
         src={user.profilePic}
         alt={user.name || 'Avatar'}
         className="object-cover"
         style={{ width: size, height: size, borderRadius: 9999 }}
+        onError={() => setImgError(true)}
       />
     );
   }
@@ -249,6 +251,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -277,6 +280,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
     // Local preview
     const localUrl = URL.createObjectURL(file);
     setPreviewUrl(localUrl);
+    setAvatarLoadError(false);
     setUploading(true);
     try {
       await onUploadAvatar(file);
@@ -349,12 +353,13 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
           className="relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] rounded-full"
           style={{ width: 80, height: 80 }}
         >
-          {effectiveAvatar ? (
+          {effectiveAvatar && !avatarLoadError ? (
             <img
               src={effectiveAvatar}
               alt={user?.name || 'Avatar'}
               className="object-cover"
               style={{ width: 80, height: 80, borderRadius: 9999 }}
+              onError={() => setAvatarLoadError(true)}
             />
           ) : (
             <div

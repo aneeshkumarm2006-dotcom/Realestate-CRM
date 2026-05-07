@@ -21,13 +21,15 @@ const getAvatarColor = (seed = '') => {
 };
 
 const Avatar = ({ user, size = 40 }) => {
-  if (user?.profilePic) {
+  const [imgError, setImgError] = useState(false);
+  if (user?.profilePic && !imgError) {
     return (
       <img
         src={user.profilePic}
         alt={user.name || 'Avatar'}
         className="object-cover"
         style={{ width: size, height: size, borderRadius: 9999 }}
+        onError={() => setImgError(true)}
       />
     );
   }

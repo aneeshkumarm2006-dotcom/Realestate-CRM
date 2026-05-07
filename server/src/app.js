@@ -34,6 +34,7 @@ app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api', require('./routes/comments'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/productivity', require('./routes/productivity'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/search', require('./routes/search'));
 

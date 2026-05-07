@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MoreHorizontal, MessageSquare } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
@@ -274,9 +274,10 @@ const AssigneeStack = ({ assignees }) => {
  * Render either a user's profile picture or their initial as a fallback.
  */
 const Avatar = ({ user, style = {} }) => {
+  const [imgError, setImgError] = useState(false);
   const name = user?.name || '';
   const initial = name.charAt(0).toUpperCase() || '?';
-  const hasPic = !!user?.profilePic;
+  const hasPic = !!user?.profilePic && !imgError;
 
   const base = {
     width: 24,
@@ -293,6 +294,7 @@ const Avatar = ({ user, style = {} }) => {
         src={user.profilePic}
         alt={name}
         style={{ ...base, objectFit: 'cover' }}
+        onError={() => setImgError(true)}
       />
     );
   }

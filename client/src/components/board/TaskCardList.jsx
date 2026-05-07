@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 
 const NAVBAR_HEIGHT = 56;
@@ -274,9 +274,10 @@ const AssigneeStack = ({ assignees }) => {
 };
 
 const Avatar = ({ user, style = {} }) => {
+  const [imgError, setImgError] = useState(false);
   const name = user?.name || '';
   const initial = name.charAt(0).toUpperCase() || '?';
-  const hasPic = !!user?.profilePic;
+  const hasPic = !!user?.profilePic && !imgError;
 
   const base = {
     width: 22,
@@ -293,6 +294,7 @@ const Avatar = ({ user, style = {} }) => {
         src={user.profilePic}
         alt={name}
         style={{ ...base, objectFit: 'cover' }}
+        onError={() => setImgError(true)}
       />
     );
   }

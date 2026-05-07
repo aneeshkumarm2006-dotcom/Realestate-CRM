@@ -881,9 +881,10 @@ const CommentItem = ({ comment, onReply }) => {
  * Avatar bubble — profile pic if available, otherwise an initial fallback.
  */
 const Avatar = ({ user, size = 28 }) => {
+  const [imgError, setImgError] = useState(false);
   const name = user?.name || '';
   const initial = name.charAt(0).toUpperCase() || '?';
-  const hasPic = !!user?.profilePic;
+  const hasPic = !!user?.profilePic && !imgError;
 
   const base = {
     width: size,
@@ -898,6 +899,7 @@ const Avatar = ({ user, size = 28 }) => {
         src={user.profilePic}
         alt={name}
         style={{ ...base, objectFit: 'cover' }}
+        onError={() => setImgError(true)}
       />
     );
   }

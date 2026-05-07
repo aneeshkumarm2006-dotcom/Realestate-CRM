@@ -18,6 +18,7 @@ import MyBoardsPage from './pages/MyBoardsPage';
 import BoardDetailPage from './pages/BoardDetailPage';
 import CalendarPage from './pages/CalendarPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import ProductivityPage from './pages/ProductivityPage';
 import MyTasksPage from './pages/MyTasksPage';
 import SettingsPage from './pages/SettingsPage';
 import MembersPage from './pages/MembersPage';
@@ -152,6 +153,7 @@ function App() {
             <Route path="/calendar" element={<CalendarPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/productivity" element={<ProductivityPage />} />
             </Route>
             <Route path="/members" element={<MembersPage />} />
             <Route path="/settings" element={<SettingsPage />} />

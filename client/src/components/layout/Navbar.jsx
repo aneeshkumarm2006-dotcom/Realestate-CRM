@@ -69,7 +69,12 @@ const NavLinks = ({ isAdmin, onNavigate }) => {
     { to: '/boards', label: 'My Boards' },
     { to: '/my-tasks', label: 'My Tasks' },
     { to: '/members', label: 'Members' },
-    ...(isAdmin ? [{ to: '/analytics', label: 'Analytics' }] : []),
+    ...(isAdmin
+      ? [
+          { to: '/analytics', label: 'Analytics' },
+          { to: '/productivity', label: 'Productivity' },
+        ]
+      : []),
   ];
 
   return (
@@ -677,7 +682,8 @@ const NotificationBell = () => {
 };
 
 const Avatar = ({ user, size = 32 }) => {
-  if (user?.profilePic) {
+  const [imgError, setImgError] = useState(false);
+  if (user?.profilePic && !imgError) {
     return (
       <img
         src={user.profilePic}
@@ -688,6 +694,7 @@ const Avatar = ({ user, size = 32 }) => {
           height: size,
           borderRadius: 9999,
         }}
+        onError={() => setImgError(true)}
       />
     );
   }

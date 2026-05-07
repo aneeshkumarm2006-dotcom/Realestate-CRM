@@ -252,6 +252,7 @@ const AssigneeAvatars = ({ assignees }) => {
 };
 
 const MemberAvatar = ({ user, style = {} }) => {
+  const [imgError, setImgError] = useState(false);
   const name = user?.name || '';
   const initial = name.charAt(0).toUpperCase() || '?';
   const base = {
@@ -262,12 +263,13 @@ const MemberAvatar = ({ user, style = {} }) => {
     flexShrink: 0,
     ...style,
   };
-  if (user?.profilePic) {
+  if (user?.profilePic && !imgError) {
     return (
       <img
         src={user.profilePic}
         alt={name}
         style={{ ...base, objectFit: 'cover' }}
+        onError={() => setImgError(true)}
       />
     );
   }
