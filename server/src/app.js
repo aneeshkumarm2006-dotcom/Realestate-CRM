@@ -30,6 +30,7 @@ app.use('/api/orgs', require('./routes/orgs'));
 app.use('/api/boards', require('./routes/boards'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api', require('./routes/groups'));
+app.use('/api', require('./routes/automations'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api', require('./routes/comments'));
 app.use('/api/notifications', require('./routes/notifications'));

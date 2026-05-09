@@ -6,3 +6,4 @@ require('./TaskGroup');
 require('./Task');
 require('./Comment');
 require('./Notification');
+require('./Automation');

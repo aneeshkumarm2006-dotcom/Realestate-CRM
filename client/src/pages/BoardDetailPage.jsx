@@ -6,6 +6,7 @@ import {
   Globe,
   Plus,
   Settings as SettingsIcon,
+  Zap,
 } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import Button from '../components/ui/Button';
@@ -19,6 +20,7 @@ import StatusMenu from '../components/board/StatusMenu';
 import PriorityMenu from '../components/board/PriorityMenu';
 import TaskActionsMenu from '../components/board/TaskActionsMenu';
 import CommentPanel from '../components/board/CommentPanel';
+import AutomationsModal from '../components/board/AutomationsModal';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -112,6 +114,8 @@ const BoardDetailPage = () => {
   // Delete-group confirmation state
   const [groupPendingDelete, setGroupPendingDelete] = useState(null);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  // Automations modal
+  const [automationsOpen, setAutomationsOpen] = useState(false);
 
   // --- Notification highlight (scroll-to + glow) --------------------------
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
@@ -552,6 +556,13 @@ const BoardDetailPage = () => {
         {isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
             <Button
+              variant="secondary"
+              icon={Zap}
+              onClick={() => setAutomationsOpen(true)}
+            >
+              Automations
+            </Button>
+            <Button
               variant="primary"
               icon={Plus}
               onClick={handleOpenGroupModal}
@@ -823,6 +834,18 @@ const BoardDetailPage = () => {
         isOpen={!!selectedTask}
         onClose={handleCloseTask}
       />
+
+      {/* Automations */}
+      {isAdmin && (
+        <AutomationsModal
+          isOpen={automationsOpen}
+          onClose={() => setAutomationsOpen(false)}
+          boardId={boardId}
+          groups={groups}
+          members={members}
+          isAdmin={isAdmin}
+        />
+      )}
     </PageWrapper>
   );
 };
