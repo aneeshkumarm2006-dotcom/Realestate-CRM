@@ -121,9 +121,10 @@ const Modal = ({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="relative w-full bg-white outline-none"
+        className="relative w-full bg-white outline-none flex flex-col"
         style={{
           maxWidth,
+          maxHeight: 'calc(100vh - 2rem)',
           borderRadius: 'var(--radius-xl)',
           boxShadow: 'var(--shadow-lg)',
           animation: 'macan-modal-scale 200ms ease-out',
@@ -132,7 +133,7 @@ const Modal = ({
         {/* Header */}
         {(title || onClose) && (
           <div
-            className="flex items-center justify-between px-6"
+            className="flex items-center justify-between px-6 shrink-0"
             style={{
               height: 60,
               borderBottom: '1px solid var(--color-border)',
@@ -161,12 +162,12 @@ const Modal = ({
         )}
 
         {/* Body */}
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">{children}</div>
 
         {/* Footer */}
         {footer && (
           <div
-            className="flex items-center justify-end gap-3 px-6"
+            className="flex items-center justify-end gap-3 px-6 shrink-0"
             style={{
               height: 68,
               borderTop: '1px solid var(--color-border)',
