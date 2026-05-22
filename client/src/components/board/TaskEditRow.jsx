@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Dropdown from '../ui/Dropdown';
 import AssigneePicker from './AssigneePicker';
@@ -8,17 +8,15 @@ import { PRIORITY_COLORS, STATUS_COLORS } from '../../utils/priorityColors';
  * TaskEditRow — inline editable row used for both creating and editing
  * a task within a group's TaskTable.
  *
- * On create: `initialTask` is null, inputs start empty. Save → POST /api/tasks
- * On edit:   `initialTask` is a populated task, inputs start pre-filled.
- *            Save → PUT /api/tasks/:id
- *
- * Controls in the row (see Design doc Section 11):
- *   [Task name input (auto-focus)] [Priority] [Status] [Assignees] [Due Date] [✓] [✗]
+ * The Status dropdown reads its options from the board's `statuses` array
+ * when a board is passed in (post Phase 2). Falls back to the legacy 4-enum
+ * options if no board is provided (kept for safety / personal task lists).
  *
  * Props:
+ *   board        — board doc with `statuses[]`
  *   members      — org members ({ _id, name, profilePic })
  *   initialTask  — optional existing task (for edit mode)
- *   onSave       — async (payload) => void  (payload has: name, priority, status, assignedTo, dueDate)
+ *   onSave       — async (payload) => void
  *   onCancel     — () => void
  *   isLast       — removes bottom border when this is the last row
  */
@@ -26,7 +24,7 @@ const PRIORITY_OPTIONS = Object.entries(PRIORITY_COLORS).map(([v, e]) => ({
   value: v,
   label: e.label,
 }));
-const STATUS_OPTIONS = Object.entries(STATUS_COLORS).map(([v, e]) => ({
+const LEGACY_STATUS_OPTIONS = Object.entries(STATUS_COLORS).map(([v, e]) => ({
   value: v,
   label: e.label,
 }));
@@ -35,7 +33,6 @@ const toDateInputValue = (d) => {
   if (!d) return '';
   const dt = new Date(d);
   if (Number.isNaN(dt.getTime())) return '';
-  // YYYY-MM-DD
   const y = dt.getFullYear();
   const m = String(dt.getMonth() + 1).padStart(2, '0');
   const day = String(dt.getDate()).padStart(2, '0');
@@ -43,6 +40,7 @@ const toDateInputValue = (d) => {
 };
 
 const TaskEditRow = ({
+  board = null,
   members = [],
   initialTask = null,
   onSave,
@@ -51,9 +49,26 @@ const TaskEditRow = ({
   isAdmin = false,
   autoFocus = true,
 }) => {
+  const statusOptions = useMemo(() => {
+    if (board && Array.isArray(board.statuses) && board.statuses.length > 0) {
+      return [...board.statuses]
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map((s) => ({ value: s._id, label: s.name }));
+    }
+    return LEGACY_STATUS_OPTIONS;
+  }, [board]);
+
+  // Resolve initial status. If the task has one, normalise to string so the
+  // Dropdown can compare against `value`.
+  const initialStatus = useMemo(() => {
+    if (initialTask?.status) return initialTask.status.toString();
+    if (statusOptions.length > 0) return statusOptions[0].value.toString();
+    return 'not_started';
+  }, [initialTask, statusOptions]);
+
   const [name, setName] = useState(initialTask?.name || '');
   const [priority, setPriority] = useState(initialTask?.priority || 'medium');
-  const [status, setStatus] = useState(initialTask?.status || 'not_started');
+  const [status, setStatus] = useState(initialStatus);
   const [assignedTo, setAssignedTo] = useState(() => {
     const raw = initialTask?.assignedTo || [];
     return raw.map((u) => (typeof u === 'string' ? u : u._id));
@@ -82,18 +97,16 @@ const TaskEditRow = ({
         dueDate: dueDate ? new Date(dueDate).toISOString() : null,
         sendEmailNotification: true,
       });
-    } catch (err) {
-      // Parent surfaces the error; we just release the spinner so user can retry
+    } catch {
       setSaving(false);
     }
   };
 
   const handleCancel = () => {
     if (!initialTask) {
-      // Always-visible creation row — just reset the form fields
       setName('');
       setPriority('medium');
-      setStatus('not_started');
+      setStatus(initialStatus);
       setAssignedTo([]);
       setDueDate('');
     } else {
@@ -102,8 +115,6 @@ const TaskEditRow = ({
   };
 
   const handleKeyDown = (e) => {
-    // Ignore keyboard events that originate inside a listbox (AssigneePicker
-    // dropdown) so selecting members with Enter/Escape doesn't save/cancel the form.
     if (e.target.closest('[role="listbox"]') || e.target.closest('[role="option"]')) {
       return;
     }
@@ -128,10 +139,8 @@ const TaskEditRow = ({
       }}
       onKeyDown={handleKeyDown}
     >
-      {/* Checkbox slot — empty placeholder */}
       <td style={{ width: 40, padding: '0 0 0 16px' }} />
 
-      {/* Task name */}
       <td style={{ padding: '0 16px', minWidth: 240 }}>
         <input
           ref={nameInputRef}
@@ -150,10 +159,8 @@ const TaskEditRow = ({
             color: 'var(--color-text-primary)',
           }}
           onFocus={(e) => {
-            e.currentTarget.style.border =
-              '1.5px solid var(--color-accent)';
-            e.currentTarget.style.boxShadow =
-              '0 0 0 3px rgba(37, 99, 235, 0.12)';
+            e.currentTarget.style.border = '1.5px solid var(--color-accent)';
+            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.12)';
           }}
           onBlur={(e) => {
             e.currentTarget.style.border = '1.5px solid var(--color-border)';
@@ -162,7 +169,6 @@ const TaskEditRow = ({
         />
       </td>
 
-      {/* Priority */}
       <td style={{ width: 130, padding: '0 8px' }}>
         <Dropdown
           options={PRIORITY_OPTIONS}
@@ -172,17 +178,25 @@ const TaskEditRow = ({
         />
       </td>
 
-      {/* Status */}
       <td style={{ width: 160, padding: '0 8px' }}>
         <Dropdown
-          options={STATUS_OPTIONS}
+          options={statusOptions}
           value={status}
-          onChange={setStatus}
+          onChange={(val) => setStatus(val.toString())}
           size="sm"
         />
       </td>
 
-      {/* Assignees */}
+      {/* Labels column placeholder — edited from the comment panel / picker */}
+      <td style={{ width: 180, padding: '0 8px' }}>
+        <span
+          className="font-body"
+          style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
+        >
+          —
+        </span>
+      </td>
+
       <td style={{ width: 160, padding: '0 8px' }}>
         <AssigneePicker
           members={members}
@@ -192,7 +206,6 @@ const TaskEditRow = ({
         />
       </td>
 
-      {/* Due date */}
       <td style={{ width: 140, padding: '0 8px' }}>
         <input
           type="date"
@@ -211,10 +224,8 @@ const TaskEditRow = ({
         />
       </td>
 
-      {/* Comments placeholder — keeps column alignment with TaskRow */}
       <td style={{ width: 48 }} />
 
-      {/* Save / Cancel */}
       <td style={{ width: 72, padding: '0 8px 0 0' }}>
         <div className="flex items-center gap-1 justify-end">
           <button
@@ -252,8 +263,7 @@ const TaskEditRow = ({
         </div>
       </td>
     </tr>
-
-</>
+    </>
   );
 };
 

@@ -21,6 +21,8 @@ import PriorityMenu from '../components/board/PriorityMenu';
 import TaskActionsMenu from '../components/board/TaskActionsMenu';
 import CommentPanel from '../components/board/CommentPanel';
 import AutomationsModal from '../components/board/AutomationsModal';
+import LabelPicker from '../components/board/LabelPicker';
+import EditChipsModal from '../components/board/EditChipsModal';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -100,12 +102,20 @@ const BoardDetailPage = () => {
   const [statusMenu, setStatusMenu] = useState(null); // { task, anchor }
   // Priority chip menu state
   const [priorityMenu, setPriorityMenu] = useState(null); // { task, anchor }
+  // Labels picker popover state
+  const [labelMenu, setLabelMenu] = useState(null); // { task, anchor }
+  // Edit-chips modal — `kind` is 'labels' | 'statuses'
+  const [editChipsModal, setEditChipsModal] = useState(null); // 'labels' | 'statuses' | null
   // Row actions menu state
   const [actionsMenu, setActionsMenu] = useState(null); // { task, anchor }
   // Delete confirmation
   const [taskPendingDelete, setTaskPendingDelete] = useState(null);
-  // Comment panel — which task (if any) is open in the side panel
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  // Comment panel — stack of task IDs the user has drilled into. Bottom of
+  // the stack is the original task they clicked from the board; subitems
+  // pushed via "Open subitem" land on top. The visible task is always the
+  // last entry. The whole stack clears when the panel closes.
+  const [selectedTaskStack, setSelectedTaskStack] = useState([]);
+  const subitemsByParent = useTaskStore((s) => s.subitemsByParent);
   // New-group modal state
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -212,13 +222,29 @@ const BoardDetailPage = () => {
 
   const handleOpenTask = (task) => {
     if (!task?._id) return;
-    setSelectedTaskId(task._id);
+    setSelectedTaskStack([task._id]);
   };
 
-  const handleCloseTask = () => setSelectedTaskId(null);
+  const handleCloseTask = () => setSelectedTaskStack([]);
+
+  const handleOpenSubitem = useCallback((subitem) => {
+    if (!subitem?._id) return;
+    setSelectedTaskStack((prev) => [...prev, subitem._id]);
+  }, []);
+
+  const handleBackInStack = useCallback(() => {
+    setSelectedTaskStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
+
+  const selectedTaskId =
+    selectedTaskStack.length > 0
+      ? selectedTaskStack[selectedTaskStack.length - 1]
+      : null;
 
   // Resolve the selected task from the live store so the panel reflects
-  // updates (status change, edit, etc.) while open.
+  // updates (status change, edit, etc.) while open. Walks `tasksByGroup`
+  // (top-level board tasks) and `subitemsByParent` (children) so subitems
+  // opened via the recursive stack render correctly.
   const selectedTask = useMemo(() => {
     if (!selectedTaskId) return null;
     for (const list of Object.values(tasksByGroup)) {
@@ -226,13 +252,19 @@ const BoardDetailPage = () => {
       const match = list.find((t) => t._id === selectedTaskId);
       if (match) return match;
     }
+    for (const list of Object.values(subitemsByParent)) {
+      if (!Array.isArray(list)) continue;
+      const match = list.find((t) => t._id === selectedTaskId);
+      if (match) return match;
+    }
     return null;
-  }, [selectedTaskId, tasksByGroup]);
+  }, [selectedTaskId, tasksByGroup, subitemsByParent]);
 
-  // Auto-close the panel if the selected task disappears (e.g. deleted)
+  // Auto-close the panel (or pop one level) if the selected task disappears
+  // (e.g. it or its parent was deleted).
   useEffect(() => {
     if (selectedTaskId && !selectedTask) {
-      setSelectedTaskId(null);
+      setSelectedTaskStack((prev) => prev.slice(0, -1));
     }
   }, [selectedTaskId, selectedTask]);
 
@@ -324,7 +356,9 @@ const BoardDetailPage = () => {
     if (!statusMenu) return;
     const { task } = statusMenu;
     setStatusMenu(null);
-    if (newStatus === task.status) return;
+    const currentStatusStr = task.status ? task.status.toString() : null;
+    const nextStatusStr = newStatus != null ? newStatus.toString() : null;
+    if (currentStatusStr === nextStatusStr) return;
     // Optimistic update
     const prev = task;
     updateTaskLocal({ ...task, status: newStatus });
@@ -340,6 +374,40 @@ const BoardDetailPage = () => {
       toastError(
         err?.response?.data?.error ||
           'Failed to update status. Please try again.'
+      );
+    }
+  };
+
+  // --- Labels picker -----------------------------------------------------
+
+  const handleLabelsClick = (task, event) => {
+    if (!currentUser) return;
+    const anchor = event?.currentTarget || event?.target || null;
+    setLabelMenu({ task, anchor });
+  };
+
+  const handleLabelToggle = async (labelId, nextChecked) => {
+    if (!labelMenu || !isAdmin) return;
+    const { task } = labelMenu;
+    const current = (task.labels || []).map((id) => id.toString());
+    const nextLabels = nextChecked
+      ? Array.from(new Set([...current, labelId.toString()]))
+      : current.filter((id) => id !== labelId.toString());
+    const prev = task;
+    updateTaskLocal({ ...task, labels: nextLabels });
+    try {
+      const updated = await taskService.updateTask(task._id, {
+        labels: nextLabels,
+      });
+      updateTaskLocal(updated);
+      // Update the popover's task ref so its checked-state stays in sync.
+      setLabelMenu((cur) => (cur ? { ...cur, task: updated } : cur));
+    } catch (err) {
+      console.error('Failed to update labels:', err);
+      updateTaskLocal(prev);
+      toastError(
+        err?.response?.data?.error ||
+          'Failed to update labels. Please try again.'
       );
     }
   };
@@ -626,9 +694,19 @@ const BoardDetailPage = () => {
         ) : (
           groups.map((group, idx) => {
             const groupTasks = tasksByGroup[group._id] || [];
-            const doneCount = groupTasks.filter(
-              (t) => t.status === 'done'
-            ).length;
+            // Resolve the board's "done" status id so the doneCount badge
+            // counts board tasks even after the Phase 2 migration.
+            const doneStatusId =
+              board && Array.isArray(board.statuses)
+                ? (board.statuses.find((s) => s.key === 'done')?._id || null)
+                : null;
+            const doneCount = groupTasks.filter((t) => {
+              if (t.status == null) return false;
+              if (doneStatusId) {
+                return t.status.toString() === doneStatusId.toString();
+              }
+              return t.status === 'done';
+            }).length;
             const isCollapsed = collapsed.has(group._id);
             const isEditingHere =
               editingTaskId != null &&
@@ -658,6 +736,7 @@ const BoardDetailPage = () => {
                 {!isCollapsed && (
                   <TaskTable
                     tasks={groupTasks}
+                    board={board}
                     members={members}
                     editingTaskId={editingTaskId}
                     isCreating={isAdmin}
@@ -667,6 +746,7 @@ const BoardDetailPage = () => {
                     onOpenTask={handleOpenTask}
                     onStatusClick={handleStatusClick}
                     onPriorityClick={handlePriorityClick}
+                    onLabelsClick={handleLabelsClick}
                     onActionsClick={isAdmin ? handleActionsClick : undefined}
                     onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
                     onSaveEdit={handleSaveEditTask}
@@ -683,9 +763,47 @@ const BoardDetailPage = () => {
       {statusMenu && (
         <StatusMenu
           anchorEl={statusMenu.anchor}
+          board={board}
           value={statusMenu.task.status}
           onSelect={handleStatusSelect}
+          onEditChips={
+            isAdmin
+              ? () => {
+                  setStatusMenu(null);
+                  setEditChipsModal('statuses');
+                }
+              : undefined
+          }
           onClose={() => setStatusMenu(null)}
+        />
+      )}
+
+      {/* Labels picker */}
+      {labelMenu && (
+        <LabelPicker
+          anchorEl={labelMenu.anchor}
+          board={board}
+          selectedIds={labelMenu.task.labels || []}
+          onToggle={isAdmin ? handleLabelToggle : undefined}
+          onEditChips={
+            isAdmin
+              ? () => {
+                  setLabelMenu(null);
+                  setEditChipsModal('labels');
+                }
+              : undefined
+          }
+          onClose={() => setLabelMenu(null)}
+        />
+      )}
+
+      {/* Edit chips (labels / statuses) modal */}
+      {isAdmin && editChipsModal && (
+        <EditChipsModal
+          isOpen={!!editChipsModal}
+          onClose={() => setEditChipsModal(null)}
+          boardId={boardId}
+          kind={editChipsModal}
         />
       )}
 
@@ -831,8 +949,28 @@ const BoardDetailPage = () => {
       {/* Task comment panel */}
       <CommentPanel
         task={selectedTask}
+        board={board}
         isOpen={!!selectedTask}
         onClose={handleCloseTask}
+        isAdmin={isAdmin}
+        onUpdateTask={async (taskId, payload) => {
+          try {
+            const updated = await taskService.updateTask(taskId, payload);
+            updateTaskLocal(updated);
+            return updated;
+          } catch (err) {
+            console.error('Failed to update task from panel:', err);
+            toastError(
+              err?.response?.data?.error ||
+                'Failed to update task. Please try again.'
+            );
+            throw err;
+          }
+        }}
+        onEditLabels={isAdmin ? () => setEditChipsModal('labels') : undefined}
+        onOpenSubitem={handleOpenSubitem}
+        onBack={handleBackInStack}
+        canGoBack={selectedTaskStack.length > 1}
       />
 
       {/* Automations */}
@@ -841,6 +979,7 @@ const BoardDetailPage = () => {
           isOpen={automationsOpen}
           onClose={() => setAutomationsOpen(false)}
           boardId={boardId}
+          board={board}
           groups={groups}
           members={members}
           isAdmin={isAdmin}

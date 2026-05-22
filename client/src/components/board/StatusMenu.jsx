@@ -1,22 +1,28 @@
-import { useEffect, useRef } from 'react';
-import { STATUS_COLORS } from '../../utils/priorityColors';
+import { useEffect, useMemo, useRef } from 'react';
+import { Settings as SettingsIcon } from 'lucide-react';
+import { getColorPair, STATUS_COLORS } from '../../utils/priorityColors';
 
 /**
  * StatusMenu — small popover menu anchored to a status chip.
  *
- * Opens when a user clicks a status chip on a task row. Renders the four
- * status options as chip-styled buttons. Selecting one calls onSelect
- * with the new status key. Clicks outside / Escape close the menu.
+ * Reads the chip set from the board doc passed in via `board.statuses`. Falls
+ * back to the legacy 4-status enum when no board (e.g. personal task lists)
+ * is provided. Selecting a chip calls `onSelect(statusId)` — the id is the
+ * `_id` of the matching `board.statuses` subdoc for board tasks, or one of
+ * the legacy enum keys (`done`, `working_on_it`, `stuck`, `not_started`)
+ * for personal tasks.
  *
  * Props:
- *   anchorEl — DOM element the menu is anchored to (for positioning)
- *   value    — currently selected status key
- *   onSelect — (newStatus) => void
- *   onClose  — () => void
+ *   anchorEl    — DOM element the menu is anchored to
+ *   board       — current board doc (may be null for personal task contexts)
+ *   value       — currently selected status id (or legacy enum key)
+ *   onSelect    — (newStatusId) => void
+ *   onEditChips — optional: () => void  shows an "Edit Statuses" button
+ *   onClose     — () => void
  */
-const STATUS_ORDER = ['not_started', 'working_on_it', 'done', 'stuck'];
+const LEGACY_STATUS_ORDER = ['not_started', 'working_on_it', 'done', 'stuck'];
 
-const StatusMenu = ({ anchorEl, value, onSelect, onClose }) => {
+const StatusMenu = ({ anchorEl, board, value, onSelect, onEditChips, onClose }) => {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -36,6 +42,25 @@ const StatusMenu = ({ anchorEl, value, onSelect, onClose }) => {
     };
   }, [anchorEl, onClose]);
 
+  // Build the rendered list. Board path: read board.statuses in `order` order
+  // and emit { id, bg, text, label }. Legacy path: use STATUS_COLORS.
+  const options = useMemo(() => {
+    if (board && Array.isArray(board.statuses) && board.statuses.length > 0) {
+      return [...board.statuses]
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map((s) => {
+          const pair = getColorPair(s.color);
+          return { id: s._id, label: s.name, bg: pair.bg, text: pair.text };
+        });
+    }
+    return LEGACY_STATUS_ORDER.map((key) => ({
+      id: key,
+      label: STATUS_COLORS[key].label,
+      bg: STATUS_COLORS[key].bg,
+      text: STATUS_COLORS[key].text,
+    }));
+  }, [board]);
+
   if (!anchorEl) return null;
 
   const rect = anchorEl.getBoundingClientRect();
@@ -51,7 +76,7 @@ const StatusMenu = ({ anchorEl, value, onSelect, onClose }) => {
         top,
         left,
         zIndex: 60,
-        minWidth: 160,
+        minWidth: 180,
         padding: 6,
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-md)',
@@ -59,16 +84,15 @@ const StatusMenu = ({ anchorEl, value, onSelect, onClose }) => {
         animation: 'macan-dropdown-enter 150ms ease-out',
       }}
     >
-      {STATUS_ORDER.map((key) => {
-        const entry = STATUS_COLORS[key];
-        const isSelected = key === value;
+      {options.map((opt) => {
+        const isSelected = value != null && value.toString() === opt.id.toString();
         return (
           <button
-            key={key}
+            key={opt.id}
             type="button"
             role="option"
             aria-selected={isSelected}
-            onClick={() => onSelect?.(key)}
+            onClick={() => onSelect?.(opt.id)}
             className={[
               'w-full flex items-center text-left font-body font-medium',
               'transition-opacity duration-150 hover:opacity-90',
@@ -79,20 +103,40 @@ const StatusMenu = ({ anchorEl, value, onSelect, onClose }) => {
               padding: '6px 10px',
               fontSize: 12,
               borderRadius: 'var(--radius-full)',
-              backgroundColor: entry.bg,
-              color: entry.text,
-              outline: isSelected
-                ? '2px solid var(--color-accent)'
-                : 'none',
+              backgroundColor: opt.bg,
+              color: opt.text,
+              outline: isSelected ? '2px solid var(--color-accent)' : 'none',
               outlineOffset: isSelected ? 1 : 0,
               border: 'none',
               cursor: 'pointer',
             }}
           >
-            {entry.label}
+            {opt.label}
           </button>
         );
       })}
+      {onEditChips && (
+        <button
+          type="button"
+          onClick={onEditChips}
+          className="w-full flex items-center gap-2 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+          style={{
+            marginTop: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--color-text-secondary)',
+            background: 'transparent',
+            border: 'none',
+            borderTop: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer',
+          }}
+        >
+          <SettingsIcon size={12} aria-hidden="true" />
+          Edit Statuses
+        </button>
+      )}
       <style>{`
         @keyframes macan-dropdown-enter {
           from { opacity: 0; transform: translateY(-4px); }

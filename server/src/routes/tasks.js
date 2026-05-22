@@ -4,9 +4,14 @@ const {
   getTasks,
   getMyTasks,
   getCalendarTasks,
+  getSubitems,
   createTask,
   updateTask,
   deleteTask,
+  addChecklistItem,
+  updateChecklistItem,
+  deleteChecklistItem,
+  reorderChecklist,
 } = require('../controllers/taskController');
 
 const router = express.Router();
@@ -31,5 +36,14 @@ router.put('/:id', updateTask);
 
 // DELETE /api/tasks/:id — delete task (admin only for board tasks)
 router.delete('/:id', deleteTask);
+
+// GET /api/tasks/:id/subitems — fetch direct children of a task
+router.get('/:id/subitems', getSubitems);
+
+// Checklist routes — any task member can mutate
+router.post('/:id/checklist', addChecklistItem);
+router.put('/:id/checklist/reorder', reorderChecklist);
+router.put('/:id/checklist/:itemId', updateChecklistItem);
+router.delete('/:id/checklist/:itemId', deleteChecklistItem);
 
 module.exports = router;

@@ -1,23 +1,28 @@
 import { forwardRef } from 'react';
-import { STATUS_COLORS, PRIORITY_COLORS } from '../../utils/priorityColors';
+import {
+  STATUS_COLORS,
+  PRIORITY_COLORS,
+  getStatusPalette,
+  getLabelPalette,
+} from '../../utils/priorityColors';
 
 /**
  * Chip — status (pill) or priority (rounded-sm) label.
- * Used throughout task tables, calendar events, and task detail headers.
- *
- * See Macan_Design.md Section 6.4.
  *
  * Props:
- *   type:  'status' | 'priority'
- *   value: status key ('done' | 'working_on_it' | 'stuck' | 'not_started')
- *          or priority key ('critical' | 'high' | 'medium' | 'low')
- *   onClick: optional — makes the chip clickable (e.g. status dropdown)
+ *   type:  'status' | 'priority' | 'label'
+ *   value: priority key, status id/legacy-key, or label id
+ *   board: optional board doc (required for `status` and `label` types when
+ *          the value is an ObjectId). Falls back to the legacy STATUS_COLORS
+ *          palette for status when board is omitted (e.g. personal tasks).
+ *   label: optional override label
+ *   onClick: optional — makes the chip clickable
  */
-
 const Chip = forwardRef(function Chip(
   {
     type = 'status',
     value,
+    board,
     label: labelOverride,
     onClick,
     className = '',
@@ -25,9 +30,35 @@ const Chip = forwardRef(function Chip(
   },
   ref,
 ) {
-  const source = type === 'priority' ? PRIORITY_COLORS : STATUS_COLORS;
-  const entry = source[value] || source[Object.keys(source)[0]];
-  const label = labelOverride ?? entry.label;
+  let bg;
+  let text;
+  let label;
+
+  if (type === 'priority') {
+    const entry = PRIORITY_COLORS[value] || PRIORITY_COLORS.low;
+    bg = entry.bg;
+    text = entry.text;
+    label = labelOverride ?? entry.label;
+  } else if (type === 'label') {
+    const pal = getLabelPalette(board, value);
+    bg = pal.bg;
+    text = pal.text;
+    label = labelOverride ?? pal.label;
+  } else {
+    // status
+    if (board) {
+      const pal = getStatusPalette(board, value);
+      bg = pal.bg;
+      text = pal.text;
+      label = labelOverride ?? pal.label;
+    } else {
+      const entry =
+        STATUS_COLORS[value] || STATUS_COLORS.not_started;
+      bg = entry.bg;
+      text = entry.text;
+      label = labelOverride ?? entry.label;
+    }
+  }
 
   const isClickable = typeof onClick === 'function';
   const radius =
@@ -51,8 +82,8 @@ const Chip = forwardRef(function Chip(
         .filter(Boolean)
         .join(' ')}
       style={{
-        backgroundColor: entry.bg,
-        color: entry.text,
+        backgroundColor: bg,
+        color: text,
         borderRadius: radius,
         padding: '3px 10px',
         border: 'none',

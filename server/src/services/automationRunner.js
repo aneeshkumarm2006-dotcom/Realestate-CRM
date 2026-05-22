@@ -11,6 +11,7 @@ const tick = async () => {
   try {
     due = await Automation.find({
       enabled: true,
+      triggerType: 'SCHEDULE',
       nextRunAt: { $lte: now },
     });
   } catch (err) {

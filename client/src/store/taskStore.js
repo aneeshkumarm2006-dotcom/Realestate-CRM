@@ -10,6 +10,7 @@ import * as taskService from '../services/taskService';
 const useTaskStore = create((set, get) => ({
   groups: [],
   tasksByGroup: {},   // { [groupId]: Task[] }
+  subitemsByParent: {}, // { [parentTaskId]: Task[] }
   loading: false,
   error: null,
 
@@ -65,10 +66,21 @@ const useTaskStore = create((set, get) => ({
     }),
 
   /**
-   * Replace a task in place within its group bucket.
+   * Replace a task in place. Subitems (tasks with a `parent`) land in the
+   * `subitemsByParent` cache; top-level tasks land in their group bucket.
    */
   updateTask: (task) =>
     set((s) => {
+      const parentId = task?.parent ? task.parent.toString() : null;
+      if (parentId) {
+        const list = s.subitemsByParent[parentId] || [];
+        return {
+          subitemsByParent: {
+            ...s.subitemsByParent,
+            [parentId]: list.map((t) => (t._id === task._id ? task : t)),
+          },
+        };
+      }
       const gid = task.group;
       if (!gid) return s;
       const existing = s.tasksByGroup[gid] || [];
@@ -81,15 +93,42 @@ const useTaskStore = create((set, get) => ({
     }),
 
   /**
-   * Remove a task by id from any group bucket it currently lives in.
+   * Remove a task by id from any group bucket it currently lives in. Also
+   * sweeps `subitemsByParent` so that:
+   *   - if `id` is a subitem itself, it disappears from its parent's bucket
+   *   - if `id` is a top-level task, its cached subitem list is dropped
+   *     (since the server cascades the actual rows)
+   *
+   * If removing the subitem leaves its parent with zero remaining children,
+   * the parent's `hasSubitems` flag is flipped to false so the board view
+   * collapses the expand chevron.
    */
   deleteTask: (id) =>
     set((s) => {
-      const next = {};
+      const nextGroups = { ...s.tasksByGroup };
       for (const [gid, list] of Object.entries(s.tasksByGroup)) {
-        next[gid] = list.filter((t) => t._id !== id);
+        nextGroups[gid] = list.filter((t) => t._id !== id);
       }
-      return { tasksByGroup: next };
+      const nextSubitems = {};
+      const parentsThatLostLastChild = new Set();
+      for (const [pid, list] of Object.entries(s.subitemsByParent)) {
+        if (pid === id) continue; // drop the deleted task's own child cache
+        const filtered = (list || []).filter((t) => t._id !== id);
+        if (filtered.length === 0 && (list || []).length > 0) {
+          parentsThatLostLastChild.add(pid);
+        }
+        nextSubitems[pid] = filtered;
+      }
+      if (parentsThatLostLastChild.size > 0) {
+        for (const [gid, list] of Object.entries(nextGroups)) {
+          nextGroups[gid] = list.map((t) =>
+            parentsThatLostLastChild.has(t._id) && t.hasSubitems
+              ? { ...t, hasSubitems: false }
+              : t
+          );
+        }
+      }
+      return { tasksByGroup: nextGroups, subitemsByParent: nextSubitems };
     }),
 
   addGroup: (group) =>
@@ -110,10 +149,160 @@ const useTaskStore = create((set, get) => ({
       return { groups: nextGroups, tasksByGroup: rest };
     }),
 
-  clear: () => set({ groups: [], tasksByGroup: {}, error: null }),
+  clear: () =>
+    set({ groups: [], tasksByGroup: {}, subitemsByParent: {}, error: null }),
+
+  /**
+   * Add a checklist item. Optimistically refreshes the task by re-saving the
+   * server response into the matching group bucket.
+   */
+  addChecklistItem: async (taskId, text) => {
+    const updated = await taskService.addChecklistItem(taskId, text);
+    get().updateTask(updated);
+    return updated;
+  },
+
+  /**
+   * Toggle an item's done state and/or rename it.
+   */
+  updateChecklistItem: async (taskId, itemId, patch) => {
+    const updated = await taskService.updateChecklistItem(taskId, itemId, patch);
+    get().updateTask(updated);
+    return updated;
+  },
+
+  /**
+   * Toggle convenience helper used by the row badge + editor checkbox.
+   */
+  toggleChecklistItem: async (taskId, itemId, done) =>
+    get().updateChecklistItem(taskId, itemId, { done }),
+
+  /**
+   * Rename convenience helper, debounced from the editor input.
+   */
+  renameChecklistItem: async (taskId, itemId, text) =>
+    get().updateChecklistItem(taskId, itemId, { text }),
+
+  deleteChecklistItem: async (taskId, itemId) => {
+    const updated = await taskService.deleteChecklistItem(taskId, itemId);
+    get().updateTask(updated);
+    return updated;
+  },
+
+  reorderChecklist: async (taskId, orderedIds) => {
+    const updated = await taskService.reorderChecklist(taskId, orderedIds);
+    get().updateTask(updated);
+    return updated;
+  },
+
+  // ---- Subitems ---------------------------------------------------------
+
+  /**
+   * Fetch subitems for a parent task and cache them under
+   * `subitemsByParent[parentId]`. Called when CommentPanel opens.
+   */
+  fetchSubitems: async (parentId) => {
+    if (!parentId) return [];
+    const list = await taskService.getSubitems(parentId);
+    set((s) => ({
+      subitemsByParent: { ...s.subitemsByParent, [parentId]: list || [] },
+    }));
+    return list || [];
+  },
+
+  /**
+   * Create a subitem under `parentId`. Payload omits board/group — both are
+   * inherited from the parent. The server validates and applies them.
+   */
+  addSubitem: async (parentId, data) => {
+    if (!parentId) throw new Error('parentId is required');
+    // Find the parent task in any group bucket so we can inherit board/group.
+    let parent = null;
+    for (const list of Object.values(get().tasksByGroup)) {
+      const match = (list || []).find((t) => t._id === parentId);
+      if (match) {
+        parent = match;
+        break;
+      }
+    }
+    // Fallback: search subitem caches (so nested-open works even though we
+    // don't currently support multi-level nesting on the server).
+    if (!parent) {
+      for (const list of Object.values(get().subitemsByParent)) {
+        const match = (list || []).find((t) => t._id === parentId);
+        if (match) {
+          parent = match;
+          break;
+        }
+      }
+    }
+    const payload = {
+      ...data,
+      parent: parentId,
+      board: data?.board || parent?.board,
+      group: data?.group || parent?.group,
+    };
+    const created = await taskService.createTask(payload);
+    set((s) => {
+      // Flip the parent's `hasSubitems` to true if it isn't already so the
+      // board view's expand chevron shows immediately.
+      const nextTasksByGroup = { ...s.tasksByGroup };
+      for (const [gid, list] of Object.entries(s.tasksByGroup)) {
+        if (!Array.isArray(list)) continue;
+        let changed = false;
+        const nextList = list.map((t) => {
+          if (t._id === parentId && !t.hasSubitems) {
+            changed = true;
+            return { ...t, hasSubitems: true };
+          }
+          return t;
+        });
+        if (changed) nextTasksByGroup[gid] = nextList;
+      }
+      return {
+        tasksByGroup: nextTasksByGroup,
+        subitemsByParent: {
+          ...s.subitemsByParent,
+          [parentId]: [...(s.subitemsByParent[parentId] || []), created],
+        },
+      };
+    });
+    return created;
+  },
+
+  /**
+   * Replace a subitem in its parent bucket (used after PUT /api/tasks/:id).
+   * Falls back to walking every bucket so callers don't have to know which
+   * parent the subitem belongs to.
+   */
+  updateSubitem: (task) =>
+    set((s) => {
+      const parentId = task?.parent ? task.parent.toString() : null;
+      if (!parentId) return s;
+      const list = s.subitemsByParent[parentId] || [];
+      return {
+        subitemsByParent: {
+          ...s.subitemsByParent,
+          [parentId]: list.map((t) => (t._id === task._id ? task : t)),
+        },
+      };
+    }),
+
+  /**
+   * Remove a subitem from every parent bucket it may live in.
+   */
+  deleteSubitem: (subitemId) =>
+    set((s) => {
+      const next = {};
+      for (const [pid, list] of Object.entries(s.subitemsByParent)) {
+        next[pid] = (list || []).filter((t) => t._id !== subitemId);
+      }
+      return { subitemsByParent: next };
+    }),
 
   // Helpers
   getTasksForGroup: (groupId) => get().tasksByGroup[groupId] || [],
+  getSubitemsForTask: (parentId) => get().subitemsByParent[parentId] || [],
 }));
 
 export default useTaskStore;

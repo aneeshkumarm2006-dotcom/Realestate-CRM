@@ -10,9 +10,11 @@ const {
 } = require('../services/notificationService');
 const { sendTaskAssignmentEmail } = require('../services/emailService');
 const Notification = require('../models/Notification');
+const eventBus = require('../services/eventBus');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
-const VALID_STATUSES = ['not_started', 'working_on_it', 'done', 'stuck'];
+// Legacy enum keys — accepted for personal tasks (which don't have a board).
+const LEGACY_STATUS_KEYS = ['not_started', 'working_on_it', 'done', 'stuck'];
 
 /**
  * Whether the current user is the admin of this org.
@@ -42,6 +44,53 @@ const loadBoardContext = async (boardId, userId) => {
   }
 
   return { board, org, isAdmin: isOrgAdmin(org, userId) };
+};
+
+/**
+ * Resolve the default-status ObjectId for a board. Falls back to the first
+ * status, then to the legacy enum string 'not_started' if the board has
+ * no statuses configured (shouldn't happen post-migration, but guards the
+ * controller against bad data).
+ */
+const resolveDefaultStatus = (board) => {
+  if (!board || !Array.isArray(board.statuses) || board.statuses.length === 0) {
+    return 'not_started';
+  }
+  const fav = board.statuses.find((s) => s.isDefault);
+  return (fav || board.statuses[0])._id;
+};
+
+/**
+ * Validate that the provided status id is one of the board's statuses.
+ * Returns the matching status subdoc, or null. Accepts string ObjectIds
+ * and Mongoose ObjectIds.
+ */
+const findBoardStatus = (board, statusInput) => {
+  if (!board || !Array.isArray(board.statuses)) return null;
+  if (statusInput == null) return null;
+  const target = statusInput.toString();
+  return board.statuses.find((s) => s._id.toString() === target) || null;
+};
+
+/**
+ * Filter the input label-id list down to ids that exist on the board.
+ * Returns null when input is not an array (i.e. caller didn't pass labels).
+ */
+const sanitizeLabelsForBoard = (board, input) => {
+  if (!Array.isArray(input)) return null;
+  if (!board || !Array.isArray(board.labels)) return [];
+  const known = new Set(board.labels.map((l) => l._id.toString()));
+  const seen = new Set();
+  const out = [];
+  for (const raw of input) {
+    if (!raw) continue;
+    const id = raw.toString();
+    if (!mongoose.Types.ObjectId.isValid(id)) continue;
+    if (!known.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
 };
 
 /**
@@ -76,14 +125,41 @@ const populateTask = (query) =>
     .populate('createdBy', 'name profilePic email');
 
 /**
+ * Annotate a list of POJO tasks with `hasSubitems: bool` so the board view
+ * can show an expand chevron next to rows that own children. One follow-up
+ * `distinct` query — cheaper than per-row counts.
+ */
+const annotateHasSubitems = async (tasks) => {
+  if (!Array.isArray(tasks) || tasks.length === 0) return tasks;
+  const ids = tasks.map((t) => t._id).filter(Boolean);
+  if (ids.length === 0) {
+    for (const t of tasks) t.hasSubitems = false;
+    return tasks;
+  }
+  const parentIds = await Task.find({ parent: { $in: ids } }).distinct('parent');
+  const hasChildren = new Set(parentIds.map((id) => id.toString()));
+  for (const t of tasks) {
+    t.hasSubitems = t?._id ? hasChildren.has(t._id.toString()) : false;
+  }
+  return tasks;
+};
+
+/**
+ * Friendly status label for notification messages. Uses the board's
+ * status name if the task references one of its statuses; otherwise
+ * falls back to a humanised version of the input.
+ */
+const describeStatus = (board, statusInput) => {
+  const found = findBoardStatus(board, statusInput);
+  if (found) return found.name;
+  if (typeof statusInput === 'string') {
+    return statusInput.replace(/_/g, ' ');
+  }
+  return 'updated';
+};
+
+/**
  * GET /api/tasks?board=:id&group=:id
- *
- * Return tasks filtered by board and optionally group. Populates
- * `assignedTo` (name, profilePic) and `createdBy` (name). Personal tasks
- * are NOT returned by this endpoint.
- *
- * Admins: all tasks on the board.
- * Regular users: only tasks they are assigned to, and only on public boards.
  */
 const getTasks = async (req, res) => {
   try {
@@ -97,10 +173,18 @@ const getTasks = async (req, res) => {
     const ctx = await loadBoardContext(boardId, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
-    const filter = { board: boardId, isPersonal: { $ne: true } };
+    // Top-level tasks only — subitems are fetched on demand via /:id/subitems.
+    const filter = {
+      board: boardId,
+      isPersonal: { $ne: true },
+      parent: null,
+    };
     if (groupId) filter.group = groupId;
 
-    const tasks = await populateTask(Task.find(filter)).sort({ createdAt: 1 });
+    const tasks = await populateTask(Task.find(filter))
+      .sort({ createdAt: 1 })
+      .lean();
+    await annotateHasSubitems(tasks);
 
     return res.json({ tasks });
   } catch (err) {
@@ -110,18 +194,54 @@ const getTasks = async (req, res) => {
 };
 
 /**
- * GET /api/tasks/my
+ * GET /api/tasks/:id/subitems — list direct children of a task.
  *
- * Return tasks where the current user is an assignee, plus the user's own
- * personal tasks. Populates assignedTo and board (so the frontend can show
- * which board a task came from).
+ * Any org member who can see the parent can read its subitems. Sorted by
+ * creation time so they show in the order the user added them.
+ */
+const getSubitems = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid task id' });
+    }
+
+    const parent = await Task.findById(id);
+    if (!parent) return res.status(404).json({ error: 'Task not found' });
+
+    if (parent.isPersonal) {
+      if (!parent.createdBy || parent.createdBy.toString() !== userId) {
+        return res.status(403).json({ error: 'Not authorised' });
+      }
+    } else {
+      const ctx = await loadBoardContext(parent.board, userId);
+      if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    }
+
+    const subitems = await populateTask(Task.find({ parent: id })).sort({
+      createdAt: 1,
+    });
+
+    return res.json({ tasks: subitems });
+  } catch (err) {
+    console.error('getSubitems error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * GET /api/tasks/my
  */
 const getMyTasks = async (req, res) => {
   try {
     const userId = req.user.userId;
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
+    // Top-level only (subitems shouldn't clutter "My Tasks").
     const tasks = await Task.find({
+      parent: null,
       $or: [
         { assignedTo: userObjectId, isPersonal: { $ne: true } },
         { isPersonal: true, createdBy: userObjectId },
@@ -129,8 +249,10 @@ const getMyTasks = async (req, res) => {
     })
       .populate('assignedTo', 'name profilePic email')
       .populate('createdBy', 'name profilePic email')
-      .populate('board', 'name visibility')
-      .sort({ dueDate: 1, createdAt: -1 });
+      .populate('board', 'name visibility statuses labels')
+      .sort({ dueDate: 1, createdAt: -1 })
+      .lean();
+    await annotateHasSubitems(tasks);
 
     return res.json({ tasks });
   } catch (err) {
@@ -141,14 +263,6 @@ const getMyTasks = async (req, res) => {
 
 /**
  * GET /api/tasks/calendar?month=:m&year=:y&org=:orgId
- *
- * Return tasks with a `dueDate` falling in the given month/year, scoped to
- * the current org. Admins of the org get all board tasks plus their own
- * personal tasks. Regular users get only tasks assigned to them (on public
- * boards in the org) plus their own personal tasks.
- *
- * `month` is 1-12 (calendar month, not JS 0-indexed). `year` is a 4-digit
- * year. If either is missing/invalid, defaults to the current month.
  */
 const getCalendarTasks = async (req, res) => {
   try {
@@ -167,26 +281,24 @@ const getCalendarTasks = async (req, res) => {
         ? rawYear
         : now.getFullYear();
 
-    // First day of month (inclusive) → first day of next month (exclusive)
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 1);
 
     const orgId = req.query.org;
 
-    // Determine which board tasks this user can see in this org (if any)
     let boardTaskFilter = null;
     if (orgId && mongoose.Types.ObjectId.isValid(orgId)) {
       const org = await Organisation.findById(orgId);
       if (org) {
         const isMember = org.members.some((m) => m.toString() === userId);
         if (isMember) {
-          // All org members see all board tasks within the org
           const boards = await Board.find({ organisation: orgId }).select('_id');
           const boardIds = boards.map((b) => b._id);
           if (boardIds.length > 0) {
             boardTaskFilter = {
               board: { $in: boardIds },
               isPersonal: { $ne: true },
+              parent: null,
               dueDate: { $gte: start, $lt: end },
             };
           }
@@ -194,7 +306,6 @@ const getCalendarTasks = async (req, res) => {
       }
     }
 
-    // Personal tasks owned by the user, in the date range
     const personalFilter = {
       isPersonal: true,
       createdBy: userObjectId,
@@ -207,8 +318,10 @@ const getCalendarTasks = async (req, res) => {
     const tasks = await Task.find({ $or: filters })
       .populate('assignedTo', 'name profilePic email')
       .populate('createdBy', 'name profilePic email')
-      .populate('board', 'name visibility')
-      .sort({ dueDate: 1, createdAt: 1 });
+      .populate('board', 'name visibility statuses labels')
+      .sort({ dueDate: 1, createdAt: 1 })
+      .lean();
+    await annotateHasSubitems(tasks);
 
     return res.json({ tasks, month, year });
   } catch (err) {
@@ -221,8 +334,12 @@ const getCalendarTasks = async (req, res) => {
  * POST /api/tasks
  *
  * Create a task. Two modes:
- *   - Board task: requires `board` and `group`. Admin only.
- *   - Personal task: `isPersonal: true`, no board/group. Any user.
+ *   - Board task: requires `board` and `group`. Admin only. `status` must be
+ *     an ObjectId in the target board's `statuses`; if omitted, falls back
+ *     to the board's default status. `labels` must reference ids in
+ *     board.labels.
+ *   - Personal task: `isPersonal: true`. `status` accepts the legacy enum
+ *     strings.
  */
 const createTask = async (req, res) => {
   try {
@@ -237,6 +354,8 @@ const createTask = async (req, res) => {
       dueDate,
       note,
       isPersonal,
+      labels,
+      parent: parentId,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -246,16 +365,17 @@ const createTask = async (req, res) => {
     if (priority && !VALID_PRIORITIES.includes(priority)) {
       return res.status(400).json({ error: 'Invalid priority' });
     }
-    if (status && !VALID_STATUSES.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
-    }
 
     // Personal task path
     if (isPersonal) {
+      const personalStatus =
+        typeof status === 'string' && LEGACY_STATUS_KEYS.includes(status)
+          ? status
+          : 'not_started';
       const task = await Task.create({
         name: name.trim(),
         priority: priority || 'medium',
-        status: status || 'not_started',
+        status: personalStatus,
         dueDate: dueDate || undefined,
         note: note || undefined,
         isPersonal: true,
@@ -278,10 +398,49 @@ const createTask = async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    // Group must belong to this board
     const group = await TaskGroup.findById(groupId);
     if (!group || group.board.toString() !== boardId) {
       return res.status(400).json({ error: 'Group does not belong to board' });
+    }
+
+    // Validate parent task (subitem creation). Parent must exist on the same
+    // board; nesting beyond one level is not supported in this iteration.
+    let resolvedParent = null;
+    if (parentId) {
+      if (!mongoose.Types.ObjectId.isValid(parentId)) {
+        return res.status(400).json({ error: 'Invalid parent id' });
+      }
+      const parentTask = await Task.findById(parentId);
+      if (!parentTask) {
+        return res.status(400).json({ error: 'Parent task not found' });
+      }
+      if (!parentTask.board || parentTask.board.toString() !== boardId) {
+        return res.status(400).json({ error: 'Parent task is on a different board' });
+      }
+      if (parentTask.parent) {
+        return res.status(400).json({ error: 'Subitems cannot be nested further' });
+      }
+      resolvedParent = parentTask._id;
+    }
+
+    // Validate status against the board's configured statuses.
+    let resolvedStatus = resolveDefaultStatus(ctx.board);
+    if (status !== undefined && status !== null && status !== '') {
+      const match = findBoardStatus(ctx.board, status);
+      if (!match) {
+        return res.status(400).json({ error: 'Invalid status for this board' });
+      }
+      resolvedStatus = match._id;
+    }
+
+    // Validate labels against the board's configured labels.
+    let resolvedLabels = [];
+    if (labels !== undefined) {
+      const sanitized = sanitizeLabelsForBoard(ctx.board, labels);
+      if (sanitized === null) {
+        return res.status(400).json({ error: 'Invalid labels payload' });
+      }
+      resolvedLabels = sanitized;
     }
 
     const { ids: assigneeIds, error: assigneeErr } = validateAssignees(
@@ -295,18 +454,31 @@ const createTask = async (req, res) => {
       board: boardId,
       group: groupId,
       priority: priority || 'medium',
-      status: status || 'not_started',
+      status: resolvedStatus,
+      labels: resolvedLabels,
       assignedTo: assigneeIds,
       dueDate: dueDate || undefined,
       note: note || undefined,
       isPersonal: false,
+      parent: resolvedParent,
       createdBy: userId,
     });
 
-    // Touch the board's updatedAt so "recent boards" reflects activity
     await Board.updateOne({ _id: boardId }, { $set: { updatedAt: new Date() } });
 
-    // Notify each assignee that they've been assigned a new task
+    // Fan out an item.created event for ITEM_CREATED automations. Subitems
+    // are excluded to avoid recursion (a CREATE_SUBITEM action could otherwise
+    // re-trigger itself). Personal tasks never enter this branch.
+    if (!resolvedParent) {
+      eventBus.emit('item.created', {
+        taskId: task._id,
+        boardId,
+        groupId,
+        statusId: resolvedStatus,
+        createdByUserId: userId,
+      });
+    }
+
     if (assigneeIds.length > 0) {
       await createNotificationsForUsers({
         userIds: assigneeIds,
@@ -317,7 +489,6 @@ const createTask = async (req, res) => {
       });
     }
 
-    // Send email notifications to each assignee
     if (assigneeIds.length > 0) {
       const taskLink = `${process.env.CLIENT_URL}/boards/${boardId}`;
       const assigneeUsers = await User.find({ _id: { $in: assigneeIds } }).select('email').lean();
@@ -351,12 +522,6 @@ const createTask = async (req, res) => {
 
 /**
  * PUT /api/tasks/:id
- *
- * Update a task.
- *   - Personal task: only the creator can edit, and can edit any field.
- *   - Board task (admin): can update any field.
- *   - Board task (regular user): can only update `status`, and only if they
- *     are an assignee of the task.
  */
 const updateTask = async (req, res) => {
   try {
@@ -367,7 +532,7 @@ const updateTask = async (req, res) => {
     const task = await Task.findById(id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
-    // Personal task branch
+    // ----- Personal task branch -----
     if (task.isPersonal) {
       if (!task.createdBy || task.createdBy.toString() !== userId) {
         return res.status(403).json({ error: 'Not authorised' });
@@ -385,47 +550,43 @@ const updateTask = async (req, res) => {
         task.priority = body.priority;
       }
       if (body.status !== undefined) {
-        if (!VALID_STATUSES.includes(body.status)) {
+        if (typeof body.status !== 'string' || !LEGACY_STATUS_KEYS.includes(body.status)) {
           return res.status(400).json({ error: 'Invalid status' });
         }
         task.status = body.status;
       }
-      if (body.dueDate !== undefined) {
-        task.dueDate = body.dueDate || undefined;
-      }
-      if (body.note !== undefined) {
-        task.note = body.note || undefined;
-      }
+      if (body.dueDate !== undefined) task.dueDate = body.dueDate || undefined;
+      if (body.note !== undefined) task.note = body.note || undefined;
       await task.save();
       const populated = await populateTask(Task.findById(task._id));
       return res.json({ task: populated });
     }
 
-    // Board task branch — need board context for permissions
+    // ----- Board task branch -----
     const ctx = await loadBoardContext(task.board, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
     if (!ctx.isAdmin) {
-      // Regular members can change status on any task in the org
+      // Regular members can only change status (on any board task they can see).
       const allowedKeys = Object.keys(body).filter((k) => body[k] !== undefined);
       if (allowedKeys.length !== 1 || allowedKeys[0] !== 'status') {
         return res
           .status(403)
           .json({ error: 'Only status can be changed by members' });
       }
-      if (!VALID_STATUSES.includes(body.status)) {
-        return res.status(400).json({ error: 'Invalid status' });
+      const match = findBoardStatus(ctx.board, body.status);
+      if (!match) {
+        return res.status(400).json({ error: 'Invalid status for this board' });
       }
-      const prevStatus = task.status;
-      task.status = body.status;
+      const prevStatus = task.status ? task.status.toString() : null;
+      task.status = match._id;
       await task.save();
 
-      // Notify other assignees that the status changed
-      if (prevStatus !== body.status) {
+      if (prevStatus !== match._id.toString()) {
         await createNotificationsForUsers({
           userIds: task.assignedTo,
           type: 'statusChanged',
-          message: `Status of "${task.name}" changed to ${body.status.replace(/_/g, ' ')}`,
+          message: `Status of "${task.name}" changed to ${match.name}`,
           taskId: task._id,
           excludeUserId: userId,
         });
@@ -435,12 +596,13 @@ const updateTask = async (req, res) => {
       return res.json({ task: populated });
     }
 
-    // Admin: can update any field
-    // Capture "before" values so we can diff and fire the right notifications
-    const prevStatus = task.status;
+    // Admin path — any field is editable.
+    const prevStatus = task.status ? task.status.toString() : null;
     const prevAssigneeIds = task.assignedTo.map((u) => u.toString());
     let statusChanged = false;
-    let newAssigneeIds = null; // ids added this update
+    let newAssigneeIds = null;
+    let statusName = null;
+
     if (typeof body.name === 'string') {
       if (!body.name.trim()) {
         return res.status(400).json({ error: 'Task name cannot be empty' });
@@ -454,28 +616,30 @@ const updateTask = async (req, res) => {
       task.priority = body.priority;
     }
     if (body.status !== undefined) {
-      if (!VALID_STATUSES.includes(body.status)) {
-        return res.status(400).json({ error: 'Invalid status' });
+      const match = findBoardStatus(ctx.board, body.status);
+      if (!match) {
+        return res.status(400).json({ error: 'Invalid status for this board' });
       }
-      if (prevStatus !== body.status) statusChanged = true;
-      task.status = body.status;
+      if (prevStatus !== match._id.toString()) statusChanged = true;
+      task.status = match._id;
+      statusName = match.name;
+    }
+    if (body.labels !== undefined) {
+      const sanitized = sanitizeLabelsForBoard(ctx.board, body.labels);
+      if (sanitized === null) {
+        return res.status(400).json({ error: 'Invalid labels payload' });
+      }
+      task.labels = sanitized;
     }
     if (body.assignedTo !== undefined) {
-      const { ids, error: assigneeErr } = validateAssignees(
-        body.assignedTo,
-        ctx.org
-      );
+      const { ids, error: assigneeErr } = validateAssignees(body.assignedTo, ctx.org);
       if (assigneeErr) return res.status(400).json({ error: assigneeErr });
       const prevSet = new Set(prevAssigneeIds);
       newAssigneeIds = ids.filter((id) => !prevSet.has(id));
       task.assignedTo = ids;
     }
-    if (body.dueDate !== undefined) {
-      task.dueDate = body.dueDate || undefined;
-    }
-    if (body.note !== undefined) {
-      task.note = body.note || undefined;
-    }
+    if (body.dueDate !== undefined) task.dueDate = body.dueDate || undefined;
+    if (body.note !== undefined) task.note = body.note || undefined;
     if (body.group !== undefined && body.group !== null) {
       const newGroup = await TaskGroup.findById(body.group);
       if (!newGroup || newGroup.board.toString() !== task.board.toString()) {
@@ -492,7 +656,6 @@ const updateTask = async (req, res) => {
       { $set: { updatedAt: new Date() } }
     );
 
-    // Notify newly-added assignees
     if (newAssigneeIds && newAssigneeIds.length > 0) {
       await createNotificationsForUsers({
         userIds: newAssigneeIds,
@@ -502,18 +665,16 @@ const updateTask = async (req, res) => {
         excludeUserId: userId,
       });
     }
-    // Notify current assignees (except actor) that status changed
     if (statusChanged) {
       await createNotificationsForUsers({
         userIds: task.assignedTo,
         type: 'statusChanged',
-        message: `Status of "${task.name}" changed to ${task.status.replace(/_/g, ' ')}`,
+        message: `Status of "${task.name}" changed to ${statusName || describeStatus(ctx.board, task.status)}`,
         taskId: task._id,
         excludeUserId: userId,
       });
     }
 
-    // Send email to newly-added assignees
     if (newAssigneeIds && newAssigneeIds.length > 0) {
       const taskLink = `${process.env.CLIENT_URL}/boards/${task.board}`;
       const assigneeUsers = await User.find({ _id: { $in: newAssigneeIds } }).select('email').lean();
@@ -546,10 +707,157 @@ const updateTask = async (req, res) => {
 };
 
 /**
+ * Authorise a checklist mutation against a task. Personal tasks only allow
+ * the creator; board tasks allow any org member (mirrors comment behaviour —
+ * collaborative state should be editable by everyone who can see the task).
+ * Returns { task } on success, or { status, error } on failure.
+ */
+const loadTaskForChecklist = async (taskId, userId) => {
+  if (!mongoose.Types.ObjectId.isValid(taskId)) {
+    return { status: 400, error: 'Invalid task id' };
+  }
+  const task = await Task.findById(taskId);
+  if (!task) return { status: 404, error: 'Task not found' };
+
+  if (task.isPersonal) {
+    if (!task.createdBy || task.createdBy.toString() !== userId) {
+      return { status: 403, error: 'Not authorised' };
+    }
+    return { task };
+  }
+
+  const ctx = await loadBoardContext(task.board, userId);
+  if (ctx.error) return { status: ctx.status, error: ctx.error };
+  return { task };
+};
+
+/**
+ * POST /api/tasks/:id/checklist — add a new checklist item.
+ */
+const addChecklistItem = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+
+    if (!text) {
+      return res.status(400).json({ error: 'Checklist item text is required' });
+    }
+
+    const ctx = await loadTaskForChecklist(id, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    ctx.task.checklist.push({ text, done: false });
+    await ctx.task.save();
+
+    const populated = await populateTask(Task.findById(ctx.task._id));
+    return res.status(201).json({ task: populated });
+  } catch (err) {
+    console.error('addChecklistItem error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * PUT /api/tasks/:id/checklist/:itemId — toggle done and/or rename.
+ */
+const updateChecklistItem = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id, itemId } = req.params;
+    const body = req.body || {};
+
+    const ctx = await loadTaskForChecklist(id, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const item = ctx.task.checklist.id(itemId);
+    if (!item) return res.status(404).json({ error: 'Checklist item not found' });
+
+    if (body.text !== undefined) {
+      if (typeof body.text !== 'string') {
+        return res.status(400).json({ error: 'Invalid text' });
+      }
+      item.text = body.text.trim();
+    }
+    if (body.done !== undefined) {
+      item.done = !!body.done;
+    }
+
+    await ctx.task.save();
+
+    const populated = await populateTask(Task.findById(ctx.task._id));
+    return res.json({ task: populated });
+  } catch (err) {
+    console.error('updateChecklistItem error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * DELETE /api/tasks/:id/checklist/:itemId
+ */
+const deleteChecklistItem = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id, itemId } = req.params;
+
+    const ctx = await loadTaskForChecklist(id, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const item = ctx.task.checklist.id(itemId);
+    if (!item) return res.status(404).json({ error: 'Checklist item not found' });
+
+    ctx.task.checklist.pull(itemId);
+    await ctx.task.save();
+
+    const populated = await populateTask(Task.findById(ctx.task._id));
+    return res.json({ task: populated });
+  } catch (err) {
+    console.error('deleteChecklistItem error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * PUT /api/tasks/:id/checklist/reorder — reorder checklist items.
+ * Body: { orderedIds: [itemId, ...] } — must list every existing item exactly once.
+ */
+const reorderChecklist = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : null;
+
+    if (!orderedIds) {
+      return res.status(400).json({ error: 'orderedIds[] is required' });
+    }
+
+    const ctx = await loadTaskForChecklist(id, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const currentIds = ctx.task.checklist.map((i) => i._id.toString());
+    if (
+      orderedIds.length !== currentIds.length ||
+      !orderedIds.every((oid) => currentIds.includes(oid.toString()))
+    ) {
+      return res.status(400).json({ error: 'orderedIds must list every checklist item exactly once' });
+    }
+
+    const byId = new Map();
+    for (const item of ctx.task.checklist) byId.set(item._id.toString(), item);
+    ctx.task.checklist = orderedIds.map((oid) => byId.get(oid.toString()));
+    await ctx.task.save();
+
+    const populated = await populateTask(Task.findById(ctx.task._id));
+    return res.json({ task: populated });
+  } catch (err) {
+    console.error('reorderChecklist error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
  * DELETE /api/tasks/:id
- *
- * Admin only for board tasks. For personal tasks, only the creator can delete.
- * Also cascades comments attached to the task.
  */
 const deleteTask = async (req, res) => {
   try {
@@ -571,11 +879,20 @@ const deleteTask = async (req, res) => {
       }
     }
 
-    await Comment.deleteMany({ task: id });
-    await Notification.deleteMany({ task: id });
+    // Cascade subitems first — fetch their ids so their comments and
+    // notifications are also cleaned up.
+    const subitems = await Task.find({ parent: id }).select('_id');
+    const subitemIds = subitems.map((s) => s._id);
+    const idsToDelete = [id, ...subitemIds];
+
+    await Comment.deleteMany({ task: { $in: idsToDelete } });
+    await Notification.deleteMany({ task: { $in: idsToDelete } });
+    if (subitemIds.length > 0) {
+      await Task.deleteMany({ _id: { $in: subitemIds } });
+    }
     await Task.deleteOne({ _id: id });
 
-    return res.json({ success: true });
+    return res.json({ success: true, deletedSubitems: subitemIds.length });
   } catch (err) {
     console.error('deleteTask error:', err);
     return res.status(500).json({ error: 'Server error' });
@@ -586,7 +903,12 @@ module.exports = {
   getTasks,
   getMyTasks,
   getCalendarTasks,
+  getSubitems,
   createTask,
   updateTask,
   deleteTask,
+  addChecklistItem,
+  updateChecklistItem,
+  deleteChecklistItem,
+  reorderChecklist,
 };

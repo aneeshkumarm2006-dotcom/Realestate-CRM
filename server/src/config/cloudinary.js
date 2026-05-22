@@ -35,7 +35,27 @@ const avatarUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
+/**
+ * Cloudinary storage for task update attachments (images, PDFs, docs).
+ * Files keep their original format and live under macan/updates/. The
+ * `resource_type: 'auto'` lets Cloudinary infer images vs raw files.
+ */
+const updateAttachmentStorage = new CloudinaryStorage({
+  cloudinary,
+  params: (req, file) => ({
+    folder: 'macan/updates',
+    resource_type: 'auto',
+    public_id: `${Date.now()}-${(file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`,
+  }),
+});
+
+const updateUpload = multer({
+  storage: updateAttachmentStorage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB per file
+});
+
 module.exports = {
   cloudinary,
   avatarUpload,
+  updateUpload,
 };

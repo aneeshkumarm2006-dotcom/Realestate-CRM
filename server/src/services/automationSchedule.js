@@ -92,12 +92,26 @@ const validateSchedule = (schedule) => {
     }
   }
   if (schedule.frequency === 'monthly') {
-    const d = schedule.dayOfMonth;
-    if (!Number.isInteger(d) || d < 1 || d > 31) {
-      return { valid: false, error: 'Monthly schedule requires dayOfMonth 1–31' };
+    if (schedule.useLastDayOfMonth === true) {
+      // Valid — last day sentinel takes precedence over dayOfMonth.
+    } else {
+      const d = schedule.dayOfMonth;
+      if (!Number.isInteger(d) || d < 1 || d > 28) {
+        return {
+          valid: false,
+          error:
+            'Monthly schedule requires dayOfMonth 1–28, or use the "Last day of the month" option',
+        };
+      }
     }
   }
   return { valid: true };
+};
+
+const getLastDayOfMonth = (year, monthOneBased) => {
+  // monthOneBased is 1–12. new Date(Date.UTC(y, m, 0)) gives the last day of
+  // month m-1 (i.e. month m here, since m is 1-based for our callers).
+  return new Date(Date.UTC(year, monthOneBased, 0)).getUTCDate();
 };
 
 /**
@@ -132,7 +146,12 @@ const computeNextRunAt = (schedule, fromDate = new Date()) => {
         matches = days.includes(wd);
       }
     } else if (schedule.frequency === 'monthly') {
-      matches = candParts.day === schedule.dayOfMonth;
+      if (schedule.useLastDayOfMonth === true) {
+        const lastDay = getLastDayOfMonth(candParts.year, candParts.month);
+        matches = candParts.day === lastDay;
+      } else {
+        matches = candParts.day === schedule.dayOfMonth;
+      }
     }
 
     if (matches && candidateMs > fromMs) {

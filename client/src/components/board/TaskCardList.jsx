@@ -18,9 +18,11 @@ import { formatShortDate, isOverdue } from '../../utils/dateUtils';
  */
 const TaskCardList = ({
   tasks = [],
+  board = null,
   onOpenTask,
   onStatusClick,
   onPriorityClick,
+  onLabelsClick,
   onActionsClick,
   highlightedTaskId,
   emptyLabel = 'No tasks in this group yet',
@@ -53,11 +55,13 @@ const TaskCardList = ({
         <TaskCardItem
           key={task._id}
           task={task}
+          board={board}
           highlighted={highlightedTaskId === task._id}
           isLast={i === tasks.length - 1}
           onOpenTask={onOpenTask}
           onStatusClick={onStatusClick}
           onPriorityClick={onPriorityClick}
+          onLabelsClick={onLabelsClick}
           onActionsClick={onActionsClick}
         />
       ))}
@@ -65,7 +69,7 @@ const TaskCardList = ({
   );
 };
 
-const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, onPriorityClick, onActionsClick }) => {
+const TaskCardItem = ({ task, board, highlighted, isLast, onOpenTask, onStatusClick, onPriorityClick, onLabelsClick, onActionsClick }) => {
   const liRef = useRef(null);
 
   useEffect(() => {
@@ -89,9 +93,11 @@ const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, on
     >
       <TaskCard
         task={task}
+        board={board}
         onOpen={onOpenTask}
         onStatusClick={onStatusClick}
         onPriorityClick={onPriorityClick}
+        onLabelsClick={onLabelsClick}
         onActionsClick={onActionsClick}
       />
     </li>
@@ -103,9 +109,19 @@ const TaskCardItem = ({ task, highlighted, isLast, onOpenTask, onStatusClick, on
  * opens the comment panel; tapping the status chip (or the ⋯ button for
  * admins) opens the corresponding menu.
  */
-const TaskCard = ({ task, onOpen, onStatusClick, onPriorityClick, onActionsClick }) => {
+const TaskCard = ({ task, board, onOpen, onStatusClick, onPriorityClick, onLabelsClick, onActionsClick }) => {
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
-  const overdue = isOverdue(task.dueDate) && task.status !== 'done';
+  const statusIsDone = (() => {
+    if (board && Array.isArray(board.statuses) && task.status != null) {
+      const match = board.statuses.find(
+        (s) => s._id && s._id.toString() === task.status.toString()
+      );
+      if (match) return match.key === 'done';
+    }
+    return task.status === 'done';
+  })();
+  const overdue = isOverdue(task.dueDate) && !statusIsDone;
+  const labels = Array.isArray(task.labels) ? task.labels : [];
 
   return (
     <div
@@ -165,10 +181,38 @@ const TaskCard = ({ task, onOpen, onStatusClick, onPriorityClick, onActionsClick
         <Chip
           type="status"
           value={task.status || 'not_started'}
+          board={board}
           onClick={
             onStatusClick ? (e) => onStatusClick(task, e) : undefined
           }
         />
+        {labels.length > 0 && labels.slice(0, 2).map((labelId) => (
+          <Chip
+            key={labelId.toString()}
+            type="label"
+            value={labelId}
+            board={board}
+            onClick={
+              onLabelsClick ? (e) => onLabelsClick(task, e) : undefined
+            }
+          />
+        ))}
+        {labels.length > 2 && (
+          <span
+            className="inline-flex items-center font-body font-medium"
+            onClick={onLabelsClick ? (e) => onLabelsClick(task, e) : undefined}
+            style={{
+              fontSize: 11,
+              padding: '3px 8px',
+              borderRadius: 'var(--radius-full)',
+              background: 'var(--color-bg-subtle)',
+              color: 'var(--color-text-secondary)',
+              cursor: onLabelsClick ? 'pointer' : 'default',
+            }}
+          >
+            +{labels.length - 2}
+          </span>
+        )}
       </div>
 
       {/* Bottom row — owner + due date */}

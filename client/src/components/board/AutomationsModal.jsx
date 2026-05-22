@@ -6,12 +6,29 @@ import {
   Play,
   ChevronLeft,
   Zap,
+  X,
+  ArrowDown,
 } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import AssigneePicker from './AssigneePicker';
 import * as automationService from '../../services/automationService';
+
+const TRIGGER_OPTIONS = [
+  { value: 'SCHEDULE', label: 'On a schedule' },
+  { value: 'ITEM_CREATED', label: 'When an item is created' },
+];
+
+const CONDITION_TYPES = [
+  { value: 'ITEM_IN_GROUP', label: 'item is in group' },
+  { value: 'ITEM_IN_STATUS', label: 'item is in status' },
+];
+
+const ACTION_TYPES = [
+  { value: 'CREATE_SUBITEM', label: 'Create a subitem' },
+  { value: 'CREATE_TASK', label: 'Create a task' },
+];
 
 const PRIORITIES = [
   { value: 'low', label: 'Low' },
@@ -70,6 +87,9 @@ const describeSchedule = (s) => {
     return `Weekly · ${labels || '—'} at ${hh}:00${tz}`;
   }
   if (s.frequency === 'monthly') {
+    if (s.useLastDayOfMonth) {
+      return `Monthly · last day at ${hh}:00${tz}`;
+    }
     return `Monthly · day ${s.dayOfMonth} at ${hh}:00${tz}`;
   }
   return '';
@@ -85,6 +105,65 @@ const describeTemplate = (t) => {
   return `→ "${t.name}" in ${groupName}${due}`;
 };
 
+/**
+ * Lookup a group's name by id from the cached groups list. Conditions store
+ * raw ObjectIds, so describing them requires the board's group catalog.
+ */
+const lookupName = (list, id, key = 'name') => {
+  if (!id || !Array.isArray(list)) return '—';
+  const target = id.toString();
+  const found = list.find((it) => (it?._id || '').toString() === target);
+  return found?.[key] || '—';
+};
+
+/**
+ * One-line summary of an ITEM_CREATED automation, e.g.
+ * "When item created in [Onboarding] → create 6 subitems".
+ */
+const describeEventDriven = (automation, groups = [], statuses = []) => {
+  const conds = Array.isArray(automation.conditions) ? automation.conditions : [];
+  const actions = Array.isArray(automation.actions) ? automation.actions : [];
+
+  let when = 'When an item is created';
+  if (conds.length > 0) {
+    const parts = conds.map((c) => {
+      if (c.type === 'ITEM_IN_GROUP') {
+        return `group ${lookupName(groups, c.value)}`;
+      }
+      if (c.type === 'ITEM_IN_STATUS') {
+        return `status ${lookupName(statuses, c.value)}`;
+      }
+      return '';
+    }).filter(Boolean);
+    if (parts.length > 0) when += ` in ${parts.join(' & ')}`;
+  }
+
+  if (actions.length === 0) return `${when} → (no actions)`;
+
+  const subitemCount = actions.filter((a) => a.type === 'CREATE_SUBITEM').length;
+  const taskCount = actions.filter((a) => a.type === 'CREATE_TASK').length;
+  const phrases = [];
+  if (subitemCount > 0) {
+    phrases.push(`create ${subitemCount} subitem${subitemCount === 1 ? '' : 's'}`);
+  }
+  if (taskCount > 0) {
+    phrases.push(`create ${taskCount} task${taskCount === 1 ? '' : 's'}`);
+  }
+  return `${when} → ${phrases.join(' & ')}`;
+};
+
+/**
+ * Top-level describe — branches on triggerType. Returns the schedule string
+ * for SCHEDULE automations (preserves existing UI), or the event-driven
+ * summary for ITEM_CREATED.
+ */
+const describeAutomation = (automation, groups = [], statuses = []) => {
+  if (automation.triggerType === 'ITEM_CREATED') {
+    return describeEventDriven(automation, groups, statuses);
+  }
+  return describeSchedule(automation.schedule);
+};
+
 const formatNextRun = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -98,11 +177,24 @@ const formatNextRun = (iso) => {
   });
 };
 
+/**
+ * Blank action row for the ITEM_CREATED builder. CREATE_SUBITEM is the
+ * default since that matches the screenshot flow ("create N subitems").
+ */
+const buildEmptyAction = (groups) => ({
+  type: 'CREATE_SUBITEM',
+  name: '',
+  group: groups?.[0]?._id || '',
+});
+
 const buildInitialForm = (groups) => ({
   name: '',
+  triggerType: 'SCHEDULE',
+  // SCHEDULE fields
   frequency: 'weekly',
   daysOfWeek: [1],
   dayOfMonth: 1,
+  useLastDayOfMonth: false,
   hour: 9,
   timezone: getBrowserTimezone(),
   templateName: '',
@@ -111,34 +203,56 @@ const buildInitialForm = (groups) => ({
   assignedTo: [],
   dueInDays: '',
   note: '',
+  // ITEM_CREATED fields
+  conditions: [],
+  actions: [buildEmptyAction(groups)],
   enabled: true,
 });
+
+const idOf = (v) => (v && typeof v === 'object' ? v._id : v);
 
 const formFromAutomation = (a, groups) => {
   const s = a.schedule || {};
   const t = a.taskTemplate || {};
-  const groupId =
-    typeof t.group === 'object' && t.group !== null ? t.group._id : t.group;
+  const triggerType = a.triggerType || 'SCHEDULE';
+  const groupId = idOf(t.group);
+
+  const conditions = (a.conditions || []).map((c) => ({
+    type: c.type,
+    value: idOf(c.value) || '',
+  }));
+
+  const actions = (a.actions || []).map((act) => ({
+    type: act.type,
+    name: act.config?.name || '',
+    group: idOf(act.config?.group) || '',
+    priority: act.config?.priority || 'medium',
+    assignedTo: (act.config?.assignedTo || []).map((u) => idOf(u)),
+    note: act.config?.note || '',
+  }));
+
   return {
     name: a.name || '',
+    triggerType,
     frequency: s.frequency || 'weekly',
     daysOfWeek: Array.isArray(s.daysOfWeek) && s.daysOfWeek.length > 0
       ? s.daysOfWeek
       : [1],
     dayOfMonth: s.dayOfMonth || 1,
+    useLastDayOfMonth: s.useLastDayOfMonth === true,
     hour: typeof s.hour === 'number' ? s.hour : 9,
     timezone: s.timezone || getBrowserTimezone(),
     templateName: t.name || '',
     group: groupId || groups?.[0]?._id || '',
     priority: t.priority || 'medium',
-    assignedTo: (t.assignedTo || []).map((u) =>
-      typeof u === 'object' && u !== null ? u._id : u
-    ),
+    assignedTo: (t.assignedTo || []).map((u) => idOf(u)),
     dueInDays:
       Number.isFinite(t.dueInDays) && t.dueInDays !== null
         ? String(t.dueInDays)
         : '',
     note: t.note || '',
+    conditions,
+    actions: actions.length > 0 ? actions : [buildEmptyAction(groups)],
     enabled: a.enabled !== false,
   };
 };
@@ -309,14 +423,391 @@ const Toggle = ({ checked, onChange, disabled, label }) => (
   </label>
 );
 
+/**
+ * One row in the conditions list of an ITEM_CREATED automation. The type
+ * select picks which task field to compare; the value select shows groups
+ * or statuses depending on type. Both are required — empty rows fail
+ * `validateLocal`.
+ */
+const ConditionRow = ({
+  condition,
+  onChange,
+  onRemove,
+  groups,
+  statuses,
+  disabled,
+}) => {
+  const valueOptions =
+    condition.type === 'ITEM_IN_STATUS'
+      ? (statuses || []).map((s) => ({ value: s._id, label: s.name }))
+      : (groups || []).map((g) => ({ value: g._id, label: g.name }));
+
+  return (
+    <div
+      className="flex items-center gap-2"
+      style={{
+        padding: '10px 12px',
+        border: '1.5px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--color-bg-input)',
+      }}
+    >
+      <select
+        value={condition.type}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...condition, type: e.target.value, value: '' })}
+        className="font-body"
+        style={{
+          height: 32,
+          padding: '0 8px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1.5px solid var(--color-border)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+          fontSize: 13,
+          flex: '1 1 0',
+          minWidth: 0,
+        }}
+      >
+        {CONDITION_TYPES.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <select
+        value={condition.value || ''}
+        disabled={disabled || valueOptions.length === 0}
+        onChange={(e) => onChange({ ...condition, value: e.target.value })}
+        className="font-body"
+        style={{
+          height: 32,
+          padding: '0 8px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1.5px solid var(--color-border)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+          fontSize: 13,
+          flex: '1 1 0',
+          minWidth: 0,
+        }}
+      >
+        <option value="">{valueOptions.length === 0 ? '— none available —' : 'Select…'}</option>
+        {valueOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        aria-label="Remove condition"
+        onClick={onRemove}
+        disabled={disabled}
+        className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
+        style={{
+          width: 28,
+          height: 28,
+          border: '1.5px solid var(--color-border)',
+          background: 'transparent',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <X size={12} color="var(--color-text-secondary)" />
+      </button>
+    </div>
+  );
+};
+
+/**
+ * One action row in the ITEM_CREATED builder. CREATE_SUBITEM hides the
+ * group selector (subitems inherit their parent's group); CREATE_TASK
+ * requires a group.
+ */
+const ActionRow = ({
+  action,
+  index,
+  onChange,
+  onRemove,
+  groupOptions,
+  disabled,
+}) => {
+  const isSubitem = action.type === 'CREATE_SUBITEM';
+  return (
+    <div
+      className="flex flex-col gap-2"
+      style={{
+        padding: '10px 12px',
+        border: '1.5px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--color-bg-input)',
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="font-body"
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: 'var(--color-text-muted)',
+            minWidth: 60,
+          }}
+        >
+          {index === 0 ? 'Then' : 'and then'}
+        </span>
+        <select
+          value={action.type}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...action, type: e.target.value })}
+          className="font-body"
+          style={{
+            height: 32,
+            padding: '0 8px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1.5px solid var(--color-border)',
+            background: 'var(--color-bg-surface)',
+            color: 'var(--color-text-primary)',
+            fontSize: 13,
+            flex: '1 1 0',
+            minWidth: 0,
+          }}
+        >
+          {ACTION_TYPES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          aria-label="Remove action"
+          onClick={onRemove}
+          disabled={disabled}
+          className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
+          style={{
+            width: 28,
+            height: 28,
+            border: '1.5px solid var(--color-border)',
+            background: 'transparent',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <X size={12} color="var(--color-text-secondary)" />
+        </button>
+      </div>
+      <div className={isSubitem ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-2 gap-2'}>
+        <input
+          type="text"
+          placeholder={isSubitem ? 'Subitem name' : 'Task name'}
+          value={action.name}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...action, name: e.target.value })}
+          className="font-body"
+          style={{
+            height: 32,
+            padding: '0 8px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1.5px solid var(--color-border)',
+            background: 'var(--color-bg-surface)',
+            color: 'var(--color-text-primary)',
+            fontSize: 13,
+          }}
+        />
+        {!isSubitem && (
+          <select
+            value={action.group || ''}
+            disabled={disabled || groupOptions.length === 0}
+            onChange={(e) => onChange({ ...action, group: e.target.value })}
+            className="font-body"
+            style={{
+              height: 32,
+              padding: '0 8px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1.5px solid var(--color-border)',
+              background: 'var(--color-bg-surface)',
+              color: 'var(--color-text-primary)',
+              fontSize: 13,
+            }}
+          >
+            <option value="">Select group…</option>
+            {groupOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Conditions + actions builder shown when triggerType is ITEM_CREATED.
+ * Renders the "When item is created" header with an optional list of
+ * conditions, a downward arrow, and the stacked actions list.
+ */
+const EventDrivenBuilder = ({
+  form,
+  setForm,
+  saving,
+  groups,
+  groupOptions,
+  statuses,
+}) => {
+  const conditions = form.conditions || [];
+  const actions = form.actions || [];
+
+  const updateCondition = (idx, next) => {
+    setForm((f) => ({
+      ...f,
+      conditions: f.conditions.map((c, i) => (i === idx ? next : c)),
+    }));
+  };
+  const removeCondition = (idx) => {
+    setForm((f) => ({
+      ...f,
+      conditions: f.conditions.filter((_, i) => i !== idx),
+    }));
+  };
+  const addCondition = () => {
+    setForm((f) => ({
+      ...f,
+      conditions: [...(f.conditions || []), { type: 'ITEM_IN_GROUP', value: '' }],
+    }));
+  };
+
+  const updateAction = (idx, next) => {
+    setForm((f) => ({
+      ...f,
+      actions: f.actions.map((a, i) => (i === idx ? next : a)),
+    }));
+  };
+  const removeAction = (idx) => {
+    setForm((f) => ({
+      ...f,
+      actions: f.actions.filter((_, i) => i !== idx),
+    }));
+  };
+  const addAction = () => {
+    setForm((f) => ({
+      ...f,
+      actions: [...(f.actions || []), buildEmptyAction(groups)],
+    }));
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Trigger block */}
+      <div
+        style={{
+          padding: '12px 14px',
+          border: '1.5px solid var(--color-border)',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--color-bg-surface)',
+        }}
+      >
+        <p
+          className="font-body"
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--color-text-primary)',
+          }}
+        >
+          When an item is created
+        </p>
+        {conditions.length > 0 && (
+          <div className="mt-2 flex flex-col gap-2">
+            {conditions.map((c, i) => (
+              <ConditionRow
+                key={i}
+                condition={c}
+                onChange={(next) => updateCondition(i, next)}
+                onRemove={() => removeCondition(i)}
+                groups={groups}
+                statuses={statuses}
+                disabled={saving}
+              />
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={addCondition}
+          disabled={saving}
+          className="font-body mt-2 inline-flex items-center gap-1"
+          style={{
+            fontSize: 12,
+            color: 'var(--color-accent)',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <Plus size={12} aria-hidden="true" />
+          Add condition
+        </button>
+      </div>
+
+      {/* Connector arrow */}
+      <div className="flex justify-center">
+        <ArrowDown
+          size={18}
+          color="var(--color-text-muted)"
+          aria-hidden="true"
+        />
+      </div>
+
+      {/* Actions block */}
+      <div className="flex flex-col gap-2">
+        {actions.map((a, i) => (
+          <ActionRow
+            key={i}
+            action={a}
+            index={i}
+            onChange={(next) => updateAction(i, next)}
+            onRemove={() => removeAction(i)}
+            groupOptions={groupOptions}
+            disabled={saving}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={addAction}
+          disabled={saving}
+          className="font-body inline-flex items-center gap-1 self-start"
+          style={{
+            fontSize: 13,
+            color: 'var(--color-accent)',
+            background: 'transparent',
+            border: 'none',
+            padding: '4px 0',
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <Plus size={14} aria-hidden="true" />
+          Add action
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const AutomationsModal = ({
   isOpen,
   onClose,
   boardId,
+  board = null,
   groups = [],
   members = [],
   isAdmin = false,
 }) => {
+  const boardStatuses = useMemo(
+    () => (board && Array.isArray(board.statuses) ? board.statuses : []),
+    [board]
+  );
   const [view, setView] = useState('list');
   const [editingId, setEditingId] = useState(null);
   const [automations, setAutomations] = useState([]);
@@ -389,6 +880,30 @@ const AutomationsModal = ({
   };
 
   const buildPayload = () => {
+    if (form.triggerType === 'ITEM_CREATED') {
+      return {
+        name: form.name.trim(),
+        enabled: form.enabled,
+        triggerType: 'ITEM_CREATED',
+        conditions: (form.conditions || []).map((c) => ({
+          type: c.type,
+          value: c.value,
+        })),
+        actions: (form.actions || []).map((a) => {
+          const config = {
+            name: a.name.trim(),
+            priority: a.priority || 'medium',
+            assignedTo: a.assignedTo || [],
+            note: a.note?.trim() || undefined,
+          };
+          if (a.type === 'CREATE_TASK') {
+            config.group = a.group;
+          }
+          return { type: a.type, config };
+        }),
+      };
+    }
+
     const schedule = {
       frequency: form.frequency,
       hour: Number(form.hour),
@@ -398,7 +913,11 @@ const AutomationsModal = ({
       schedule.daysOfWeek = form.daysOfWeek;
     }
     if (form.frequency === 'monthly') {
-      schedule.dayOfMonth = Number(form.dayOfMonth);
+      if (form.useLastDayOfMonth) {
+        schedule.useLastDayOfMonth = true;
+      } else {
+        schedule.dayOfMonth = Number(form.dayOfMonth);
+      }
     }
     const dueInDays =
       form.dueInDays === '' || form.dueInDays === null
@@ -407,6 +926,7 @@ const AutomationsModal = ({
     return {
       name: form.name.trim(),
       enabled: form.enabled,
+      triggerType: 'SCHEDULE',
       schedule,
       taskTemplate: {
         name: form.templateName.trim(),
@@ -421,15 +941,34 @@ const AutomationsModal = ({
 
   const validateLocal = () => {
     if (!form.name.trim()) return 'Automation name is required';
+
+    if (form.triggerType === 'ITEM_CREATED') {
+      const acts = form.actions || [];
+      if (acts.length === 0) return 'Add at least one action';
+      for (let i = 0; i < acts.length; i++) {
+        const a = acts[i];
+        if (!a.name?.trim()) return `Action ${i + 1}: task name is required`;
+        if (a.type === 'CREATE_TASK' && !a.group) {
+          return `Action ${i + 1}: choose a group for the new task`;
+        }
+      }
+      const conds = form.conditions || [];
+      for (let i = 0; i < conds.length; i++) {
+        if (!conds[i].type) return `Condition ${i + 1}: choose a type`;
+        if (!conds[i].value) return `Condition ${i + 1}: choose a value`;
+      }
+      return null;
+    }
+
     if (!form.templateName.trim()) return 'Task title is required';
     if (!form.group) return 'Please choose a group';
     if (form.frequency === 'weekly' && (!form.daysOfWeek || form.daysOfWeek.length === 0)) {
       return 'Pick at least one day of the week';
     }
-    if (form.frequency === 'monthly') {
+    if (form.frequency === 'monthly' && !form.useLastDayOfMonth) {
       const d = Number(form.dayOfMonth);
-      if (!Number.isInteger(d) || d < 1 || d > 31) {
-        return 'Day of month must be between 1 and 31';
+      if (!Number.isInteger(d) || d < 1 || d > 28) {
+        return 'Day of month must be between 1 and 28 (or use "Last day of the month")';
       }
     }
     if (form.dueInDays !== '' && form.dueInDays !== null) {
@@ -549,7 +1088,7 @@ const AutomationsModal = ({
           className="font-body"
           style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
         >
-          Automatically create tasks on a recurring schedule.
+          Automatically create tasks on a recurring schedule, or when an item is created.
         </p>
         {isAdmin && (
           <Button variant="primary" size="sm" icon={Plus} onClick={openCreate}>
@@ -584,7 +1123,7 @@ const AutomationsModal = ({
             No automations yet
           </p>
           <p className="font-body" style={{ fontSize: 12 }}>
-            Create one to spawn tasks on a schedule.
+            Create one to spawn tasks on a schedule or when items are created.
           </p>
         </div>
       ) : (
@@ -638,19 +1177,25 @@ const AutomationsModal = ({
                         color: 'var(--color-text-secondary)',
                       }}
                     >
-                      {describeSchedule(a.schedule)}
+                      {describeAutomation(a, groups, boardStatuses)}
                     </p>
-                    <p
-                      className="font-body"
-                      style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
-                    >
-                      {describeTemplate(a.taskTemplate)}
-                    </p>
+                    {a.triggerType !== 'ITEM_CREATED' && (
+                      <p
+                        className="font-body"
+                        style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
+                      >
+                        {describeTemplate(a.taskTemplate)}
+                      </p>
+                    )}
                     <p
                       className="font-body mt-1"
                       style={{ fontSize: 11, color: 'var(--color-text-muted)' }}
                     >
-                      Next run: {a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}
+                      {a.triggerType === 'ITEM_CREATED'
+                        ? a.enabled
+                          ? 'Runs on item creation'
+                          : 'paused'
+                        : `Next run: ${a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}`}
                       {a.lastRunAt && ` · Last: ${formatNextRun(a.lastRunAt)}`}
                     </p>
                   </div>
@@ -761,6 +1306,22 @@ const AutomationsModal = ({
           className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
           style={{ color: 'var(--color-text-secondary)' }}
         >
+          Trigger
+        </label>
+        <SegmentedControl
+          options={TRIGGER_OPTIONS}
+          value={form.triggerType}
+          onChange={(v) => setForm((f) => ({ ...f, triggerType: v }))}
+          disabled={saving}
+        />
+      </div>
+
+      {form.triggerType === 'SCHEDULE' && (
+      <div>
+        <label
+          className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
           Frequency
         </label>
         <SegmentedControl
@@ -770,8 +1331,9 @@ const AutomationsModal = ({
           disabled={saving}
         />
       </div>
+      )}
 
-      {form.frequency === 'weekly' && (
+      {form.triggerType === 'SCHEDULE' && form.frequency === 'weekly' && (
         <div>
           <label
             className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
@@ -787,20 +1349,53 @@ const AutomationsModal = ({
         </div>
       )}
 
-      {form.frequency === 'monthly' && (
-        <Input
-          label="Day of month"
-          type="number"
-          min={1}
-          max={31}
-          value={form.dayOfMonth}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, dayOfMonth: e.target.value }))
-          }
-          disabled={saving}
-        />
+      {form.triggerType === 'SCHEDULE' && form.frequency === 'monthly' && (
+        <div>
+          <label
+            className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
+            style={{ color: 'var(--color-text-secondary)' }}
+          >
+            Day of month
+          </label>
+          <select
+            value={form.useLastDayOfMonth ? 'last' : String(form.dayOfMonth)}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === 'last') {
+                setForm((f) => ({ ...f, useLastDayOfMonth: true }));
+              } else {
+                setForm((f) => ({
+                  ...f,
+                  useLastDayOfMonth: false,
+                  dayOfMonth: Number(v),
+                }));
+              }
+            }}
+            disabled={saving}
+            className="w-full font-body"
+            style={{
+              height: 38,
+              padding: '0 10px',
+              borderRadius: 'var(--radius-md)',
+              border: '1.5px solid var(--color-border)',
+              background: 'var(--color-bg-input)',
+              color: 'var(--color-text-primary)',
+              fontSize: 14,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={String(d)}>
+                {d}
+              </option>
+            ))}
+            <option value="last">Last day of the month</option>
+          </select>
+        </div>
       )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <div className="grid grid-cols-2 gap-4">
         <SelectField
           label="Time of day"
@@ -854,7 +1449,9 @@ const AutomationsModal = ({
           )}
         </div>
       </div>
+      )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <div
         style={{
           height: 1,
@@ -862,7 +1459,9 @@ const AutomationsModal = ({
           margin: '4px 0',
         }}
       />
+      )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <Input
         label="Task Title"
         placeholder="e.g. Daily standup"
@@ -871,7 +1470,9 @@ const AutomationsModal = ({
         required
         disabled={saving}
       />
+      )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <div className="grid grid-cols-2 gap-4">
         <SelectField
           label="Group"
@@ -888,7 +1489,9 @@ const AutomationsModal = ({
           disabled={saving}
         />
       </div>
+      )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <div>
         <label
           className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
@@ -903,7 +1506,9 @@ const AutomationsModal = ({
           disabled={saving}
         />
       </div>
+      )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <Input
         label="Due in N days (optional)"
         type="number"
@@ -913,7 +1518,9 @@ const AutomationsModal = ({
         onChange={setField('dueInDays')}
         disabled={saving}
       />
+      )}
 
+      {form.triggerType === 'SCHEDULE' && (
       <Input
         label="Note (optional)"
         placeholder="Any additional context…"
@@ -923,6 +1530,19 @@ const AutomationsModal = ({
         multiline
         rows={3}
       />
+      )}
+
+      {form.triggerType === 'ITEM_CREATED' && (
+        <EventDrivenBuilder
+          form={form}
+          setForm={setForm}
+          saving={saving}
+          groups={groups}
+          groupOptions={groupOptions}
+          members={members}
+          statuses={boardStatuses}
+        />
+      )}
 
       <Toggle
         checked={form.enabled}

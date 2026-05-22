@@ -3,7 +3,7 @@ const Board = require('../models/Board');
 const Task = require('../models/Task');
 const Organisation = require('../models/Organisation');
 
-const STATUSES = ['not_started', 'working_on_it', 'done', 'stuck'];
+const LEGACY_STATUS_KEYS = ['not_started', 'working_on_it', 'done', 'stuck'];
 const PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const VALID_RANGES = ['7d', '30d', 'all'];
 
@@ -28,15 +28,12 @@ const rangeToSince = (range) => {
 /**
  * GET /api/analytics?org=:orgId&board=:boardId&range=:range
  *
- * Admin-only. Returns aggregated analytics for the org:
- *   - summary: totalTasks, completionRate, overdueTasks, activeBoards
- *   - statusDistribution: { status, count }[]
- *   - priorityDistribution: { priority, count }[]
- *   - boardPerformance: { _id, name, total, done, percent }[]
+ * Admin-only. Returns aggregated analytics for the org.
  *
- * Filters:
- *   board  — specific board id, or "all"/omitted for all boards in org
- *   range  — "7d" | "30d" | "all"  (filters by Task.createdAt)
+ * Status distribution buckets each task by the `key` field on its board's
+ * status subdoc (post Phase 2 migration). New user-defined statuses are
+ * collapsed into a single "custom" bucket so the four canonical buckets
+ * keep rendering as the UI expects.
  */
 const getAnalytics = async (req, res) => {
   try {
@@ -62,13 +59,11 @@ const getAnalytics = async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    // Boards in org (for scoping + performance list)
     const orgBoards = await Board.find({ organisation: orgId })
-      .select('_id name')
+      .select('_id name statuses')
       .sort({ createdAt: 1 });
     const orgBoardIds = orgBoards.map((b) => b._id);
 
-    // Validate requested board belongs to org, if provided
     let scopedBoardIds = orgBoardIds;
     if (boardFilter) {
       if (!mongoose.Types.ObjectId.isValid(boardFilter)) {
@@ -84,47 +79,69 @@ const getAnalytics = async (req, res) => {
     const since = rangeToSince(range);
     const taskFilter = {
       board: { $in: scopedBoardIds },
+      isPersonal: { $ne: true },
     };
-    if (since) {
-      taskFilter.createdAt = { $gte: since };
+    if (since) taskFilter.createdAt = { $gte: since };
+
+    // Build a map: status ObjectId (string) → legacy key (or null for custom).
+    // Also pluck the "done" ObjectIds per board for the overdue + per-board
+    // completion counts.
+    const statusKeyById = new Map();
+    const doneIdsByBoard = new Map(); // boardId → Set<doneStatusId>
+    const allDoneIds = [];
+    for (const b of orgBoards) {
+      const doneSet = new Set();
+      for (const s of b.statuses || []) {
+        statusKeyById.set(s._id.toString(), s.key || null);
+        if (s.key === 'done') {
+          doneSet.add(s._id.toString());
+          allDoneIds.push(s._id);
+        }
+      }
+      doneIdsByBoard.set(b._id.toString(), doneSet);
     }
 
-    // Run the aggregate pipelines in parallel
-    const [statusAgg, priorityAgg, overdueCount, perBoardAgg, totalTasks] =
+    const [tasksForStatus, priorityAgg, overdueCount, perBoardAgg, totalTasks] =
       await Promise.all([
-        Task.aggregate([
-          { $match: taskFilter },
-          { $group: { _id: '$status', count: { $sum: 1 } } },
-        ]),
+        Task.find(taskFilter).select('status board').lean(),
         Task.aggregate([
           { $match: taskFilter },
           { $group: { _id: '$priority', count: { $sum: 1 } } },
         ]),
         Task.countDocuments({
           ...taskFilter,
-          status: { $ne: 'done' },
+          status: { $nin: allDoneIds.length ? allDoneIds : ['done'] },
           dueDate: { $ne: null, $lt: new Date() },
         }),
         Task.aggregate([
           { $match: taskFilter },
           {
             $group: {
-              _id: '$board',
-              total: { $sum: 1 },
-              done: {
-                $sum: { $cond: [{ $eq: ['$status', 'done'] }, 1, 0] },
-              },
+              _id: { board: '$board', status: '$status' },
+              count: { $sum: 1 },
             },
           },
         ]),
         Task.countDocuments(taskFilter),
       ]);
 
-    // Fill in zeros for all enum buckets so the UI renders every row
-    const statusMap = Object.fromEntries(statusAgg.map((r) => [r._id, r.count]));
-    const statusDistribution = STATUSES.map((status) => ({
+    // Bucket status counts by legacy key (custom statuses are dropped from
+    // the canonical 4 buckets, but still counted in totalTasks).
+    const statusCounts = Object.fromEntries(LEGACY_STATUS_KEYS.map((k) => [k, 0]));
+    for (const t of tasksForStatus) {
+      if (t.status == null) continue;
+      const key = statusKeyById.get(t.status.toString());
+      if (key && statusCounts[key] !== undefined) {
+        statusCounts[key] += 1;
+      } else if (typeof t.status === 'string' && statusCounts[t.status] !== undefined) {
+        // Personal-style legacy strings — shouldn't happen on board tasks,
+        // but tolerate them.
+        statusCounts[t.status] += 1;
+      }
+    }
+    const statusDistribution = LEGACY_STATUS_KEYS.map((status) => ({
       status,
-      count: statusMap[status] || 0,
+      count: statusCounts[status] || 0,
     }));
 
     const priorityMap = Object.fromEntries(
@@ -135,28 +152,29 @@ const getAnalytics = async (req, res) => {
       count: priorityMap[priority] || 0,
     }));
 
-    // Active boards = boards in scope that have at least one task in-range
-    const perBoardMap = new Map(
-      perBoardAgg.map((r) => [r._id.toString(), r])
-    );
+    // Per-board total + done counts
+    const perBoardStats = new Map();
+    for (const row of perBoardAgg) {
+      const bId = row._id.board.toString();
+      const sId = row._id.status ? row._id.status.toString() : null;
+      const stat = perBoardStats.get(bId) || { total: 0, done: 0 };
+      stat.total += row.count;
+      const doneSet = doneIdsByBoard.get(bId);
+      if (sId && doneSet && doneSet.has(sId)) stat.done += row.count;
+      perBoardStats.set(bId, stat);
+    }
     const boardPerformance = orgBoards
       .filter((b) => scopedBoardIds.some((id) => id.toString() === b._id.toString()))
       .map((b) => {
-        const stat = perBoardMap.get(b._id.toString());
-        const total = stat?.total || 0;
-        const done = stat?.done || 0;
+        const stat = perBoardStats.get(b._id.toString()) || { total: 0, done: 0 };
+        const total = stat.total;
+        const done = stat.done;
         const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-        return {
-          _id: b._id,
-          name: b.name,
-          total,
-          done,
-          percent,
-        };
+        return { _id: b._id, name: b.name, total, done, percent };
       });
 
     const activeBoards = boardPerformance.filter((b) => b.total > 0).length;
-    const doneTotal = statusMap.done || 0;
+    const doneTotal = statusCounts.done || 0;
     const completionRate =
       totalTasks === 0 ? 0 : Math.round((doneTotal / totalTasks) * 100);
 

@@ -44,8 +44,8 @@ const search = async (req, res) => {
       name: queryRegex,
       isPersonal: { $ne: true },
     })
-      .select('name status priority board')
-      .populate('board', 'name')
+      .select('name status priority board labels')
+      .populate('board', 'name statuses labels')
       .limit(20)
       .lean();
 

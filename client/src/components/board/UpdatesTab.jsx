@@ -1,0 +1,712 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AtSign,
+  Paperclip,
+  Image as ImageIcon,
+  Smile,
+  Send,
+  Mail,
+  MessageSquare,
+  Trash2,
+  Download,
+} from 'lucide-react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import Mention from '@tiptap/extension-mention';
+import RichEditor from './RichEditor';
+import * as updateService from '../../services/updateService';
+import useAuthStore from '../../store/authStore';
+import useToastStore from '../../store/toastStore';
+import useNotificationStore from '../../store/notificationStore';
+import { timeAgo, formatDate } from '../../utils/dateUtils';
+
+const COMMON_EMOJIS = ['👍', '🎉', '🙌', '🔥', '❤️', '✅', '🚀', '😄', '👀', '💡', '🤔', '😅'];
+
+/**
+ * UpdatesTab — full Updates panel mounted inside CommentPanel.
+ *
+ * Props:
+ *   task — populated task
+ *   onCountChange(n) — bubbles the current updates count up so the tab badge
+ *                     stays in sync as updates are added/removed
+ */
+const UpdatesTab = ({ task, onCountChange }) => {
+  const taskId = task?._id || null;
+  const currentUser = useAuthStore((s) => s.user);
+  const toast = useToastStore.getState();
+  const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
+
+  const [updates, setUpdates] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Composer state
+  const [bodyJson, setBodyJson] = useState(null);
+  const [bodyText, setBodyText] = useState('');
+  const [bodyMentions, setBodyMentions] = useState([]);
+  const [bodyEmpty, setBodyEmpty] = useState(true);
+  const [attachments, setAttachments] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
+  const editorRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    onCountChange?.(updates.length);
+  }, [updates.length, onCountChange]);
+
+  // Initial load + refetch when the task switches
+  useEffect(() => {
+    if (!taskId) {
+      setUpdates([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    updateService
+      .getUpdates(taskId)
+      .then((list) => {
+        if (!cancelled) setUpdates(list || []);
+      })
+      .catch((err) => {
+        console.error('Failed to load updates:', err);
+        if (!cancelled) {
+          setError(
+            err?.response?.data?.error ||
+              'Failed to load updates. Please try again.'
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId]);
+
+  const handleEditorChange = useCallback(({ json, text, mentions, isEmpty }) => {
+    setBodyJson(json);
+    setBodyText(text);
+    setBodyMentions(mentions);
+    setBodyEmpty(isEmpty);
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (!taskId) return;
+    const hasContent = !bodyEmpty || attachments.length > 0;
+    if (!hasContent || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const mentionIds = bodyMentions.map((m) => m._id);
+      const created = await updateService.addUpdate(taskId, {
+        body: bodyJson,
+        bodyText,
+        mentions: mentionIds,
+        attachments,
+      });
+      setUpdates((prev) => [created, ...prev]);
+      // Reset composer
+      editorRef.current?.commands?.clearContent?.();
+      setBodyJson(null);
+      setBodyText('');
+      setBodyMentions([]);
+      setBodyEmpty(true);
+      setAttachments([]);
+      refreshNotifications();
+    } catch (err) {
+      console.error('Failed to post update:', err);
+      setError(
+        err?.response?.data?.error ||
+          'Failed to post update. Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    taskId,
+    bodyEmpty,
+    bodyJson,
+    bodyText,
+    bodyMentions,
+    attachments,
+    submitting,
+    refreshNotifications,
+  ]);
+
+  const handleDelete = useCallback(
+    async (updateId) => {
+      if (!taskId) return;
+      const ok = window.confirm('Delete this update?');
+      if (!ok) return;
+      try {
+        await updateService.deleteUpdate(taskId, updateId);
+        setUpdates((prev) => prev.filter((u) => u._id !== updateId));
+      } catch (err) {
+        console.error('Failed to delete update:', err);
+        toast.error(
+          err?.response?.data?.error || 'Failed to delete update.'
+        );
+      }
+    },
+    [taskId, toast]
+  );
+
+  const handleFilesSelected = useCallback(
+    async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length || !taskId) return;
+      for (const f of files) {
+        try {
+          const attachment = await updateService.uploadAttachment(taskId, f);
+          setAttachments((prev) => [...prev, attachment]);
+        } catch (err) {
+          console.error('Upload failed:', err);
+          toast.error(`Failed to upload ${f.name}`);
+        }
+      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+    [taskId, toast]
+  );
+
+  const handleCopyEmail = useCallback(async () => {
+    if (!taskId) return;
+    const email = `task-${taskId}@updates.yourdomain.com`;
+    try {
+      await navigator.clipboard.writeText(email);
+      toast.success(`Copied ${email}`);
+    } catch {
+      toast.info(email);
+    }
+  }, [taskId, toast]);
+
+  const insertEmoji = useCallback((emoji) => {
+    const editor = editorRef.current;
+    if (editor) editor.chain().focus().insertContent(emoji).run();
+    setEmojiPickerOpen(false);
+  }, []);
+
+  const focusMention = useCallback(() => {
+    const editor = editorRef.current;
+    if (editor) editor.chain().focus().insertContent('@').run();
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
+      {/* Updates feed */}
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ padding: '12px 24px' }}
+      >
+        {loading ? (
+          <p
+            className="font-body text-center"
+            style={{
+              fontSize: 13,
+              color: 'var(--color-text-muted)',
+              padding: '24px 0',
+            }}
+          >
+            Loading updates…
+          </p>
+        ) : updates.length === 0 ? (
+          <p
+            className="font-body text-center"
+            style={{
+              fontSize: 13,
+              color: 'var(--color-text-muted)',
+              padding: '32px 0',
+            }}
+          >
+            No updates yet. Post the first one.
+          </p>
+        ) : (
+          <ul
+            className="flex flex-col"
+            style={{ padding: 0, margin: 0, listStyle: 'none', gap: 12 }}
+          >
+            {updates.map((u) => (
+              <li key={u._id}>
+                <UpdateCard
+                  update={u}
+                  currentUserId={currentUser?._id}
+                  onDelete={() => handleDelete(u._id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Sub-toolbar action buttons (above composer) */}
+      <div
+        style={{
+          borderTop: '1px solid var(--color-border)',
+          padding: '8px 16px 0 16px',
+          background: '#FFFFFF',
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopyEmail}
+            className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--color-text-secondary)',
+              background: 'transparent',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '4px 10px',
+              cursor: 'pointer',
+            }}
+            title="Copy per-task email address"
+          >
+            <Mail size={12} aria-hidden="true" />
+            Update via email
+          </button>
+          <a
+            href="mailto:feedback@yourdomain.com?subject=Macan%20Updates%20Feedback"
+            className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--color-text-secondary)',
+              background: 'transparent',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '4px 10px',
+              cursor: 'pointer',
+              textDecoration: 'none',
+            }}
+          >
+            <MessageSquare size={12} aria-hidden="true" />
+            Give feedback
+          </a>
+        </div>
+      </div>
+
+      {/* Composer */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit();
+        }}
+        style={{
+          padding: '8px 16px 16px 16px',
+          background: '#FFFFFF',
+          borderTop: '1px solid transparent',
+        }}
+      >
+        {error ? (
+          <p
+            className="font-body"
+            role="alert"
+            style={{
+              fontSize: 12,
+              color: 'var(--color-status-stuck)',
+              marginBottom: 6,
+            }}
+          >
+            {error}
+          </p>
+        ) : null}
+
+        <RichEditor
+          placeholder="Write an update and mention others with @"
+          onChange={handleEditorChange}
+          editorRef={editorRef}
+        />
+
+        {/* Attachment chips (pending submission) */}
+        {attachments.length > 0 && (
+          <ul
+            className="flex flex-wrap gap-2"
+            style={{ listStyle: 'none', margin: '8px 0 0', padding: 0 }}
+          >
+            {attachments.map((a, i) => (
+              <li
+                key={`${a.url}-${i}`}
+                className="inline-flex items-center gap-1 font-body"
+                style={{
+                  fontSize: 12,
+                  color: 'var(--color-text-secondary)',
+                  background: 'var(--color-bg-subtle, #F3F4F6)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '3px 6px 3px 10px',
+                }}
+              >
+                <Paperclip size={11} aria-hidden="true" />
+                <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {a.name || 'file'}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() =>
+                    setAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                  style={{
+                    width: 16,
+                    height: 16,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--color-text-muted)',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    lineHeight: 1,
+                    padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Inline composer toolbar + send */}
+        <div className="mt-2 flex items-center gap-2">
+          <ToolbarIconButton onClick={focusMention} title="Mention someone">
+            <AtSign size={14} aria-hidden="true" />
+          </ToolbarIconButton>
+          <ToolbarIconButton
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach a file"
+          >
+            <Paperclip size={14} aria-hidden="true" />
+          </ToolbarIconButton>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFilesSelected}
+            style={{ display: 'none' }}
+          />
+          <ToolbarIconButton
+            onClick={() => toast.info('GIF picker coming soon')}
+            title="Insert GIF (coming soon)"
+          >
+            <ImageIcon size={14} aria-hidden="true" />
+          </ToolbarIconButton>
+
+          <div style={{ position: 'relative' }}>
+            <ToolbarIconButton
+              onClick={() => setEmojiPickerOpen((v) => !v)}
+              title="Insert emoji"
+            >
+              <Smile size={14} aria-hidden="true" />
+            </ToolbarIconButton>
+            {emojiPickerOpen && (
+              <div
+                role="menu"
+                onMouseLeave={() => setEmojiPickerOpen(false)}
+                style={{
+                  position: 'absolute',
+                  bottom: '110%',
+                  left: 0,
+                  background: '#FFFFFF',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-md)',
+                  padding: 4,
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(6, 1fr)',
+                  gap: 2,
+                  zIndex: 120,
+                }}
+              >
+                {COMMON_EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => insertEmoji(e)}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: 16,
+                      borderRadius: 4,
+                    }}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={(bodyEmpty && attachments.length === 0) || submitting}
+            className="ml-auto inline-flex items-center justify-center gap-2 font-body whitespace-nowrap transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+            style={{
+              height: 32,
+              padding: '0 14px',
+              background: 'var(--color-accent)',
+              color: '#FFFFFF',
+              fontWeight: 600,
+              fontSize: 13,
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              cursor:
+                !bodyEmpty || attachments.length > 0 ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <Send size={13} aria-hidden="true" />
+            {submitting ? 'Posting…' : 'Update'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+/**
+ * Single update card — author, timestamp, rich body, attachments, delete.
+ */
+const UpdateCard = ({ update, currentUserId, onDelete }) => {
+  const author = update.author || {};
+  const isAuthor = author._id && currentUserId && author._id === currentUserId;
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <article
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'var(--color-bg-surface, #FFFFFF)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+        position: 'relative',
+      }}
+    >
+      <header className="flex items-center gap-2">
+        <Avatar user={author} size={28} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className="font-body"
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--color-text-primary)',
+              }}
+            >
+              {author.name || 'Unknown'}
+            </span>
+            <span
+              className="font-body"
+              title={formatDate(update.createdAt)}
+              style={{ fontSize: 11, color: 'var(--color-text-muted)' }}
+            >
+              {timeAgo(update.createdAt)}
+            </span>
+          </div>
+        </div>
+        {isAuthor && hovered ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="Delete update"
+            className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+            style={{
+              width: 24,
+              height: 24,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-muted)',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            <Trash2 size={13} aria-hidden="true" />
+          </button>
+        ) : null}
+      </header>
+
+      <div style={{ marginTop: 8 }}>
+        <ReadOnlyRichBody body={update.body} fallbackText={update.bodyText} />
+      </div>
+
+      {Array.isArray(update.attachments) && update.attachments.length > 0 ? (
+        <ul
+          className="flex flex-wrap gap-2"
+          style={{
+            listStyle: 'none',
+            margin: '8px 0 0',
+            padding: 0,
+          }}
+        >
+          {update.attachments.map((a, i) => (
+            <li key={`${a.url}-${i}`}>
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-body transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+                style={{
+                  fontSize: 12,
+                  color: 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '4px 8px',
+                  textDecoration: 'none',
+                }}
+                title={a.name || 'attachment'}
+              >
+                <Download size={11} aria-hidden="true" />
+                <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {a.name || 'attachment'}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+};
+
+/**
+ * Read-only renderer for a TipTap doc. Uses `useEditor` in editable:false
+ * mode — that way mentions, task lists, and other custom nodes render with
+ * the same plugins the composer uses, without pulling in @tiptap/html.
+ */
+const ReadOnlyRichBody = ({ body, fallbackText }) => {
+  const editor = useEditor(
+    {
+      editable: false,
+      content: body || (fallbackText ? { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: fallbackText }] }] } : ''),
+      extensions: [
+        StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+        TaskList,
+        TaskItem.configure({ nested: true }),
+        Mention.configure({
+          HTMLAttributes: { class: 'macan-mention' },
+          renderText: ({ node }) => `@${node.attrs.label || node.attrs.id}`,
+        }),
+      ],
+    },
+    [body, fallbackText]
+  );
+
+  if (!editor) return null;
+
+  return (
+    <div className="macan-rich-readonly">
+      <EditorContent editor={editor} />
+      <style>{`
+        .macan-rich-readonly .ProseMirror {
+          outline: none;
+          font-size: 14px;
+          line-height: 1.55;
+          color: var(--color-text-primary);
+        }
+        .macan-rich-readonly .ProseMirror p {
+          margin: 0 0 4px 0;
+        }
+        .macan-rich-readonly .ProseMirror p:last-child { margin-bottom: 0; }
+        .macan-rich-readonly .ProseMirror h1 { font-size: 18px; font-weight: 700; margin: 4px 0; }
+        .macan-rich-readonly .ProseMirror h2 { font-size: 16px; font-weight: 700; margin: 4px 0; }
+        .macan-rich-readonly .ProseMirror h3 { font-size: 14px; font-weight: 700; margin: 4px 0; }
+        .macan-rich-readonly .ProseMirror ul,
+        .macan-rich-readonly .ProseMirror ol {
+          padding-left: 20px;
+          margin: 4px 0;
+        }
+        .macan-rich-readonly .ProseMirror ul[data-type="taskList"] {
+          list-style: none;
+          padding-left: 0;
+        }
+        .macan-rich-readonly .ProseMirror ul[data-type="taskList"] li {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+          margin: 2px 0;
+        }
+        .macan-rich-readonly .ProseMirror ul[data-type="taskList"] li > label {
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+        .macan-rich-readonly .ProseMirror ul[data-type="taskList"] li > div {
+          flex: 1;
+        }
+        .macan-rich-readonly .ProseMirror .macan-mention {
+          color: var(--color-accent);
+          background: var(--color-accent-light, rgba(37,99,235,0.1));
+          padding: 1px 4px;
+          border-radius: 4px;
+          font-weight: 600;
+        }
+      `}</style>
+    </div>
+  );
+};
+
+const ToolbarIconButton = ({ children, onClick, title }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={title}
+    aria-label={title}
+    className="inline-flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+    style={{
+      width: 28,
+      height: 28,
+      background: 'transparent',
+      border: 'none',
+      color: 'var(--color-text-secondary)',
+      cursor: 'pointer',
+    }}
+  >
+    {children}
+  </button>
+);
+
+const Avatar = ({ user, size = 28 }) => {
+  const [imgError, setImgError] = useState(false);
+  const name = user?.name || '';
+  const initial = name.charAt(0).toUpperCase() || '?';
+  const hasPic = !!user?.profilePic && !imgError;
+  const base = { width: size, height: size, borderRadius: '50%', flexShrink: 0 };
+  if (hasPic) {
+    return (
+      <img
+        src={user.profilePic}
+        alt={name}
+        style={{ ...base, objectFit: 'cover' }}
+        onError={() => setImgError(true)}
+      />
+    );
+  }
+  return (
+    <span
+      aria-label={name}
+      className="inline-flex items-center justify-center font-body font-semibold"
+      style={{
+        ...base,
+        background: 'var(--color-accent-light)',
+        color: 'var(--color-accent-text)',
+        fontSize: Math.round(size * 0.4),
+      }}
+    >
+      {initial}
+    </span>
+  );
+};
+
+export default UpdatesTab;

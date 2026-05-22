@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, CornerDownLeft } from 'lucide-react';
+import {
+  X,
+  Send,
+  CornerDownLeft,
+  Plus,
+  Settings as SettingsIcon,
+  ChevronLeft,
+} from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatDate, timeAgo } from '../../utils/dateUtils';
 import * as commentService from '../../services/commentService';
 import useNotificationStore from '../../store/notificationStore';
 import useOrgStore from '../../store/orgStore';
+import { getColorPair } from '../../utils/priorityColors';
+import ChecklistEditor from './ChecklistEditor';
+import UpdatesTab from './UpdatesTab';
+import SubitemsList from './SubitemsList';
 
 /**
  * CommentPanel — right-edge slide-out panel showing task detail + comments.
@@ -25,7 +36,18 @@ import useOrgStore from '../../store/orgStore';
  *   isOpen   — whether the panel is rendered + in-position
  *   onClose  — callback to close the panel
  */
-const CommentPanel = ({ task, isOpen, onClose }) => {
+const CommentPanel = ({
+  task,
+  board = null,
+  isOpen,
+  onClose,
+  isAdmin = false,
+  onUpdateTask,
+  onEditLabels,
+  onOpenSubitem,
+  onBack,
+  canGoBack = false,
+}) => {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState('');
@@ -45,6 +67,10 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
 
   // Reply state — which comment the user is replying to
   const [replyingTo, setReplyingTo] = useState(null);
+
+  // Tabs (Updates / Comments / Files / Activity Log)
+  const [activeTab, setActiveTab] = useState('updates');
+  const [updatesCount, setUpdatesCount] = useState(0);
 
   // Org members for @mention
   const currentOrg = useOrgStore((s) => s.currentOrg);
@@ -80,6 +106,8 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
       setMentionedUsers([]);
       setShowMentionDropdown(false);
       setReplyingTo(null);
+      setActiveTab('updates');
+      setUpdatesCount(0);
       return;
     }
 
@@ -303,13 +331,37 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
             'macan-cp-slide 300ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
-        {/* Close button */}
+        {/* Header controls: back (when viewing a subitem) + close */}
         <div
-          className="flex items-center justify-end"
+          className="flex items-center justify-between"
           style={{
             padding: '12px 16px 0 16px',
           }}
         >
+          {canGoBack && onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to parent task"
+              className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+              style={{
+                height: 32,
+                padding: '0 8px',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 500,
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              <ChevronLeft size={16} aria-hidden="true" />
+              Back
+            </button>
+          ) : (
+            <span />
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -346,7 +398,11 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
             aria-label="Task badges"
           >
             {task.priority && <Chip type="priority" value={task.priority} />}
-            <Chip type="status" value={task.status || 'not_started'} />
+            <Chip
+              type="status"
+              value={task.status || 'not_started'}
+              board={board}
+            />
           </div>
 
           <dl className="mt-4 flex flex-col gap-2">
@@ -396,6 +452,19 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
                 {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
               </span>
             </MetaRow>
+
+            {/* Labels row — only meaningful for board tasks */}
+            {board && (
+              <MetaRow label="Labels">
+                <LabelsEditor
+                  task={task}
+                  board={board}
+                  isAdmin={isAdmin}
+                  onUpdateTask={onUpdateTask}
+                  onEditLabels={onEditLabels}
+                />
+              </MetaRow>
+            )}
           </dl>
 
           {task.note ? (
@@ -427,9 +496,75 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
               </p>
             </div>
           ) : null}
+
+          <ChecklistEditor task={task} />
         </header>
 
-        {/* Comment thread */}
+        {/* Subitems — only meaningful for board tasks; component returns null
+            when the task is personal so we can mount unconditionally. */}
+        <div style={{ padding: '12px 24px 0 24px' }}>
+          <SubitemsList
+            task={task}
+            board={board}
+            isAdmin={isAdmin}
+            onOpenSubitem={onOpenSubitem}
+          />
+        </div>
+
+        {/* Tabs row */}
+        <Tabs
+          active={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { key: 'updates', label: 'Updates', count: updatesCount },
+            { key: 'comments', label: 'Comments', count: comments.length },
+            { key: 'files', label: 'Files' },
+            { key: 'activity', label: 'Activity Log' },
+          ]}
+        />
+
+        {/* Tab content — Updates pane stays mounted so its count remains
+            live even when the user is browsing another tab. */}
+        <div
+          style={{
+            flex: 1,
+            display: activeTab === 'updates' ? 'flex' : 'none',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          <UpdatesTab task={task} onCountChange={setUpdatesCount} />
+        </div>
+
+        {activeTab === 'files' && (
+          <div
+            className="flex-1 flex items-center justify-center font-body text-center"
+            style={{
+              padding: '32px 24px',
+              fontSize: 13,
+              color: 'var(--color-text-muted)',
+            }}
+          >
+            Files tab — coming soon.
+          </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div
+            className="flex-1 flex items-center justify-center font-body text-center"
+            style={{
+              padding: '32px 24px',
+              fontSize: 13,
+              color: 'var(--color-text-muted)',
+            }}
+          >
+            Activity Log — coming soon.
+          </div>
+        )}
+
+        {/* Comment thread + composer (only rendered under the Comments tab) */}
+        {activeTab === 'comments' && (
+          <>
         <div
           ref={threadRef}
           className="flex-1 overflow-y-auto"
@@ -683,6 +818,8 @@ const CommentPanel = ({ task, isOpen, onClose }) => {
             </button>
           </div>
         </form>
+          </>
+        )}
       </aside>
 
       <style>{`
@@ -726,6 +863,82 @@ const MetaRow = ({ label, children }) => (
     <dd className="min-w-0 flex-1" style={{ margin: 0 }}>
       {children}
     </dd>
+  </div>
+);
+
+/**
+ * Tabs — pill-underline tabs row used at the top of the panel body.
+ * Each tab can carry an optional count badge.
+ */
+const Tabs = ({ tabs, active, onChange }) => (
+  <div
+    role="tablist"
+    aria-label="Task detail tabs"
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4,
+      padding: '0 16px',
+      borderBottom: '1px solid var(--color-border)',
+      overflowX: 'auto',
+    }}
+  >
+    {tabs.map((t) => {
+      const isActive = t.key === active;
+      return (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={isActive}
+          onClick={() => onChange(t.key)}
+          className="font-body transition-colors duration-150"
+          style={{
+            position: 'relative',
+            padding: '10px 12px 12px 12px',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: isActive ? 600 : 500,
+            color: isActive
+              ? 'var(--color-text-primary)'
+              : 'var(--color-text-muted)',
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <span>{t.label}</span>
+          {typeof t.count === 'number' ? (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              / {t.count}
+            </span>
+          ) : null}
+          {isActive ? (
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: 8,
+                right: 8,
+                bottom: -1,
+                height: 2,
+                background: 'var(--color-accent)',
+                borderRadius: 2,
+              }}
+            />
+          ) : null}
+        </button>
+      );
+    })}
   </div>
 );
 
@@ -917,6 +1130,222 @@ const Avatar = ({ user, size = 28 }) => {
     >
       {initial}
     </span>
+  );
+};
+
+/**
+ * Inline labels editor for the task detail header. Renders the task's
+ * applied labels as removable chips, and exposes a `+` button that opens
+ * a small inline picker over the available board labels. Admins also
+ * see an "Edit labels" cog that opens the EditChipsModal.
+ */
+const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const taskLabels = useMemo(
+    () => (Array.isArray(task.labels) ? task.labels.map((l) => l.toString()) : []),
+    [task.labels]
+  );
+  const boardLabels = useMemo(() => {
+    if (!board || !Array.isArray(board.labels)) return [];
+    return [...board.labels].sort((a, b) => (a.order || 0) - (b.order || 0));
+  }, [board]);
+  const labelById = useMemo(() => {
+    const m = new Map();
+    for (const lb of boardLabels) m.set(lb._id.toString(), lb);
+    return m;
+  }, [boardLabels]);
+
+  const updateLabels = async (next) => {
+    if (!onUpdateTask) return;
+    try {
+      await onUpdateTask(task._id, { labels: next });
+    } catch {
+      // toast is surfaced by the parent
+    }
+  };
+
+  const handleToggle = (labelId) => {
+    const idStr = labelId.toString();
+    const next = taskLabels.includes(idStr)
+      ? taskLabels.filter((id) => id !== idStr)
+      : [...taskLabels, idStr];
+    updateLabels(next);
+  };
+
+  const handleRemove = (labelId) => {
+    const idStr = labelId.toString();
+    updateLabels(taskLabels.filter((id) => id !== idStr));
+  };
+
+  const available = boardLabels.filter(
+    (l) => !taskLabels.includes(l._id.toString())
+  );
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap" style={{ minHeight: 24 }}>
+      {taskLabels.length === 0 && (
+        <span
+          className="font-body"
+          style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
+        >
+          No labels
+        </span>
+      )}
+      {taskLabels.map((id) => {
+        const lb = labelById.get(id);
+        if (!lb) return null;
+        const pair = getColorPair(lb.color);
+        return (
+          <span
+            key={id}
+            className="inline-flex items-center gap-1 font-body font-medium"
+            style={{
+              fontSize: 12,
+              padding: '3px 4px 3px 10px',
+              borderRadius: 'var(--radius-full)',
+              backgroundColor: pair.bg,
+              color: pair.text,
+            }}
+          >
+            {lb.name}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => handleRemove(id)}
+                aria-label={`Remove ${lb.name}`}
+                style={{
+                  width: 14,
+                  height: 14,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  borderRadius: '50%',
+                  opacity: 0.7,
+                }}
+              >
+                <X size={10} />
+              </button>
+            )}
+          </span>
+        );
+      })}
+      {isAdmin && (
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            aria-label="Add label"
+            className="inline-flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+            style={{
+              width: 22,
+              height: 22,
+              background: 'transparent',
+              border: '1px dashed var(--color-border-strong)',
+              color: 'var(--color-text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={12} aria-hidden="true" />
+          </button>
+          {pickerOpen && (
+            <div
+              role="listbox"
+              onMouseLeave={() => setPickerOpen(false)}
+              style={{
+                position: 'absolute',
+                top: 28,
+                left: 0,
+                zIndex: 60,
+                minWidth: 200,
+                background: '#FFFFFF',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md)',
+                padding: 6,
+              }}
+            >
+              {available.length === 0 ? (
+                <p
+                  className="font-body text-center"
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--color-text-muted)',
+                    padding: '8px',
+                  }}
+                >
+                  All labels applied
+                </p>
+              ) : (
+                available.map((lb) => {
+                  const pair = getColorPair(lb.color);
+                  return (
+                    <button
+                      key={lb._id}
+                      type="button"
+                      onClick={() => {
+                        handleToggle(lb._id);
+                        setPickerOpen(false);
+                      }}
+                      className="w-full text-left transition-opacity hover:opacity-90 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+                      style={{
+                        margin: '2px 0',
+                        padding: '4px 6px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        borderRadius: 'var(--radius-sm)',
+                      }}
+                    >
+                      <span
+                        className="inline-flex items-center font-body font-medium"
+                        style={{
+                          fontSize: 12,
+                          padding: '3px 10px',
+                          borderRadius: 'var(--radius-full)',
+                          backgroundColor: pair.bg,
+                          color: pair.text,
+                        }}
+                      >
+                        {lb.name}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+              {onEditLabels && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen(false);
+                    onEditLabels();
+                  }}
+                  className="w-full flex items-center gap-2 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+                  style={{
+                    marginTop: 6,
+                    padding: '6px 10px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--color-text-secondary)',
+                    background: 'transparent',
+                    border: 'none',
+                    borderTop: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <SettingsIcon size={12} aria-hidden="true" />
+                  Edit Labels
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 

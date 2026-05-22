@@ -19,10 +19,32 @@ const taskSchema = new mongoose.Schema(
       enum: ['critical', 'high', 'medium', 'low'],
       default: 'medium',
     },
+    // Board tasks: ObjectId referencing Board.statuses._id.
+    // Personal tasks: legacy enum string ('not_started', 'working_on_it',
+    // 'done', 'stuck') — kept as strings because personal tasks don't have
+    // a board to read statuses from. Mixed type accepts both shapes;
+    // taskController validates per-context.
     status: {
-      type: String,
-      enum: ['not_started', 'working_on_it', 'done', 'stuck'],
+      type: mongoose.Schema.Types.Mixed,
       default: 'not_started',
+    },
+    // Board tasks: ObjectIds referencing Board.labels._id.
+    // Personal tasks: empty array (labels are board-scoped).
+    labels: {
+      type: [mongoose.Schema.Types.ObjectId],
+      default: [],
+    },
+    checklist: {
+      type: [
+        new mongoose.Schema(
+          {
+            text: { type: String, default: '' },
+            done: { type: Boolean, default: false },
+          },
+          { timestamps: { createdAt: true, updatedAt: false } }
+        ),
+      ],
+      default: [],
     },
     assignedTo: [{
       type: mongoose.Schema.Types.ObjectId,
@@ -35,6 +57,22 @@ const taskSchema = new mongoose.Schema(
       type: String,
     },
     isPersonal: {
+      type: Boolean,
+      default: false,
+    },
+    // Subitems: when set, this task is a child of another Task on the same
+    // board. Top-level tasks (the rows shown in TaskTable) have parent: null.
+    // Indexed so the subitems lookup `find({ parent: id })` is cheap.
+    parent: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Task',
+      default: null,
+      index: true,
+    },
+    // Loop guard for ITEM_CREATED automations: when an automation creates a
+    // task via CREATE_TASK or CREATE_SUBITEM, the task is tagged so the
+    // dispatcher can skip it and avoid recursive trigger loops.
+    createdByAutomation: {
       type: Boolean,
       default: false,
     },

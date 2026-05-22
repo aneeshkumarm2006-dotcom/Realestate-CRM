@@ -20,7 +20,6 @@ export const getDashboardStats = async (orgId) => {
 
 /**
  * POST /api/boards — create a board (admin only).
- * @param {{ name: string, visibility: 'public'|'private', organisation: string }} payload
  */
 export const createBoard = async (payload) => {
   const { data } = await api.post('/api/boards', payload);
@@ -41,4 +40,60 @@ export const updateBoard = async (id, payload) => {
 export const deleteBoard = async (id) => {
   const { data } = await api.delete(`/api/boards/${id}`);
   return data;
+};
+
+// --- Labels ----------------------------------------------------------------
+
+export const addLabel = async (boardId, payload) => {
+  const { data } = await api.post(`/api/boards/${boardId}/labels`, payload);
+  return data.labels;
+};
+
+export const updateLabel = async (boardId, labelId, payload) => {
+  const { data } = await api.put(
+    `/api/boards/${boardId}/labels/${labelId}`,
+    payload
+  );
+  return data.labels;
+};
+
+export const deleteLabel = async (boardId, labelId) => {
+  const { data } = await api.delete(`/api/boards/${boardId}/labels/${labelId}`);
+  return data.labels;
+};
+
+export const reorderLabels = async (boardId, orderedIds) => {
+  const { data } = await api.put(`/api/boards/${boardId}/labels/reorder`, {
+    orderedIds,
+  });
+  return data.labels;
+};
+
+// --- Statuses --------------------------------------------------------------
+
+export const addStatus = async (boardId, payload) => {
+  const { data } = await api.post(`/api/boards/${boardId}/statuses`, payload);
+  return data.statuses;
+};
+
+export const updateStatus = async (boardId, statusId, payload) => {
+  const { data } = await api.put(
+    `/api/boards/${boardId}/statuses/${statusId}`,
+    payload
+  );
+  return data.statuses;
+};
+
+export const deleteStatus = async (boardId, statusId) => {
+  const { data } = await api.delete(
+    `/api/boards/${boardId}/statuses/${statusId}`
+  );
+  return data.statuses;
+};
+
+export const reorderStatuses = async (boardId, orderedIds) => {
+  const { data } = await api.put(`/api/boards/${boardId}/statuses/reorder`, {
+    orderedIds,
+  });
+  return data.statuses;
 };

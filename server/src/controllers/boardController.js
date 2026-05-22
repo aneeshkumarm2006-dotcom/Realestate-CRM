@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
 const TaskGroup = require('../models/TaskGroup');
@@ -28,6 +29,34 @@ const loadOrgForMember = async (orgId, userId) => {
 };
 
 /**
+ * Load a board + its org, validating that the current user is a member.
+ * Returns { board, org, isAdmin } or { status, error } on failure.
+ */
+const loadBoardContext = async (boardId, userId) => {
+  if (!boardId || !mongoose.Types.ObjectId.isValid(boardId)) {
+    return { status: 400, error: 'Invalid board id' };
+  }
+  const board = await Board.findById(boardId);
+  if (!board) return { status: 404, error: 'Board not found' };
+
+  const org = await Organisation.findById(board.organisation);
+  if (!org) return { status: 404, error: 'Organisation not found' };
+
+  const isMember = org.members.some((m) => m.toString() === userId);
+  if (!isMember) {
+    return { status: 403, error: 'Not a member of this organisation' };
+  }
+  return { board, org, isAdmin: isOrgAdmin(org, userId) };
+};
+
+const DEFAULT_STATUSES = [
+  { key: 'not_started',   name: 'Not Started',   color: '#6B7280', order: 0, isDefault: true  },
+  { key: 'working_on_it', name: 'Working on it', color: '#D97706', order: 1, isDefault: false },
+  { key: 'done',          name: 'Done',          color: '#16A34A', order: 2, isDefault: false },
+  { key: 'stuck',         name: 'Stuck',         color: '#DC2626', order: 3, isDefault: false },
+];
+
+/**
  * GET /api/boards?org=:orgId
  *
  * All org members can see all boards. Sorted by updatedAt desc.
@@ -46,7 +75,6 @@ const getBoards = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    // All org members (admin or regular) can see all boards in the org
     const boards = await Board.find({ organisation: orgId })
       .sort({ updatedAt: -1 });
     return res.json({ boards });
@@ -54,6 +82,24 @@ const getBoards = async (req, res) => {
     console.error('getBoards error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
+};
+
+/**
+ * Resolve the ObjectIds of all "done" statuses across an org's boards.
+ * Used by analytics aggregations that previously matched the enum string
+ * `'done'` directly.
+ */
+const findDoneStatusIdsForOrg = async (orgId) => {
+  const boards = await Board.find({ organisation: orgId })
+    .select('_id statuses')
+    .lean();
+  const ids = [];
+  for (const b of boards) {
+    for (const s of b.statuses || []) {
+      if (s.key === 'done') ids.push(s._id);
+    }
+  }
+  return ids;
 };
 
 /**
@@ -77,14 +123,20 @@ const getDashboardStats = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    // All org members see org-wide stats
     const orgBoardIds = await Board.distinct('_id', { organisation: orgId });
+    const taskFilter = { board: { $in: orgBoardIds }, isPersonal: { $ne: true } };
 
-    const taskFilter = { board: { $in: orgBoardIds } };
+    const doneStatusIds = await findDoneStatusIdsForOrg(orgId);
 
     const [completedTasks, pendingTasks, totalBoards] = await Promise.all([
-      Task.countDocuments({ ...taskFilter, status: 'done' }),
-      Task.countDocuments({ ...taskFilter, status: { $ne: 'done' } }),
+      Task.countDocuments({
+        ...taskFilter,
+        status: { $in: doneStatusIds.length ? doneStatusIds : ['done'] },
+      }),
+      Task.countDocuments({
+        ...taskFilter,
+        status: { $nin: doneStatusIds.length ? doneStatusIds : ['done'] },
+      }),
       Board.countDocuments({ organisation: orgId }),
     ]);
 
@@ -108,7 +160,9 @@ const getDashboardStats = async (req, res) => {
  * POST /api/boards
  *
  * Body: { name, visibility, organisation }
- * Admin-only. Validates input, attaches orgId and createdBy.
+ * Admin-only. Validates input, attaches orgId and createdBy. New boards
+ * are seeded with the four default statuses so the existing UI flow
+ * (StatusMenu / Chip) keeps working.
  */
 const createBoard = async (req, res) => {
   try {
@@ -142,6 +196,8 @@ const createBoard = async (req, res) => {
       visibility,
       organisation,
       createdBy: userId,
+      statuses: DEFAULT_STATUSES.map((s) => ({ ...s })),
+      labels: [],
     });
 
     return res.status(201).json({ board });
@@ -216,8 +272,6 @@ const deleteBoard = async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    // Cascade: find all tasks on this board, delete their comments, then
-    // delete the tasks, then delete the groups, then the board itself.
     const taskIds = await Task.distinct('_id', { board: id });
     if (taskIds.length > 0) {
       await Comment.deleteMany({ task: { $in: taskIds } });
@@ -234,10 +288,275 @@ const deleteBoard = async (req, res) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Labels + Statuses CRUD (admin-only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared admin guard for any /labels or /statuses sub-route.
+ */
+const requireBoardAdmin = async (req, res) => {
+  const ctx = await loadBoardContext(req.params.id, req.user.userId);
+  if (ctx.error) {
+    res.status(ctx.status).json({ error: ctx.error });
+    return null;
+  }
+  if (!ctx.isAdmin) {
+    res.status(403).json({ error: 'Admin access required' });
+    return null;
+  }
+  return ctx;
+};
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const sanitizeColor = (value, fallback = '#6B7280') => {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return HEX_RE.test(trimmed) ? trimmed : fallback;
+};
+
+const sanitizeName = (value) => {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, 60);
+};
+
+const nextOrder = (collection) =>
+  collection.length === 0
+    ? 0
+    : Math.max(...collection.map((c) => c.order || 0)) + 1;
+
+const serializeBoardChips = (board) => ({
+  labels: (board.labels || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)),
+  statuses: (board.statuses || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)),
+});
+
+// --- Labels ----------------------------------------------------------------
+
+const listLabels = async (req, res) => {
+  try {
+    const ctx = await loadBoardContext(req.params.id, req.user.userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    return res.json({ labels: serializeBoardChips(ctx.board).labels });
+  } catch (err) {
+    console.error('listLabels error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const addLabel = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const name = sanitizeName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Label name is required' });
+    const color = sanitizeColor(req.body?.color);
+    board.labels.push({ name, color, order: nextOrder(board.labels) });
+    await board.save();
+    return res.status(201).json({ labels: serializeBoardChips(board).labels });
+  } catch (err) {
+    console.error('addLabel error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const updateLabel = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const { lid } = req.params;
+    const label = board.labels.id(lid);
+    if (!label) return res.status(404).json({ error: 'Label not found' });
+    if (typeof req.body?.name === 'string') {
+      const name = sanitizeName(req.body.name);
+      if (!name) return res.status(400).json({ error: 'Label name cannot be empty' });
+      label.name = name;
+    }
+    if (typeof req.body?.color === 'string') {
+      label.color = sanitizeColor(req.body.color, label.color);
+    }
+    await board.save();
+    return res.json({ labels: serializeBoardChips(board).labels });
+  } catch (err) {
+    console.error('updateLabel error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const deleteLabel = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const { lid } = req.params;
+    const label = board.labels.id(lid);
+    if (!label) return res.status(404).json({ error: 'Label not found' });
+    board.labels.pull({ _id: lid });
+    await board.save();
+    // Detach this label id from every task on the board.
+    await Task.updateMany(
+      { board: board._id },
+      { $pull: { labels: lid } }
+    );
+    return res.json({ labels: serializeBoardChips(board).labels });
+  } catch (err) {
+    console.error('deleteLabel error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const reorderLabels = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : [];
+    const lookup = new Map(orderedIds.map((id, i) => [id.toString(), i]));
+    for (const lab of board.labels) {
+      const idx = lookup.get(lab._id.toString());
+      if (idx !== undefined) lab.order = idx;
+    }
+    await board.save();
+    return res.json({ labels: serializeBoardChips(board).labels });
+  } catch (err) {
+    console.error('reorderLabels error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// --- Statuses --------------------------------------------------------------
+
+const listStatuses = async (req, res) => {
+  try {
+    const ctx = await loadBoardContext(req.params.id, req.user.userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    return res.json({ statuses: serializeBoardChips(ctx.board).statuses });
+  } catch (err) {
+    console.error('listStatuses error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const addStatus = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const name = sanitizeName(req.body?.name);
+    if (!name) return res.status(400).json({ error: 'Status name is required' });
+    const color = sanitizeColor(req.body?.color);
+    board.statuses.push({
+      name,
+      color,
+      order: nextOrder(board.statuses),
+      key: null,
+      isDefault: false,
+    });
+    await board.save();
+    return res.status(201).json({ statuses: serializeBoardChips(board).statuses });
+  } catch (err) {
+    console.error('addStatus error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const updateStatus = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const { sid } = req.params;
+    const status = board.statuses.id(sid);
+    if (!status) return res.status(404).json({ error: 'Status not found' });
+    if (typeof req.body?.name === 'string') {
+      const name = sanitizeName(req.body.name);
+      if (!name) return res.status(400).json({ error: 'Status name cannot be empty' });
+      status.name = name;
+    }
+    if (typeof req.body?.color === 'string') {
+      status.color = sanitizeColor(req.body.color, status.color);
+    }
+    if (typeof req.body?.isDefault === 'boolean' && req.body.isDefault) {
+      // Only one status can be the default; clear the others.
+      for (const s of board.statuses) s.isDefault = false;
+      status.isDefault = true;
+    }
+    await board.save();
+    return res.json({ statuses: serializeBoardChips(board).statuses });
+  } catch (err) {
+    console.error('updateStatus error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const deleteStatus = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const { sid } = req.params;
+    const status = board.statuses.id(sid);
+    if (!status) return res.status(404).json({ error: 'Status not found' });
+    if (status.isDefault) {
+      return res
+        .status(400)
+        .json({ error: 'Cannot delete the default status. Reassign another status as default first.' });
+    }
+    // Reassign any tasks currently using this status to the board's default.
+    const fallback = board.statuses.find((s) => s.isDefault && s._id.toString() !== sid);
+    if (fallback) {
+      await Task.updateMany(
+        { board: board._id, status: sid },
+        { $set: { status: fallback._id } }
+      );
+    }
+    board.statuses.pull({ _id: sid });
+    await board.save();
+    return res.json({ statuses: serializeBoardChips(board).statuses });
+  } catch (err) {
+    console.error('deleteStatus error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const reorderStatuses = async (req, res) => {
+  try {
+    const ctx = await requireBoardAdmin(req, res);
+    if (!ctx) return;
+    const { board } = ctx;
+    const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : [];
+    const lookup = new Map(orderedIds.map((id, i) => [id.toString(), i]));
+    for (const s of board.statuses) {
+      const idx = lookup.get(s._id.toString());
+      if (idx !== undefined) s.order = idx;
+    }
+    await board.save();
+    return res.json({ statuses: serializeBoardChips(board).statuses });
+  } catch (err) {
+    console.error('reorderStatuses error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getBoards,
   getDashboardStats,
   createBoard,
   updateBoard,
   deleteBoard,
+  // labels
+  listLabels,
+  addLabel,
+  updateLabel,
+  deleteLabel,
+  reorderLabels,
+  // statuses
+  listStatuses,
+  addStatus,
+  updateStatus,
+  deleteStatus,
+  reorderStatuses,
+  // exported for analytics/dashboard
+  findDoneStatusIdsForOrg,
 };

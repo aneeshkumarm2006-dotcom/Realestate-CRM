@@ -5,5 +5,6 @@ require('./Board');
 require('./TaskGroup');
 require('./Task');
 require('./Comment');
+require('./Update');
 require('./Notification');
 require('./Automation');

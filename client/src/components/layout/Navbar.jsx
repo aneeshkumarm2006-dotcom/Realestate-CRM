@@ -224,7 +224,12 @@ const SearchResultsDropdown = ({ results, loading, onBoardClick, onTaskClick }) 
                     )}
                   </div>
                   {task.status && (
-                    <Chip type="status" value={task.status} className="shrink-0" />
+                    <Chip
+                      type="status"
+                      value={task.status}
+                      board={task.board}
+                      className="shrink-0"
+                    />
                   )}
                 </button>
               ))}

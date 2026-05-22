@@ -89,3 +89,46 @@ export const deleteGroup = async (groupId) => {
   const { data } = await api.delete(`/api/groups/${groupId}`);
   return data;
 };
+
+/**
+ * POST /api/tasks/:id/checklist — append a new checklist item.
+ */
+export const addChecklistItem = async (taskId, text) => {
+  const { data } = await api.post(`/api/tasks/${taskId}/checklist`, { text });
+  return data.task;
+};
+
+/**
+ * PUT /api/tasks/:id/checklist/:itemId — toggle done and/or rename an item.
+ * Pass any subset of { text, done }.
+ */
+export const updateChecklistItem = async (taskId, itemId, patch) => {
+  const { data } = await api.put(`/api/tasks/${taskId}/checklist/${itemId}`, patch);
+  return data.task;
+};
+
+/**
+ * DELETE /api/tasks/:id/checklist/:itemId
+ */
+export const deleteChecklistItem = async (taskId, itemId) => {
+  const { data } = await api.delete(`/api/tasks/${taskId}/checklist/${itemId}`);
+  return data.task;
+};
+
+/**
+ * PUT /api/tasks/:id/checklist/reorder — reorder the whole checklist.
+ */
+export const reorderChecklist = async (taskId, orderedIds) => {
+  const { data } = await api.put(`/api/tasks/${taskId}/checklist/reorder`, {
+    orderedIds,
+  });
+  return data.task;
+};
+
+/**
+ * GET /api/tasks/:id/subitems — list direct children of a task.
+ */
+export const getSubitems = async (taskId) => {
+  const { data } = await api.get(`/api/tasks/${taskId}/subitems`);
+  return data.tasks;
+};

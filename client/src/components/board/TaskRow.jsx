@@ -1,50 +1,65 @@
-import { useEffect, useRef, useState } from 'react';
-import { MoreHorizontal, MessageSquare } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  MoreHorizontal,
+  MessageSquare,
+  Plus,
+  Check,
+  ChevronRight,
+} from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
 
 const NAVBAR_HEIGHT = 56;
 
 /**
+ * Whether the task's status — interpreted against the board — is the
+ * "done" status. Used to decide overdue styling. Works with both the new
+ * ObjectId-style status and the legacy enum string for backwards compat.
+ */
+const isStatusDone = (board, statusRef) => {
+  if (board && Array.isArray(board.statuses) && statusRef != null) {
+    const match = board.statuses.find(
+      (s) => s._id && s._id.toString() === statusRef.toString()
+    );
+    if (match) return match.key === 'done';
+  }
+  return statusRef === 'done';
+};
+
+/**
  * TaskRow — a single row in the board task table.
  *
- * Columns (see Macan_Design.md Section 6.7):
- *   [Checkbox 40px] [Name flex min-240px] [Priority 130px] [Status 160px]
- *   [Owner 160px] [Due Date 140px] [Actions 48px]
- *
- * Props:
- *   task        — populated task doc
- *   selected    — checkbox state
- *   onSelect    — (taskId, checked) => void
- *   onOpen      — called when the task name is clicked (opens comment panel)
- *   onStatusClick — called when the status chip is clicked
- *   onActionsClick — called when ⋯ menu button is clicked
- *   isLast      — whether this is the last row in the table (removes bottom border)
+ * Columns:
+ *   [Checkbox 40] [Name flex] [Priority 130] [Status 160]
+ *   [Labels 180] [Owner 160] [Due 140] [Comments 48] [Actions 48]
  */
 const TaskRow = ({
   task,
+  board = null,
   selected = false,
   onSelect,
   onOpen,
   onStatusClick,
   onPriorityClick,
+  onLabelsClick,
   onActionsClick,
+  onToggleExpand,
+  expanded = false,
   isLast = false,
   highlighted = false,
 }) => {
   const rowRef = useRef(null);
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
-  const overdue = isOverdue(task.dueDate) && task.status !== 'done';
+  const overdue = isOverdue(task.dueDate) && !isStatusDone(board, task.status);
+  const labels = Array.isArray(task.labels) ? task.labels : [];
 
   useEffect(() => {
-    console.log('[TaskRow] highlighted effect fired', highlighted, !!rowRef.current);
     if (!highlighted || !rowRef.current) return;
     const el = rowRef.current;
     const timer = setTimeout(() => {
       const rect = el.getBoundingClientRect();
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
       const targetY = scrollTop + rect.top - NAVBAR_HEIGHT - (window.innerHeight / 2 - el.offsetHeight / 2);
-      console.log('[TaskRow] scrolling', { rect, scrollTop, targetY, innerHeight: window.innerHeight });
       window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
     }, 100);
     return () => clearTimeout(timer);
@@ -81,22 +96,48 @@ const TaskRow = ({
 
       {/* Task Name */}
       <td style={{ padding: '0 16px', minWidth: 240 }}>
-        <button
-          type="button"
-          onClick={() => onOpen?.(task)}
-          className="text-left font-body transition-colors duration-150 hover:underline hover:text-[color:var(--color-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: 'var(--color-text-primary)',
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-          }}
-        >
-          {task.name}
-        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          {task.hasSubitems && onToggleExpand ? (
+            <button
+              type="button"
+              onClick={() => onToggleExpand(task._id)}
+              aria-label={expanded ? 'Collapse subitems' : 'Expand subitems'}
+              aria-expanded={expanded}
+              className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+              style={{
+                width: 18,
+                height: 18,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-text-secondary)',
+                flexShrink: 0,
+                padding: 0,
+                transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 150ms ease',
+              }}
+            >
+              <ChevronRight size={14} aria-hidden="true" />
+            </button>
+          ) : null}
+          <ChecklistBadge checklist={task.checklist} />
+          <button
+            type="button"
+            onClick={() => onOpen?.(task)}
+            className="text-left font-body transition-colors duration-150 hover:underline hover:text-[color:var(--color-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] truncate"
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: 'var(--color-text-primary)',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+            }}
+          >
+            {task.name}
+          </button>
+        </div>
       </td>
 
       {/* Priority */}
@@ -133,9 +174,19 @@ const TaskRow = ({
         <Chip
           type="status"
           value={task.status || 'not_started'}
+          board={board}
           onClick={
             onStatusClick ? (e) => onStatusClick(task, e) : undefined
           }
+        />
+      </td>
+
+      {/* Labels */}
+      <td style={{ width: 180, padding: '0 16px' }}>
+        <LabelsCell
+          board={board}
+          labels={labels}
+          onClick={onLabelsClick ? (e) => onLabelsClick(task, e) : undefined}
         />
       </td>
 
@@ -191,7 +242,7 @@ const TaskRow = ({
         </button>
       </td>
 
-      {/* Actions — only rendered when a handler is supplied (admin only) */}
+      {/* Actions */}
       <td style={{ width: 48, padding: '0 8px 0 0' }}>
         {onActionsClick ? (
           <button
@@ -214,9 +265,142 @@ const TaskRow = ({
 };
 
 /**
- * Stacked avatar display for task assignees. Shows up to 3 avatars with
- * an overlap, then a "+N" bubble if there are more.
+ * Inline 20px progress ring shown to the left of the task name when the
+ * task has any checklist items. Fills clockwise green proportional to the
+ * done/total ratio; full green with a check icon at 100%.
  */
+const ChecklistBadge = ({ checklist }) => {
+  const { total, done } = useMemo(() => {
+    const list = Array.isArray(checklist) ? checklist : [];
+    return {
+      total: list.length,
+      done: list.filter((it) => it && it.done).length,
+    };
+  }, [checklist]);
+
+  if (total === 0) return null;
+
+  const size = 20;
+  const stroke = 3;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = done / total;
+  const complete = done === total;
+  const dashOffset = circumference * (1 - ratio);
+
+  return (
+    <span
+      className="inline-flex items-center justify-center shrink-0"
+      style={{ width: size, height: size, position: 'relative' }}
+      title={`${done} / ${total} complete`}
+      aria-label={`${done} of ${total} checklist items complete`}
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-hidden="true"
+        style={{ transform: 'rotate(-90deg)' }}
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill={complete ? 'var(--color-status-done, #00C875)' : 'transparent'}
+          stroke="var(--color-border-strong, #D1D5DB)"
+          strokeWidth={stroke}
+        />
+        {!complete && ratio > 0 && (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="transparent"
+            stroke="var(--color-status-done, #00C875)"
+            strokeWidth={stroke}
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            strokeLinecap="round"
+          />
+        )}
+      </svg>
+      {complete && (
+        <Check
+          size={11}
+          strokeWidth={3}
+          color="#FFFFFF"
+          aria-hidden="true"
+          style={{ position: 'absolute' }}
+        />
+      )}
+    </span>
+  );
+};
+
+/**
+ * Compact horizontal stack of label chips. Renders up to 2 chips inline,
+ * with a `+N` overflow bubble for the remainder. When the task has no
+ * labels yet, surfaces a small `+` affordance.
+ */
+const LabelsCell = ({ board, labels, onClick }) => {
+  if (!labels || labels.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label="Add labels"
+        className="inline-flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+        style={{
+          width: 22,
+          height: 22,
+          background: 'transparent',
+          border: '1px dashed var(--color-border-strong)',
+          cursor: onClick ? 'pointer' : 'default',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        <Plus size={12} aria-hidden="true" />
+      </button>
+    );
+  }
+
+  const visible = labels.slice(0, 2);
+  const remaining = labels.length - visible.length;
+
+  return (
+    <div
+      role={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className="flex items-center gap-1 flex-wrap"
+      style={{ cursor: onClick ? 'pointer' : 'default' }}
+    >
+      {visible.map((labelId) => (
+        <Chip
+          key={labelId.toString()}
+          type="label"
+          value={labelId}
+          board={board}
+        />
+      ))}
+      {remaining > 0 && (
+        <span
+          className="inline-flex items-center font-body font-medium"
+          style={{
+            fontSize: 11,
+            padding: '3px 6px',
+            borderRadius: 'var(--radius-full)',
+            background: 'var(--color-bg-subtle)',
+            color: 'var(--color-text-secondary)',
+          }}
+        >
+          +{remaining}
+        </span>
+      )}
+    </div>
+  );
+};
+
 const AssigneeStack = ({ assignees }) => {
   const visible = assignees.slice(0, 3);
   const remaining = assignees.length - visible.length;
@@ -270,9 +454,6 @@ const AssigneeStack = ({ assignees }) => {
   );
 };
 
-/**
- * Render either a user's profile picture or their initial as a fallback.
- */
 const Avatar = ({ user, style = {} }) => {
   const [imgError, setImgError] = useState(false);
   const name = user?.name || '';

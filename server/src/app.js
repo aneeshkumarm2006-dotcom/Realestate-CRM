@@ -33,6 +33,7 @@ app.use('/api', require('./routes/groups'));
 app.use('/api', require('./routes/automations'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api', require('./routes/comments'));
+app.use('/api', require('./routes/updates'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/productivity', require('./routes/productivity'));
