@@ -1,6 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/auth');
-const { requireOrgAdmin } = require('../middleware/roleCheck');
+const { requireOrgAdmin, requireOrgOwner } = require('../middleware/roleCheck');
 const {
   createOrg,
   getOrg,
@@ -10,6 +10,7 @@ const {
   changeRole,
   regenerateInvite,
   sendInvite,
+  deleteOrg,
 } = require('../controllers/orgController');
 
 const router = express.Router();
@@ -40,5 +41,8 @@ router.post('/:id/regenerate-invite', requireOrgAdmin, regenerateInvite);
 
 // Send invite email (admin only)
 router.post('/:id/send-invite', requireOrgAdmin, sendInvite);
+
+// Delete the organisation (owner only — primary admin, not extra admins)
+router.delete('/:id', requireOrgOwner, deleteOrg);
 
 module.exports = router;

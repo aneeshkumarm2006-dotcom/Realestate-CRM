@@ -39,3 +39,8 @@ export const sendInvite = async (orgId, email) => {
   const { data } = await api.post(`/api/orgs/${orgId}/send-invite`, { email });
   return data;
 };
+
+export const deleteOrg = async (orgId) => {
+  const { data } = await api.delete(`/api/orgs/${orgId}`);
+  return data;
+};

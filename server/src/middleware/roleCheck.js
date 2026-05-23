@@ -46,4 +46,39 @@ const requireOrgAdmin = async (req, res, next) => {
   }
 };
 
-module.exports = { requireOrgAdmin };
+/**
+ * requireOrgOwner — Stricter variant of requireOrgAdmin. Only the organisation's
+ * primary admin (org.admin) passes. Extra admins listed in org.admins[] do NOT.
+ *
+ * Used for destructive workspace-level actions (delete organisation, etc).
+ */
+const requireOrgOwner = async (req, res, next) => {
+  try {
+    const orgId =
+      req.params.id ||
+      req.params.orgId ||
+      req.body.orgId ||
+      req.query.org;
+
+    if (!orgId) {
+      return res.status(400).json({ error: 'Organisation ID required' });
+    }
+
+    const org = await Organisation.findById(orgId);
+    if (!org) {
+      return res.status(404).json({ error: 'Organisation not found' });
+    }
+
+    if (org.admin.toString() !== req.user.userId) {
+      return res.status(403).json({ error: 'Only the organisation owner can perform this action' });
+    }
+
+    req.org = org;
+    return next();
+  } catch (err) {
+    console.error('requireOrgOwner error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { requireOrgAdmin, requireOrgOwner };

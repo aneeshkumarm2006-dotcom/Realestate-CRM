@@ -88,9 +88,16 @@ const Chip = ({ children, variant = 'grey' }) => {
 
 /* ------------------------- Organisation tab ------------------------- */
 
-const OrganisationTab = ({ org, onRegenerate }) => {
+const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
   const [copied, setCopied] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  const confirmMatches =
+    org?.name && deleteConfirmText.trim() === org.name.trim();
 
   // Build the invite URL — we surface the raw code so users can paste it
   // into the Join flow. Include origin for convenience.
@@ -124,6 +131,25 @@ const OrganisationTab = ({ org, onRegenerate }) => {
     } finally {
       setRegenerating(false);
     }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!confirmMatches) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await onDeleteOrg();
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || 'Failed to delete organisation. Please try again.');
+      setDeleting(false);
+    }
+  };
+
+  const closeDeleteModal = () => {
+    if (deleting) return;
+    setShowDeleteModal(false);
+    setDeleteConfirmText('');
+    setDeleteError('');
   };
 
   return (
@@ -213,32 +239,159 @@ const OrganisationTab = ({ org, onRegenerate }) => {
           Irreversible actions for this organisation.
         </p>
         <div
-          className="mt-3 p-4 flex items-center justify-between gap-4 flex-wrap"
+          className="mt-3"
           style={{
             border: '1.5px solid var(--color-status-stuck)',
             borderRadius: 'var(--radius-md)',
             background: 'var(--color-status-stuck-bg)',
+            overflow: 'hidden',
           }}
         >
-          <div>
-            <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)]">
-              Regenerate invite code
-            </p>
-            <p className="font-body text-[12px] text-[color:var(--color-text-secondary)]">
-              Old invite links will stop working immediately.
-            </p>
+          <div className="p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)]">
+                Regenerate invite code
+              </p>
+              <p className="font-body text-[12px] text-[color:var(--color-text-secondary)]">
+                Old invite links will stop working immediately.
+              </p>
+            </div>
+            <Button
+              variant="danger"
+              size="sm"
+              icon={RefreshCw}
+              onClick={handleRegenerate}
+              disabled={regenerating}
+            >
+              Regenerate
+            </Button>
           </div>
-          <Button
-            variant="danger"
-            size="sm"
-            icon={RefreshCw}
-            onClick={handleRegenerate}
-            disabled={regenerating}
-          >
-            Regenerate
-          </Button>
+
+          {isMainAdmin && (
+            <div
+              className="p-4 flex items-center justify-between gap-4 flex-wrap"
+              style={{ borderTop: '1px solid var(--color-status-stuck)' }}
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)]">
+                    Delete this organisation
+                  </p>
+                  <span
+                    className="inline-flex items-center font-body font-semibold"
+                    style={{
+                      height: 18,
+                      padding: '0 8px',
+                      fontSize: 10,
+                      borderRadius: 'var(--radius-full)',
+                      letterSpacing: 0.4,
+                      background: 'var(--color-status-stuck)',
+                      color: 'white',
+                    }}
+                  >
+                    OWNER ONLY
+                  </span>
+                </div>
+                <p className="font-body text-[12px] text-[color:var(--color-text-secondary)]">
+                  Permanently deletes the workspace, all boards, tasks, automations,
+                  and removes every member. This cannot be undone.
+                </p>
+              </div>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={Trash2}
+                onClick={() => {
+                  setDeleteError('');
+                  setDeleteConfirmText('');
+                  setShowDeleteModal(true);
+                }}
+              >
+                Delete Organisation
+              </Button>
+            </div>
+          )}
         </div>
       </section>
+
+      {/* Delete-organisation confirmation modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={closeDeleteModal}
+        title={`Delete "${org?.name || 'organisation'}"`}
+        closeOnOverlayClick={!deleting}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={closeDeleteModal}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleDeleteConfirm}
+              disabled={deleting || !confirmMatches}
+            >
+              {deleting ? 'Deleting…' : 'Delete Organisation'}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div
+            className="flex items-start gap-3 rounded-lg p-3"
+            style={{ background: '#fff5f5', border: '1px solid #fca5a5' }}
+          >
+            <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p className="font-body text-[13px]" style={{ color: '#374151' }}>
+              <strong>This action is permanent and cannot be undone.</strong>
+            </p>
+          </div>
+          <p className="font-body text-[14px] text-[color:var(--color-text-primary)]">
+            Deleting this organisation will:
+          </p>
+          <ul
+            className="font-body text-[13px] text-[color:var(--color-text-secondary)] flex flex-col gap-1"
+            style={{ paddingLeft: 16, listStyleType: 'disc' }}
+          >
+            <li>Delete every board, group, task, comment, and update in this workspace</li>
+            <li>Delete all automations configured for this workspace</li>
+            <li>Delete all notifications scoped to this organisation</li>
+            <li>Remove all {org?.members?.length || ''} members from the workspace</li>
+          </ul>
+          <div className="mt-1">
+            <label
+              className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]"
+              htmlFor="delete-org-confirm"
+            >
+              Type <span className="font-mono text-[color:var(--color-text-primary)]">{org?.name}</span> to confirm:
+            </label>
+            <input
+              id="delete-org-confirm"
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              disabled={deleting}
+              autoComplete="off"
+              className="mt-2 w-full font-body text-[13px] text-[color:var(--color-text-primary)] bg-white px-3 focus:outline-none focus:border-[color:var(--color-accent)]"
+              style={{
+                height: 38,
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            />
+          </div>
+          {deleteError && (
+            <p className="font-body text-[12px] text-[color:var(--color-status-stuck)]">
+              {deleteError}
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -561,6 +714,7 @@ const SettingsPage = () => {
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const logout = useAuthStore((s) => s.logout);
   const currentOrg = useOrgStore((s) => s.currentOrg);
+  const deleteOrgFromStore = useOrgStore((s) => s.deleteOrg);
 
   // Resolve admin-ness from currentOrg (authoritative for the UI guard)
   const orgAdminId =
@@ -625,9 +779,23 @@ const SettingsPage = () => {
     navigate('/login');
   };
 
+  const handleDeleteOrg = async () => {
+    if (!currentOrg?._id) return;
+    const nextOrg = await deleteOrgFromStore(currentOrg._id);
+    await fetchCurrentUser();
+    navigate(nextOrg ? '/dashboard' : '/onboarding');
+  };
+
   const renderTab = () => {
     if (activeTab === 'organisation' && isAdmin) {
-      return <OrganisationTab org={orgState} onRegenerate={handleRegenerate} />;
+      return (
+        <OrganisationTab
+          org={orgState}
+          isMainAdmin={isMainAdmin}
+          onRegenerate={handleRegenerate}
+          onDeleteOrg={handleDeleteOrg}
+        />
+      );
     }
     return (
       <ProfileTab

@@ -94,6 +94,32 @@ const useOrgStore = create((set, get) => ({
     localStorage.removeItem(CURRENT_ORG_KEY);
     set({ currentOrg: null, orgs: [], members: [], adminId: null, adminIds: [] });
   },
+
+  /**
+   * Permanently delete an organisation. Owner-only on the server.
+   * Drops the org from local state and re-points currentOrg at the next
+   * available org (or null if this was the last one). Returns the new
+   * currentOrg so callers can route appropriately.
+   */
+  deleteOrg: async (orgId) => {
+    await orgService.deleteOrg(orgId);
+    const orgs = get().orgs.filter((o) => o._id !== orgId);
+    const nextCurrent =
+      get().currentOrg?._id === orgId ? orgs[0] || null : get().currentOrg;
+    if (nextCurrent) {
+      localStorage.setItem(CURRENT_ORG_KEY, nextCurrent._id);
+    } else {
+      localStorage.removeItem(CURRENT_ORG_KEY);
+    }
+    set({
+      orgs,
+      currentOrg: nextCurrent,
+      members: [],
+      adminId: null,
+      adminIds: [],
+    });
+    return nextCurrent;
+  },
 }));
 
 export default useOrgStore;

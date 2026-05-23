@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const Organisation = require('../models/Organisation');
 const User = require('../models/User');
 const { sendInviteEmail } = require('../services/emailService');
+const { cascadeDeleteOrg } = require('../services/orgCascade');
 
 /**
  * Generate a short, unique invite code.
@@ -282,6 +283,25 @@ const changeRole = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/orgs/:id — Permanently delete an organisation (owner only).
+ * Cascades through all boards, tasks, groups, comments, updates, notifications,
+ * automations, and removes the org reference from every member's profile.
+ *
+ * Gate: requireOrgOwner middleware. Only the primary admin (org.admin) can call
+ * this — extra admins in org.admins[] are blocked.
+ */
+const deleteOrg = async (req, res) => {
+  try {
+    const orgId = req.params.id;
+    await cascadeDeleteOrg(orgId);
+    return res.json({ message: 'Organisation deleted' });
+  } catch (err) {
+    console.error('deleteOrg error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   createOrg,
   getOrg,
@@ -291,4 +311,5 @@ module.exports = {
   changeRole,
   regenerateInvite,
   sendInvite,
+  deleteOrg,
 };

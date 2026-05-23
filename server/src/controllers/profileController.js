@@ -1,10 +1,9 @@
 const User = require('../models/User');
 const Organisation = require('../models/Organisation');
-const Board = require('../models/Board');
-const TaskGroup = require('../models/TaskGroup');
 const Task = require('../models/Task');
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
+const { cascadeDeleteOrg } = require('../services/orgCascade');
 
 /**
  * PUT /api/profile — Update the current user's display name.
@@ -85,15 +84,7 @@ const deleteAccount = async (req, res) => {
     // ── 1. Orgs where this user is the primary admin ──────────────────────
     const adminOrgs = await Organisation.find({ admin: userId }).select('_id');
     for (const org of adminOrgs) {
-      const boardIds = await Board.distinct('_id', { organisation: org._id });
-      const taskIds = await Task.distinct('_id', { board: { $in: boardIds } });
-
-      await Comment.deleteMany({ task: { $in: taskIds } });
-      await Notification.deleteMany({ task: { $in: taskIds } });
-      await Task.deleteMany({ board: { $in: boardIds } });
-      await TaskGroup.deleteMany({ board: { $in: boardIds } });
-      await Board.deleteMany({ organisation: org._id });
-      await Organisation.deleteOne({ _id: org._id });
+      await cascadeDeleteOrg(org._id);
     }
 
     // ── 2. Remove user from orgs they are only a member / extra-admin of ──
