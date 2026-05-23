@@ -56,6 +56,7 @@ const CommentPanel = ({
   const threadRef = useRef(null);
   const textareaRef = useRef(null);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
+  const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState('');
@@ -185,7 +186,7 @@ const CommentPanel = ({
         textareaRef.current?.focus();
         // Repoll notifications — the comment may have created one for the
         // current user on other tasks they're assigned to
-        refreshNotifications();
+        refreshNotifications(currentOrgId || undefined);
       } catch (err) {
         console.error('Failed to add comment:', err);
         setError(

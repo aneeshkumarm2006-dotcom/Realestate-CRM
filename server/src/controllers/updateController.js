@@ -129,6 +129,16 @@ const addUpdate = async (req, res) => {
       .populate('author', 'name profilePic email')
       .populate('mentions', 'name profilePic email');
 
+    // Resolve org id from the board (board tasks only) so notifications are
+    // scoped to the right organisation.
+    let notifOrgId = null;
+    if (!task.isPersonal) {
+      const taskBoard =
+        access.board ||
+        (await Board.findById(task.board).select('organisation'));
+      notifOrgId = taskBoard?.organisation || null;
+    }
+
     // Notify assignees (board tasks only).
     if (!task.isPersonal && Array.isArray(task.assignedTo)) {
       const authorName = populated.author?.name || 'Someone';
@@ -137,6 +147,7 @@ const addUpdate = async (req, res) => {
         type: 'commented',
         message: `${authorName} posted an update on "${task.name}"`,
         taskId: task._id,
+        orgId: notifOrgId,
         excludeUserId: userId,
       });
     }
@@ -149,6 +160,7 @@ const addUpdate = async (req, res) => {
         type: 'mentioned',
         message: `${authorName} mentioned you in an update on "${task.name}"`,
         taskId: task._id,
+        orgId: notifOrgId,
         excludeUserId: userId,
       });
 

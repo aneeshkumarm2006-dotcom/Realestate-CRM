@@ -554,6 +554,7 @@ const NotificationBell = () => {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
   const navigate = useNavigate();
+  const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const loading = useNotificationStore((s) => s.loading);
@@ -585,7 +586,7 @@ const NotificationBell = () => {
     const next = !open;
     setOpen(next);
     // Refresh on open so newly-triggered server-side notifications show up
-    if (next) fetchNotifications();
+    if (next) fetchNotifications(currentOrgId || undefined);
   };
 
   const handleItemClick = (notif) => {
@@ -641,7 +642,7 @@ const NotificationBell = () => {
             </span>
             <button
               type="button"
-              onClick={() => markAllRead()}
+              onClick={() => markAllRead(currentOrgId || undefined)}
               disabled={unreadCount === 0}
               className="font-body text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] rounded"
               style={{

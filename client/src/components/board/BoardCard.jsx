@@ -77,6 +77,7 @@ const BoardCard = ({
         borderRadius: 'var(--radius-lg)',
         boxShadow: 'var(--shadow-card)',
         transition: 'box-shadow 150ms ease, transform 150ms ease',
+        zIndex: menuOpen ? 30 : 'auto',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = 'var(--shadow-md)';

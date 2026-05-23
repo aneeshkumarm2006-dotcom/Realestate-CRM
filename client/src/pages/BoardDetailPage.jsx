@@ -295,7 +295,7 @@ const BoardDetailPage = () => {
           ...prev,
           [groupId]: (prev[groupId] || 0) + 1,
         }));
-        refreshNotifications();
+        refreshNotifications(currentOrg?._id);
       } catch (err) {
         console.error('Failed to create task:', err);
         toastError(
@@ -321,7 +321,7 @@ const BoardDetailPage = () => {
         const updated = await taskService.updateTask(taskId, payload);
         updateTaskLocal(updated);
         setEditingTaskId(null);
-        refreshNotifications();
+        refreshNotifications(currentOrg?._id);
       } catch (err) {
         console.error('Failed to update task:', err);
         toastError(

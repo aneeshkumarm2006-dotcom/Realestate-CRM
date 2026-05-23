@@ -99,6 +99,7 @@ function App() {
   const user = useAuthStore((s) => s.user);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const setOrgsFromUser = useOrgStore((s) => s.setOrgsFromUser);
+  const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
   const clearNotifications = useNotificationStore((s) => s.clear);
 
@@ -118,15 +119,17 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // Pull notifications once the user is hydrated. Clear on logout.
+  // Pull notifications once the user is hydrated and re-fetch whenever the
+  // active organisation changes so the bell only shows notifications for
+  // the workspace the user is currently looking at. Clear on logout.
   useEffect(() => {
     if (user) {
-      fetchNotifications();
+      fetchNotifications(currentOrgId || undefined);
     } else {
       clearNotifications();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?._id]);
+  }, [user?._id, currentOrgId]);
 
   return (
     <BrowserRouter>

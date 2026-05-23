@@ -15,14 +15,17 @@ const useNotificationStore = create((set, get) => ({
   error: null,
 
   /**
-   * Pull the latest 50 notifications + unread count from the backend.
+   * Pull the latest 50 notifications + unread count from the backend,
+   * scoped to the supplied organisation. Pass null/undefined to fetch
+   * unfiltered (legacy callers without org context).
+   *
    * Silent on failure — the bell should never block the UI.
    */
-  fetchNotifications: async () => {
+  fetchNotifications: async (orgId) => {
     set({ loading: true, error: null });
     try {
       const { notifications, unreadCount } =
-        await notificationService.getNotifications();
+        await notificationService.getNotifications(orgId);
       set({
         notifications: notifications || [],
         unreadCount: unreadCount || 0,
@@ -58,9 +61,11 @@ const useNotificationStore = create((set, get) => ({
   },
 
   /**
-   * Optimistically mark every unread notification as read.
+   * Optimistically mark every unread notification as read. Scoped to the
+   * supplied org so the bulk update on the server matches the org the user
+   * is currently viewing.
    */
-  markAllRead: async () => {
+  markAllRead: async (orgId) => {
     const prev = get().notifications;
     const prevUnread = get().unreadCount;
     if (prevUnread === 0) return;
@@ -69,7 +74,7 @@ const useNotificationStore = create((set, get) => ({
       unreadCount: 0,
     });
     try {
-      await notificationService.markAllAsRead();
+      await notificationService.markAllAsRead(orgId);
     } catch (err) {
       set({ notifications: prev, unreadCount: prevUnread });
       throw err;

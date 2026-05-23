@@ -132,6 +132,14 @@ const addComment = async (req, res) => {
       .populate('mentions', 'name profilePic email')
       .populate({ path: 'replyTo', select: 'author text', populate: { path: 'author', select: 'name' } });
 
+    // Resolve org id from the board (board tasks only). Used to scope
+    // notifications to the right organisation.
+    let notifOrgId = null;
+    if (!task.isPersonal) {
+      const taskBoard = await Board.findById(task.board).select('organisation');
+      notifOrgId = taskBoard?.organisation || null;
+    }
+
     // Notify task assignees (except the commenter) about the new comment.
     // Personal tasks have no other assignees — they're skipped naturally.
     if (!task.isPersonal && Array.isArray(task.assignedTo)) {
@@ -141,6 +149,7 @@ const addComment = async (req, res) => {
         type: 'commented',
         message: `${authorName} commented on "${task.name}"`,
         taskId: task._id,
+        orgId: notifOrgId,
         excludeUserId: userId,
       });
     }
@@ -153,6 +162,7 @@ const addComment = async (req, res) => {
         type: 'mentioned',
         message: `${authorName} mentioned you in a comment on "${task.name}"`,
         taskId: task._id,
+        orgId: notifOrgId,
         excludeUserId: userId,
       });
 

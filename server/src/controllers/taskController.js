@@ -485,6 +485,7 @@ const createTask = async (req, res) => {
         type: 'assigned',
         message: `You were assigned to "${task.name}"`,
         taskId: task._id,
+        orgId: ctx.board.organisation,
         excludeUserId: userId,
       });
     }
@@ -588,6 +589,7 @@ const updateTask = async (req, res) => {
           type: 'statusChanged',
           message: `Status of "${task.name}" changed to ${match.name}`,
           taskId: task._id,
+          orgId: ctx.board.organisation,
           excludeUserId: userId,
         });
       }
@@ -662,6 +664,7 @@ const updateTask = async (req, res) => {
         type: 'assigned',
         message: `You were assigned to "${task.name}"`,
         taskId: task._id,
+        orgId: ctx.board.organisation,
         excludeUserId: userId,
       });
     }
@@ -671,6 +674,7 @@ const updateTask = async (req, res) => {
         type: 'statusChanged',
         message: `Status of "${task.name}" changed to ${statusName || describeStatus(ctx.board, task.status)}`,
         taskId: task._id,
+        orgId: ctx.board.organisation,
         excludeUserId: userId,
       });
     }

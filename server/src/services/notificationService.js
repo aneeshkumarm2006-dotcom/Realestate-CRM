@@ -8,15 +8,18 @@ const Notification = require('../models/Notification');
  * @param {string}          args.type    - 'assigned' | 'commented' | 'statusChanged' | 'dueSoon'
  * @param {string}          args.message - human-readable message shown in the bell dropdown
  * @param {string|ObjectId} [args.taskId] - task this notification is about (optional)
+ * @param {string|ObjectId} [args.orgId]  - organisation this notification belongs to.
+ *   Omit for personal-task notifications (they're shown across all orgs).
  *
  * Failures are swallowed (logged only) — notifications are best-effort and
  * should never block the triggering action (task assign, comment add, etc.).
  */
-const createNotification = async ({ userId, type, message, taskId }) => {
+const createNotification = async ({ userId, type, message, taskId, orgId }) => {
   try {
     if (!userId || !type || !message) return null;
     const doc = await Notification.create({
       user: userId,
+      organisation: orgId || null,
       type,
       message,
       task: taskId || undefined,
@@ -40,6 +43,7 @@ const createNotificationsForUsers = async ({
   type,
   message,
   taskId,
+  orgId,
   excludeUserId,
 }) => {
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
@@ -56,7 +60,7 @@ const createNotificationsForUsers = async ({
   }
   const results = await Promise.all(
     targets.map((uid) =>
-      createNotification({ userId: uid, type, message, taskId })
+      createNotification({ userId: uid, type, message, taskId, orgId })
     )
   );
   return results.filter(Boolean);

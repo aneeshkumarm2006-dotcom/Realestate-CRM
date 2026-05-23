@@ -20,6 +20,7 @@ import * as updateService from '../../services/updateService';
 import useAuthStore from '../../store/authStore';
 import useToastStore from '../../store/toastStore';
 import useNotificationStore from '../../store/notificationStore';
+import useOrgStore from '../../store/orgStore';
 import { timeAgo, formatDate } from '../../utils/dateUtils';
 
 const COMMON_EMOJIS = ['👍', '🎉', '🙌', '🔥', '❤️', '✅', '🚀', '😄', '👀', '💡', '🤔', '😅'];
@@ -37,6 +38,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
   const currentUser = useAuthStore((s) => s.user);
   const toast = useToastStore.getState();
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
+  const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
 
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -118,7 +120,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
       setBodyMentions([]);
       setBodyEmpty(true);
       setAttachments([]);
-      refreshNotifications();
+      refreshNotifications(currentOrgId || undefined);
     } catch (err) {
       console.error('Failed to post update:', err);
       setError(

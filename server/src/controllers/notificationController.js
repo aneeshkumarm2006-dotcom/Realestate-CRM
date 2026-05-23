@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const Task = require('../models/Task');
+const Board = require('../models/Board');
 
 const NOTIFICATION_LIMIT = 50;
 const DUE_SOON_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -13,6 +14,10 @@ const DUE_SOON_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
  *
  * This runs on every GET /api/notifications call (poll-based, no cron).
  * Failures are swallowed so they never break the list fetch.
+ *
+ * Board-task dueSoon notifications are stamped with the board's organisation
+ * so they only appear in that org's notification bell. Personal-task
+ * dueSoon notifications keep `organisation: null` and show in every org.
  */
 const ensureDueSoonNotifications = async (userId) => {
   try {
@@ -26,7 +31,7 @@ const ensureDueSoonNotifications = async (userId) => {
         { assignedTo: userObjectId },
         { isPersonal: true, createdBy: userObjectId },
       ],
-    }).select('_id name dueDate');
+    }).select('_id name dueDate board isPersonal');
 
     if (!dueTasks.length) return;
 
@@ -38,15 +43,37 @@ const ensureDueSoonNotifications = async (userId) => {
     }).select('task');
     const existingSet = new Set(existing.map((n) => n.task.toString()));
 
-    const toCreate = dueTasks
-      .filter((t) => !existingSet.has(t._id.toString()))
-      .map((t) => ({
-        user: userObjectId,
-        type: 'dueSoon',
-        message: `"${t.name}" is due soon`,
-        task: t._id,
-        isRead: false,
-      }));
+    const missing = dueTasks.filter((t) => !existingSet.has(t._id.toString()));
+    if (!missing.length) return;
+
+    // Bulk-resolve org id per board for the missing board tasks.
+    const boardIds = [
+      ...new Set(
+        missing
+          .filter((t) => !t.isPersonal && t.board)
+          .map((t) => t.board.toString())
+      ),
+    ];
+    const boardOrgMap = new Map();
+    if (boardIds.length) {
+      const boards = await Board.find({ _id: { $in: boardIds } }).select(
+        'organisation'
+      );
+      boards.forEach((b) => {
+        boardOrgMap.set(b._id.toString(), b.organisation || null);
+      });
+    }
+
+    const toCreate = missing.map((t) => ({
+      user: userObjectId,
+      organisation: t.isPersonal
+        ? null
+        : boardOrgMap.get(t.board?.toString()) || null,
+      type: 'dueSoon',
+      message: `"${t.name}" is due soon`,
+      task: t._id,
+      isRead: false,
+    }));
 
     if (toCreate.length) {
       await Notification.insertMany(toCreate);
@@ -57,27 +84,43 @@ const ensureDueSoonNotifications = async (userId) => {
 };
 
 /**
- * GET /api/notifications
+ * GET /api/notifications?org=<orgId>
  *
  * Return the latest 50 notifications for the current user, newest first.
  * Also runs an inline due-soon scan so users see reminders for tasks due
  * within the next 24 hours.
+ *
+ * When `org` is supplied, the result is scoped to that organisation —
+ * notifications stamped with another org are hidden. Personal-task
+ * notifications (organisation: null) are always included so dueSoon
+ * reminders for personal tasks show regardless of the active org.
+ *
+ * When `org` is omitted, returns every notification for the user (legacy
+ * behaviour — used by callers that don't yet have an org context).
  */
 const getNotifications = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const orgId = (req.query.org || '').toString().trim();
 
     await ensureDueSoonNotifications(userId);
 
-    const notifications = await Notification.find({ user: userId })
+    const filter = { user: userId };
+    if (orgId && mongoose.Types.ObjectId.isValid(orgId)) {
+      filter.$or = [
+        { organisation: new mongoose.Types.ObjectId(orgId) },
+        { organisation: null },
+        { organisation: { $exists: false } },
+      ];
+    }
+
+    const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
       .limit(NOTIFICATION_LIMIT)
       .populate('task', 'board');
 
-    const unreadCount = await Notification.countDocuments({
-      user: userId,
-      isRead: false,
-    });
+    const unreadFilter = { ...filter, isRead: false };
+    const unreadCount = await Notification.countDocuments(unreadFilter);
 
     return res.json({ notifications, unreadCount });
   } catch (err) {
@@ -115,17 +158,30 @@ const markAsRead = async (req, res) => {
 };
 
 /**
- * PUT /api/notifications/read-all
+ * PUT /api/notifications/read-all?org=<orgId>
  *
- * Bulk mark every unread notification for the current user as read.
+ * Bulk mark every unread notification for the current user as read. When
+ * `org` is supplied, only notifications for that organisation (plus
+ * organisation-less personal-task notifications) are affected, matching
+ * the scoping of the GET endpoint so the bell stays consistent.
  */
 const markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const result = await Notification.updateMany(
-      { user: userId, isRead: false },
-      { $set: { isRead: true } }
-    );
+    const orgId = (req.query.org || '').toString().trim();
+
+    const filter = { user: userId, isRead: false };
+    if (orgId && mongoose.Types.ObjectId.isValid(orgId)) {
+      filter.$or = [
+        { organisation: new mongoose.Types.ObjectId(orgId) },
+        { organisation: null },
+        { organisation: { $exists: false } },
+      ];
+    }
+
+    const result = await Notification.updateMany(filter, {
+      $set: { isRead: true },
+    });
     return res.json({ success: true, updated: result.modifiedCount });
   } catch (err) {
     console.error('markAllAsRead error:', err);
