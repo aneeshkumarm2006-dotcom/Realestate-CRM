@@ -324,7 +324,7 @@ const CommentPanel = ({
           top: 0,
           right: 0,
           bottom: 0,
-          width: 420,
+          width: 880,
           maxWidth: '100vw',
           zIndex: 100,
           borderLeft: '1px solid var(--color-border)',
@@ -499,71 +499,61 @@ const CommentPanel = ({
               </p>
             </div>
           ) : null}
-
-          <ChecklistEditor task={task} />
         </header>
 
-        {/* Subitems — only meaningful for board tasks; component returns null
-            when the task is personal so we can mount unconditionally. */}
-        <div style={{ padding: '12px 24px 0 24px' }}>
-          <SubitemsList
-            task={task}
-            board={board}
-            isAdmin={isAdmin}
-            onOpenSubitem={onOpenSubitem}
-          />
-        </div>
+        {/* Two-column body: tabs on the left, checklist + subitems on the right */}
+        <div className="macan-cp-body">
+          <div className="macan-cp-left">
+            {/* Tabs row */}
+            <Tabs
+              active={activeTab}
+              onChange={setActiveTab}
+              tabs={[
+                { key: 'updates', label: 'Updates', count: updatesCount },
+                { key: 'comments', label: 'Comments', count: comments.length },
+                { key: 'files', label: 'Files' },
+                { key: 'activity', label: 'Activity Log' },
+              ]}
+            />
 
-        {/* Tabs row */}
-        <Tabs
-          active={activeTab}
-          onChange={setActiveTab}
-          tabs={[
-            { key: 'updates', label: 'Updates', count: updatesCount },
-            { key: 'comments', label: 'Comments', count: comments.length },
-            { key: 'files', label: 'Files' },
-            { key: 'activity', label: 'Activity Log' },
-          ]}
-        />
+            {/* Tab content — Updates pane stays mounted so its count remains
+                live even when the user is browsing another tab. */}
+            <div
+              style={{
+                display: activeTab === 'updates' ? 'flex' : 'none',
+                flexDirection: 'column',
+              }}
+            >
+              <UpdatesTab task={task} onCountChange={setUpdatesCount} />
+            </div>
 
-        {/* Tab content — Updates pane stays mounted so its count remains
-            live even when the user is browsing another tab. */}
-        <div
-          style={{
-            display: activeTab === 'updates' ? 'flex' : 'none',
-            flexDirection: 'column',
-          }}
-        >
-          <UpdatesTab task={task} onCountChange={setUpdatesCount} />
-        </div>
+            {activeTab === 'files' && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <FilesTab task={task} />
+              </div>
+            )}
 
-        {activeTab === 'files' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <FilesTab task={task} />
-          </div>
-        )}
+            {activeTab === 'activity' && (
+              <div
+                className="flex items-center justify-center font-body text-center"
+                style={{
+                  padding: '32px 24px',
+                  fontSize: 13,
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                Activity Log — coming soon.
+              </div>
+            )}
 
-        {activeTab === 'activity' && (
-          <div
-            className="flex items-center justify-center font-body text-center"
-            style={{
-              padding: '32px 24px',
-              fontSize: 13,
-              color: 'var(--color-text-muted)',
-            }}
-          >
-            Activity Log — coming soon.
-          </div>
-        )}
-
-        {/* Comment thread + composer (only rendered under the Comments tab) */}
-        {activeTab === 'comments' && (
-          <>
+            {/* Comment thread + composer (only rendered under the Comments tab) */}
+            {activeTab === 'comments' && (
+              <>
         <div
           ref={threadRef}
           style={{ padding: '0 24px' }}
@@ -816,8 +806,20 @@ const CommentPanel = ({
             </button>
           </div>
         </form>
-          </>
-        )}
+              </>
+            )}
+          </div>
+
+          <div className="macan-cp-right" role="complementary" aria-label="Task details sidebar">
+            <ChecklistEditor task={task} />
+            <SubitemsList
+              task={task}
+              board={board}
+              isAdmin={isAdmin}
+              onOpenSubitem={onOpenSubitem}
+            />
+          </div>
+        </div>
       </aside>
 
       <style>{`
@@ -828,6 +830,33 @@ const CommentPanel = ({
         @keyframes macan-cp-backdrop {
           from { opacity: 0; }
           to   { opacity: 1; }
+        }
+        .macan-cp-body {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 320px;
+          gap: 0;
+          align-items: start;
+        }
+        .macan-cp-left {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          border-right: 1px solid var(--color-border);
+        }
+        .macan-cp-right {
+          padding: 16px 20px 24px 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        @media (max-width: 900px) {
+          .macan-cp-body {
+            grid-template-columns: 1fr;
+          }
+          .macan-cp-left {
+            border-right: none;
+            border-bottom: 1px solid var(--color-border);
+          }
         }
         @media (max-width: 767px) {
           .macan-comment-panel {
