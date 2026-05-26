@@ -7,6 +7,7 @@ const {
   createNotificationsForUsers,
 } = require('../services/notificationService');
 const { sendMentionEmail } = require('../services/emailService');
+const { logActivity } = require('../services/activityService');
 
 /**
  * Check if a user has read access to the given task. Returns
@@ -125,6 +126,16 @@ const addComment = async (req, res) => {
       text: text.trim(),
       mentions: validMentions,
       replyTo: replyToId,
+    });
+
+    logActivity({
+      task,
+      actor: userId,
+      type: 'comment.added',
+      metadata: {
+        commentSnippet: text.trim().slice(0, 80),
+        taskName: task.name,
+      },
     });
 
     const populated = await Comment.findById(comment._id)

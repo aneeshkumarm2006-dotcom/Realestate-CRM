@@ -7,6 +7,7 @@ const {
   createNotificationsForUsers,
 } = require('../services/notificationService');
 const { sendMentionEmail } = require('../services/emailService');
+const { logActivity } = require('../services/activityService');
 
 /**
  * Access rules (mirrors commentController):
@@ -123,6 +124,17 @@ const addUpdate = async (req, res) => {
       bodyText: (bodyText || '').toString().slice(0, 4000),
       mentions: validMentions,
       attachments: cleanAttachments,
+    });
+
+    logActivity({
+      task,
+      actor: userId,
+      type: 'update.added',
+      metadata: {
+        updateSnippet: (bodyText || '').toString().trim().slice(0, 80),
+        taskName: task.name,
+        attachmentCount: cleanAttachments.length,
+      },
     });
 
     const populated = await Update.findById(update._id)

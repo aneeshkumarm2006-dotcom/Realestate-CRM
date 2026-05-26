@@ -11,6 +11,7 @@ const {
 const { sendTaskAssignmentEmail } = require('../services/emailService');
 const Notification = require('../models/Notification');
 const eventBus = require('../services/eventBus');
+const { logActivity } = require('../services/activityService');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 // Legacy enum keys — accepted for personal tasks (which don't have a board).
@@ -381,6 +382,12 @@ const createTask = async (req, res) => {
         isPersonal: true,
         createdBy: userId,
       });
+      logActivity({
+        task,
+        actor: userId,
+        type: 'task.created',
+        metadata: { taskName: task.name },
+      });
       const populated = await populateTask(Task.findById(task._id));
       return res.status(201).json({ task: populated });
     }
@@ -466,6 +473,13 @@ const createTask = async (req, res) => {
 
     await Board.updateOne({ _id: boardId }, { $set: { updatedAt: new Date() } });
 
+    logActivity({
+      task,
+      actor: userId,
+      type: 'task.created',
+      metadata: { taskName: task.name, isSubitem: !!resolvedParent },
+    });
+
     // Fan out an item.created event for ITEM_CREATED automations. Subitems
     // are excluded to avoid recursion (a CREATE_SUBITEM action could otherwise
     // re-trigger itself). Personal tasks never enter this branch.
@@ -538,27 +552,55 @@ const updateTask = async (req, res) => {
       if (!task.createdBy || task.createdBy.toString() !== userId) {
         return res.status(403).json({ error: 'Not authorised' });
       }
+      const changes = [];
       if (typeof body.name === 'string') {
         if (!body.name.trim()) {
           return res.status(400).json({ error: 'Task name cannot be empty' });
         }
-        task.name = body.name.trim();
+        const next = body.name.trim();
+        if (next !== task.name) changes.push({ field: 'name', oldValue: task.name, newValue: next });
+        task.name = next;
       }
       if (body.priority !== undefined) {
         if (!VALID_PRIORITIES.includes(body.priority)) {
           return res.status(400).json({ error: 'Invalid priority' });
         }
+        if (body.priority !== task.priority) changes.push({ field: 'priority', oldValue: task.priority, newValue: body.priority });
         task.priority = body.priority;
       }
       if (body.status !== undefined) {
         if (typeof body.status !== 'string' || !LEGACY_STATUS_KEYS.includes(body.status)) {
           return res.status(400).json({ error: 'Invalid status' });
         }
+        if (body.status !== task.status) changes.push({ field: 'status', oldValue: task.status, newValue: body.status });
         task.status = body.status;
       }
-      if (body.dueDate !== undefined) task.dueDate = body.dueDate || undefined;
-      if (body.note !== undefined) task.note = body.note || undefined;
+      if (body.dueDate !== undefined) {
+        const nextDue = body.dueDate || null;
+        const prevDue = task.dueDate || null;
+        const prevIso = prevDue ? new Date(prevDue).toISOString() : null;
+        const nextIso = nextDue ? new Date(nextDue).toISOString() : null;
+        if (prevIso !== nextIso) changes.push({ field: 'dueDate', oldValue: prevIso, newValue: nextIso });
+        task.dueDate = body.dueDate || undefined;
+      }
+      if (body.note !== undefined) {
+        const nextNote = body.note || '';
+        const prevNote = task.note || '';
+        if (nextNote !== prevNote) changes.push({ field: 'note', oldValue: prevNote, newValue: nextNote });
+        task.note = body.note || undefined;
+      }
       await task.save();
+      for (const c of changes) {
+        logActivity({
+          task,
+          actor: userId,
+          type: 'task.field_changed',
+          field: c.field,
+          oldValue: c.oldValue,
+          newValue: c.newValue,
+          metadata: { taskName: task.name },
+        });
+      }
       const populated = await populateTask(Task.findById(task._id));
       return res.json({ task: populated });
     }
@@ -592,6 +634,15 @@ const updateTask = async (req, res) => {
           orgId: ctx.board.organisation,
           excludeUserId: userId,
         });
+        logActivity({
+          task,
+          actor: userId,
+          type: 'task.field_changed',
+          field: 'status',
+          oldValue: prevStatus,
+          newValue: match._id.toString(),
+          metadata: { taskName: task.name },
+        });
       }
 
       const populated = await populateTask(Task.findById(task._id));
@@ -601,20 +652,30 @@ const updateTask = async (req, res) => {
     // Admin path — any field is editable.
     const prevStatus = task.status ? task.status.toString() : null;
     const prevAssigneeIds = task.assignedTo.map((u) => u.toString());
+    const prevLabelIds = (task.labels || []).map((l) => l.toString());
+    const prevName = task.name;
+    const prevPriority = task.priority;
+    const prevDueIso = task.dueDate ? new Date(task.dueDate).toISOString() : null;
+    const prevNote = task.note || '';
+    const prevGroup = task.group ? task.group.toString() : null;
     let statusChanged = false;
     let newAssigneeIds = null;
     let statusName = null;
+    const activityChanges = [];
 
     if (typeof body.name === 'string') {
       if (!body.name.trim()) {
         return res.status(400).json({ error: 'Task name cannot be empty' });
       }
-      task.name = body.name.trim();
+      const next = body.name.trim();
+      if (next !== prevName) activityChanges.push({ field: 'name', oldValue: prevName, newValue: next });
+      task.name = next;
     }
     if (body.priority !== undefined) {
       if (!VALID_PRIORITIES.includes(body.priority)) {
         return res.status(400).json({ error: 'Invalid priority' });
       }
+      if (body.priority !== prevPriority) activityChanges.push({ field: 'priority', oldValue: prevPriority, newValue: body.priority });
       task.priority = body.priority;
     }
     if (body.status !== undefined) {
@@ -622,7 +683,10 @@ const updateTask = async (req, res) => {
       if (!match) {
         return res.status(400).json({ error: 'Invalid status for this board' });
       }
-      if (prevStatus !== match._id.toString()) statusChanged = true;
+      if (prevStatus !== match._id.toString()) {
+        statusChanged = true;
+        activityChanges.push({ field: 'status', oldValue: prevStatus, newValue: match._id.toString() });
+      }
       task.status = match._id;
       statusName = match.name;
     }
@@ -631,6 +695,14 @@ const updateTask = async (req, res) => {
       if (sanitized === null) {
         return res.status(400).json({ error: 'Invalid labels payload' });
       }
+      const prevSet = new Set(prevLabelIds);
+      const nextSet = new Set(sanitized.map((s) => s.toString()));
+      const labelsChanged =
+        prevSet.size !== nextSet.size ||
+        [...prevSet].some((id) => !nextSet.has(id));
+      if (labelsChanged) {
+        activityChanges.push({ field: 'labels', oldValue: prevLabelIds, newValue: sanitized });
+      }
       task.labels = sanitized;
     }
     if (body.assignedTo !== undefined) {
@@ -638,10 +710,26 @@ const updateTask = async (req, res) => {
       if (assigneeErr) return res.status(400).json({ error: assigneeErr });
       const prevSet = new Set(prevAssigneeIds);
       newAssigneeIds = ids.filter((id) => !prevSet.has(id));
+      const nextSet = new Set(ids);
+      const assigneesChanged =
+        prevSet.size !== nextSet.size ||
+        [...prevSet].some((id) => !nextSet.has(id));
+      if (assigneesChanged) {
+        activityChanges.push({ field: 'assignees', oldValue: prevAssigneeIds, newValue: ids });
+      }
       task.assignedTo = ids;
     }
-    if (body.dueDate !== undefined) task.dueDate = body.dueDate || undefined;
-    if (body.note !== undefined) task.note = body.note || undefined;
+    if (body.dueDate !== undefined) {
+      const nextDue = body.dueDate || null;
+      const nextIso = nextDue ? new Date(nextDue).toISOString() : null;
+      if (prevDueIso !== nextIso) activityChanges.push({ field: 'dueDate', oldValue: prevDueIso, newValue: nextIso });
+      task.dueDate = body.dueDate || undefined;
+    }
+    if (body.note !== undefined) {
+      const nextNote = body.note || '';
+      if (nextNote !== prevNote) activityChanges.push({ field: 'note', oldValue: prevNote, newValue: nextNote });
+      task.note = body.note || undefined;
+    }
     if (body.group !== undefined && body.group !== null) {
       const newGroup = await TaskGroup.findById(body.group);
       if (!newGroup || newGroup.board.toString() !== task.board.toString()) {
@@ -649,10 +737,24 @@ const updateTask = async (req, res) => {
           .status(400)
           .json({ error: 'Group does not belong to board' });
       }
+      if (prevGroup !== body.group.toString()) {
+        activityChanges.push({ field: 'group', oldValue: prevGroup, newValue: body.group.toString() });
+      }
       task.group = body.group;
     }
 
     await task.save();
+    for (const c of activityChanges) {
+      logActivity({
+        task,
+        actor: userId,
+        type: 'task.field_changed',
+        field: c.field,
+        oldValue: c.oldValue,
+        newValue: c.newValue,
+        metadata: { taskName: task.name },
+      });
+    }
     await Board.updateOne(
       { _id: task.board },
       { $set: { updatedAt: new Date() } }
@@ -754,6 +856,13 @@ const addChecklistItem = async (req, res) => {
     ctx.task.checklist.push({ text, done: false });
     await ctx.task.save();
 
+    logActivity({
+      task: ctx.task,
+      actor: userId,
+      type: 'checklist.added',
+      metadata: { itemText: text, taskName: ctx.task.name },
+    });
+
     const populated = await populateTask(Task.findById(ctx.task._id));
     return res.status(201).json({ task: populated });
   } catch (err) {
@@ -777,17 +886,33 @@ const updateChecklistItem = async (req, res) => {
     const item = ctx.task.checklist.id(itemId);
     if (!item) return res.status(404).json({ error: 'Checklist item not found' });
 
+    const prevText = item.text;
+    const prevDone = item.done;
+    const events = [];
+
     if (body.text !== undefined) {
       if (typeof body.text !== 'string') {
         return res.status(400).json({ error: 'Invalid text' });
       }
-      item.text = body.text.trim();
+      const next = body.text.trim();
+      if (next !== prevText) {
+        events.push({ type: 'checklist.renamed', oldValue: prevText, newValue: next, metadata: { itemText: next, taskName: ctx.task.name } });
+      }
+      item.text = next;
     }
     if (body.done !== undefined) {
-      item.done = !!body.done;
+      const next = !!body.done;
+      if (next !== prevDone) {
+        events.push({ type: 'checklist.toggled', oldValue: prevDone, newValue: next, metadata: { itemText: item.text, taskName: ctx.task.name } });
+      }
+      item.done = next;
     }
 
     await ctx.task.save();
+
+    for (const e of events) {
+      logActivity({ task: ctx.task, actor: userId, ...e });
+    }
 
     const populated = await populateTask(Task.findById(ctx.task._id));
     return res.json({ task: populated });
@@ -811,8 +936,16 @@ const deleteChecklistItem = async (req, res) => {
     const item = ctx.task.checklist.id(itemId);
     if (!item) return res.status(404).json({ error: 'Checklist item not found' });
 
+    const removedText = item.text;
     ctx.task.checklist.pull(itemId);
     await ctx.task.save();
+
+    logActivity({
+      task: ctx.task,
+      actor: userId,
+      type: 'checklist.deleted',
+      metadata: { itemText: removedText, taskName: ctx.task.name },
+    });
 
     const populated = await populateTask(Task.findById(ctx.task._id));
     return res.json({ task: populated });
@@ -849,8 +982,20 @@ const reorderChecklist = async (req, res) => {
 
     const byId = new Map();
     for (const item of ctx.task.checklist) byId.set(item._id.toString(), item);
+    const prevOrder = currentIds.slice();
+    const nextOrder = orderedIds.map((oid) => oid.toString());
     ctx.task.checklist = orderedIds.map((oid) => byId.get(oid.toString()));
     await ctx.task.save();
+
+    const moved = prevOrder.some((id, i) => id !== nextOrder[i]);
+    if (moved) {
+      logActivity({
+        task: ctx.task,
+        actor: userId,
+        type: 'checklist.reordered',
+        metadata: { taskName: ctx.task.name, itemCount: nextOrder.length },
+      });
+    }
 
     const populated = await populateTask(Task.findById(ctx.task._id));
     return res.json({ task: populated });
@@ -888,6 +1033,14 @@ const deleteTask = async (req, res) => {
     const subitems = await Task.find({ parent: id }).select('_id');
     const subitemIds = subitems.map((s) => s._id);
     const idsToDelete = [id, ...subitemIds];
+
+    // Log the deletion before the row disappears so the log can resolve task name.
+    logActivity({
+      task,
+      actor: userId,
+      type: 'task.deleted',
+      metadata: { taskName: task.name, deletedSubitems: subitemIds.length },
+    });
 
     await Comment.deleteMany({ task: { $in: idsToDelete } });
     await Notification.deleteMany({ task: { $in: idsToDelete } });
@@ -963,6 +1116,18 @@ const uploadTaskAttachment = async (req, res) => {
     ).populate('attachments.uploadedBy', 'name profilePic email');
 
     const created = updated.attachments[updated.attachments.length - 1];
+
+    logActivity({
+      task: updated,
+      actor: userId,
+      type: 'attachment.uploaded',
+      metadata: {
+        attachmentName: attachment.name || 'file',
+        attachmentUrl: attachment.url,
+        taskName: updated.name,
+      },
+    });
+
     return res.status(201).json({ attachment: created });
   } catch (err) {
     console.error('uploadTaskAttachment error:', err);
@@ -991,8 +1156,17 @@ const deleteTaskAttachment = async (req, res) => {
       return res.status(404).json({ error: 'Attachment not found' });
     }
 
+    const attachmentName = attachment.name || 'file';
+
     await Task.findByIdAndUpdate(id, {
       $pull: { attachments: { _id: attachmentId } },
+    });
+
+    logActivity({
+      task,
+      actor: userId,
+      type: 'attachment.deleted',
+      metadata: { attachmentName, taskName: task.name },
     });
 
     return res.json({ ok: true });

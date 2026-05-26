@@ -17,6 +17,7 @@ import { getColorPair } from '../../utils/priorityColors';
 import ChecklistEditor from './ChecklistEditor';
 import UpdatesTab from './UpdatesTab';
 import FilesTab from './FilesTab';
+import ActivityLogTab from './ActivityLogTab';
 import SubitemsList from './SubitemsList';
 
 /**
@@ -543,14 +544,14 @@ const CommentPanel = ({
 
             {activeTab === 'activity' && (
               <div
-                className="flex-1 flex items-center justify-center font-body text-center"
                 style={{
-                  padding: '32px 24px',
-                  fontSize: 13,
-                  color: 'var(--color-text-muted)',
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
                 }}
               >
-                Activity Log — coming soon.
+                <ActivityLogTab taskId={taskId} />
               </div>
             )}
 

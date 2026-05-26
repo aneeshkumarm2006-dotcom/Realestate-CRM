@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, useCallback } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -126,14 +126,43 @@ MentionList.displayName = 'MentionList';
  * into a fixed-position div.
  */
 const PortalAnchor = ({ rect, children }) => {
+  const wrapperRef = useRef(null);
+  const [placement, setPlacement] = useState({ top: 0, left: 0, ready: false });
+
+  useLayoutEffect(() => {
+    if (!rect || !wrapperRef.current) return;
+    const el = wrapperRef.current;
+    const height = el.offsetHeight || 220;
+    const width = el.offsetWidth || 280;
+    const margin = 8;
+    const viewportH = window.innerHeight;
+    const viewportW = window.innerWidth;
+
+    const spaceBelow = viewportH - rect.bottom;
+    const spaceAbove = rect.top;
+    // Flip above the caret when the dropdown wouldn't fit below but would fit above.
+    const flipAbove = spaceBelow < height + margin && spaceAbove > spaceBelow;
+
+    const top = flipAbove
+      ? Math.max(margin, rect.top - height - 4)
+      : rect.bottom + 4;
+    const left = Math.min(
+      Math.max(margin, rect.left),
+      Math.max(margin, viewportW - width - margin)
+    );
+    setPlacement({ top, left, ready: true });
+  }, [rect]);
+
   if (!rect) return null;
   return createPortal(
     <div
+      ref={wrapperRef}
       style={{
         position: 'fixed',
-        top: rect.bottom + 4,
-        left: rect.left,
+        top: placement.top,
+        left: placement.left,
         zIndex: 200,
+        visibility: placement.ready ? 'visible' : 'hidden',
       }}
     >
       {children}
