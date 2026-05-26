@@ -329,7 +329,6 @@ const CommentPanel = ({
           zIndex: 100,
           borderLeft: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-lg)',
-          overflowY: 'auto',
           animation:
             'macan-cp-slide 300ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
@@ -520,6 +519,8 @@ const CommentPanel = ({
                 live even when the user is browsing another tab. */}
             <div
               style={{
+                flex: 1,
+                minHeight: 0,
                 display: activeTab === 'updates' ? 'flex' : 'none',
                 flexDirection: 'column',
               }}
@@ -530,6 +531,8 @@ const CommentPanel = ({
             {activeTab === 'files' && (
               <div
                 style={{
+                  flex: 1,
+                  minHeight: 0,
                   display: 'flex',
                   flexDirection: 'column',
                 }}
@@ -540,7 +543,7 @@ const CommentPanel = ({
 
             {activeTab === 'activity' && (
               <div
-                className="flex items-center justify-center font-body text-center"
+                className="flex-1 flex items-center justify-center font-body text-center"
                 style={{
                   padding: '32px 24px',
                   fontSize: 13,
@@ -556,7 +559,8 @@ const CommentPanel = ({
               <>
         <div
           ref={threadRef}
-          style={{ padding: '0 24px' }}
+          className="flex-1 overflow-y-auto"
+          style={{ padding: '0 24px', minHeight: 0 }}
         >
           {loading ? (
             <p
@@ -832,13 +836,15 @@ const CommentPanel = ({
           to   { opacity: 1; }
         }
         .macan-cp-body {
+          flex: 1;
+          min-height: 0;
           display: grid;
           grid-template-columns: minmax(0, 1fr) 320px;
           gap: 0;
-          align-items: start;
         }
         .macan-cp-left {
           min-width: 0;
+          min-height: 0;
           display: flex;
           flex-direction: column;
           border-right: 1px solid var(--color-border);
@@ -848,6 +854,8 @@ const CommentPanel = ({
           display: flex;
           flex-direction: column;
           gap: 8px;
+          min-height: 0;
+          overflow-y: auto;
         }
         @media (max-width: 900px) {
           .macan-cp-body {

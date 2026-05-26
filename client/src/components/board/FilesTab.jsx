@@ -169,7 +169,7 @@ const FilesTab = ({ task }) => {
   }, []);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
       {/* Upload dropzone */}
       <div
         onClick={() => fileInputRef.current?.click()}
@@ -231,7 +231,7 @@ const FilesTab = ({ task }) => {
       </div>
 
       {/* Files list */}
-      <div style={{ padding: '12px 24px 24px 24px' }}>
+      <div className="flex-1 overflow-y-auto" style={{ padding: '12px 24px 24px 24px', minHeight: 0 }}>
         {loading ? (
           <p
             className="font-body text-center"
