@@ -329,6 +329,7 @@ const CommentPanel = ({
           zIndex: 100,
           borderLeft: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-lg)',
+          overflowY: 'auto',
           animation:
             'macan-cp-slide 300ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
@@ -529,10 +530,8 @@ const CommentPanel = ({
             live even when the user is browsing another tab. */}
         <div
           style={{
-            flex: 1,
             display: activeTab === 'updates' ? 'flex' : 'none',
             flexDirection: 'column',
-            minHeight: 0,
           }}
         >
           <UpdatesTab task={task} onCountChange={setUpdatesCount} />
@@ -541,10 +540,8 @@ const CommentPanel = ({
         {activeTab === 'files' && (
           <div
             style={{
-              flex: 1,
               display: 'flex',
               flexDirection: 'column',
-              minHeight: 0,
             }}
           >
             <FilesTab task={task} />
@@ -553,7 +550,7 @@ const CommentPanel = ({
 
         {activeTab === 'activity' && (
           <div
-            className="flex-1 flex items-center justify-center font-body text-center"
+            className="flex items-center justify-center font-body text-center"
             style={{
               padding: '32px 24px',
               fontSize: 13,
@@ -569,7 +566,6 @@ const CommentPanel = ({
           <>
         <div
           ref={threadRef}
-          className="flex-1 overflow-y-auto"
           style={{ padding: '0 24px' }}
         >
           {loading ? (
