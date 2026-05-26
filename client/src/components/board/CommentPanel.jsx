@@ -872,6 +872,36 @@ const CommentPanel = ({
             width: 100vw !important;
           }
         }
+
+        /* Clean, modern scrollbars inside the panel.
+           Hides the native up/down arrow buttons (which look ugly on Windows)
+           and renders a thin, subtle thumb. */
+        .macan-comment-panel *::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        .macan-comment-panel *::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .macan-comment-panel *::-webkit-scrollbar-thumb {
+          background: var(--color-border-strong);
+          border-radius: 8px;
+          border: 2px solid transparent;
+          background-clip: padding-box;
+        }
+        .macan-comment-panel *::-webkit-scrollbar-thumb:hover {
+          background: var(--color-text-muted);
+          background-clip: padding-box;
+          border: 2px solid transparent;
+        }
+        .macan-comment-panel *::-webkit-scrollbar-button,
+        .macan-comment-panel *::-webkit-scrollbar-corner {
+          display: none;
+        }
+        .macan-comment-panel * {
+          scrollbar-width: thin;
+          scrollbar-color: var(--color-border-strong) transparent;
+        }
       `}</style>
     </>
   );
