@@ -65,12 +65,20 @@ const TaskRow = ({
     return () => clearTimeout(timer);
   }, [highlighted]);
 
+  const handleRowClick = (e) => {
+    if (e.target.closest('button, input, a, label, [role="button"], [data-row-click-ignore]')) {
+      return;
+    }
+    onOpen?.(task);
+  };
+
   return (
     <tr
       ref={rowRef}
       data-task-id={task._id}
+      onClick={handleRowClick}
       className={[
-        'transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]',
+        'transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)] cursor-pointer',
         highlighted ? 'macan-task-highlight' : '',
       ].join(' ')}
       style={{

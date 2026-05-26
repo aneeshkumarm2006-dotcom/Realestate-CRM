@@ -903,6 +903,105 @@ const deleteTask = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/tasks/:id/attachments — list files attached to a task.
+ * Access mirrors checklist/comment behaviour: personal tasks → creator only;
+ * board tasks → any org member.
+ */
+const getTaskAttachments = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    const result = await loadTaskForChecklist(id, userId);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    const task = await Task.findById(id).populate(
+      'attachments.uploadedBy',
+      'name profilePic email'
+    );
+
+    return res.json({ attachments: task.attachments || [] });
+  } catch (err) {
+    console.error('getTaskAttachments error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * POST /api/tasks/:id/attachments — upload a file (multer + Cloudinary middleware
+ * does the upload) and persist its URL on the task.
+ */
+const uploadTaskAttachment = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    const result = await loadTaskForChecklist(id, userId);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const attachment = {
+      url: req.file.path || req.file.secure_url || req.file.url,
+      name: req.file.originalname || '',
+      mime: req.file.mimetype || '',
+      size: req.file.size || 0,
+      uploadedBy: userId,
+    };
+
+    const updated = await Task.findByIdAndUpdate(
+      id,
+      { $push: { attachments: attachment } },
+      { new: true }
+    ).populate('attachments.uploadedBy', 'name profilePic email');
+
+    const created = updated.attachments[updated.attachments.length - 1];
+    return res.status(201).json({ attachment: created });
+  } catch (err) {
+    console.error('uploadTaskAttachment error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * DELETE /api/tasks/:id/attachments/:attachmentId — remove an attachment from
+ * the task. The Cloudinary asset itself is left in place (cheaper and simpler
+ * than tracking public_ids; a periodic job can prune orphaned assets).
+ */
+const deleteTaskAttachment = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id, attachmentId } = req.params;
+
+    const result = await loadTaskForChecklist(id, userId);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    const task = result.task;
+
+    const attachment = task.attachments.id(attachmentId);
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    await Task.findByIdAndUpdate(id, {
+      $pull: { attachments: { _id: attachmentId } },
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('deleteTaskAttachment error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getTasks,
   getMyTasks,
@@ -915,4 +1014,7 @@ module.exports = {
   updateChecklistItem,
   deleteChecklistItem,
   reorderChecklist,
+  getTaskAttachments,
+  uploadTaskAttachment,
+  deleteTaskAttachment,
 };

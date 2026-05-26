@@ -80,6 +80,26 @@ const taskSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    // Files attached directly to the task (uploaded via the Files tab).
+    // Mirrors the Update.attachments shape so the FE can share UI.
+    attachments: {
+      type: [
+        new mongoose.Schema(
+          {
+            url: { type: String, required: true },
+            name: { type: String, default: '' },
+            mime: { type: String, default: '' },
+            size: { type: Number, default: 0 },
+            uploadedBy: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'User',
+            },
+          },
+          { _id: true, timestamps: { createdAt: true, updatedAt: false } }
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

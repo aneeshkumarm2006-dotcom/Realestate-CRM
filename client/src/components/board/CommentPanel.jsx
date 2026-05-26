@@ -16,6 +16,7 @@ import useOrgStore from '../../store/orgStore';
 import { getColorPair } from '../../utils/priorityColors';
 import ChecklistEditor from './ChecklistEditor';
 import UpdatesTab from './UpdatesTab';
+import FilesTab from './FilesTab';
 import SubitemsList from './SubitemsList';
 
 /**
@@ -539,14 +540,14 @@ const CommentPanel = ({
 
         {activeTab === 'files' && (
           <div
-            className="flex-1 flex items-center justify-center font-body text-center"
             style={{
-              padding: '32px 24px',
-              fontSize: 13,
-              color: 'var(--color-text-muted)',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
             }}
           >
-            Files tab — coming soon.
+            <FilesTab task={task} />
           </div>
         )}
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const authMiddleware = require('../middleware/auth');
+const { taskAttachmentUpload } = require('../config/cloudinary');
 const {
   getTasks,
   getMyTasks,
@@ -12,6 +13,9 @@ const {
   updateChecklistItem,
   deleteChecklistItem,
   reorderChecklist,
+  getTaskAttachments,
+  uploadTaskAttachment,
+  deleteTaskAttachment,
 } = require('../controllers/taskController');
 
 const router = express.Router();
@@ -45,5 +49,14 @@ router.post('/:id/checklist', addChecklistItem);
 router.put('/:id/checklist/reorder', reorderChecklist);
 router.put('/:id/checklist/:itemId', updateChecklistItem);
 router.delete('/:id/checklist/:itemId', deleteChecklistItem);
+
+// Attachment routes — Files tab in the task detail panel.
+router.get('/:id/attachments', getTaskAttachments);
+router.post(
+  '/:id/attachments',
+  taskAttachmentUpload.single('file'),
+  uploadTaskAttachment
+);
+router.delete('/:id/attachments/:attachmentId', deleteTaskAttachment);
 
 module.exports = router;

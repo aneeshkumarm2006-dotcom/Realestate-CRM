@@ -54,8 +54,28 @@ const updateUpload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB per file
 });
 
+/**
+ * Cloudinary storage for task-level attachments (uploaded from the Files tab).
+ * Same shape as update attachments, but isolated under `macan/tasks/` so files
+ * can be audited and pruned per surface.
+ */
+const taskAttachmentStorage = new CloudinaryStorage({
+  cloudinary,
+  params: (req, file) => ({
+    folder: 'macan/tasks',
+    resource_type: 'auto',
+    public_id: `${Date.now()}-${(file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`,
+  }),
+});
+
+const taskAttachmentUpload = multer({
+  storage: taskAttachmentStorage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB per file
+});
+
 module.exports = {
   cloudinary,
   avatarUpload,
   updateUpload,
+  taskAttachmentUpload,
 };
