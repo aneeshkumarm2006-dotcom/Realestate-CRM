@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { UserPlus, Check, Mail } from 'lucide-react';
 import InviteModal from './InviteModal';
+import useDropdownPosition from '../../utils/useDropdownPosition';
 
 /**
  * AssigneePicker — small dropdown listing org members with multi-select.
@@ -27,16 +29,18 @@ const AssigneePicker = ({
   const [showInviteModal, setShowInviteModal] = useState(false);
   const wrapperRef = useRef(null);
   const triggerRef = useRef(null);
+  const menuRef = useRef(null);
 
   const selectedIds = new Set(value || []);
   const selectedMembers = members.filter((m) => selectedIds.has(m._id));
+  const { top, left, width, openUpward } = useDropdownPosition(triggerRef, open);
 
   useEffect(() => {
     if (!open) return undefined;
     const handleClick = (e) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setOpen(false);
-      }
+      if (wrapperRef.current && wrapperRef.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
     };
     const handleKey = (e) => {
       if (e.key === 'Escape') {
@@ -97,8 +101,9 @@ const AssigneePicker = ({
         )}
       </button>
 
-      {open && (
+      {open && createPortal(
         <ul
+          ref={menuRef}
           role="listbox"
           aria-multiselectable="true"
           onKeyDown={(e) => {
@@ -108,15 +113,22 @@ const AssigneePicker = ({
               triggerRef.current?.focus();
             }
           }}
-          className="absolute z-40 left-0 mt-1 bg-white overflow-auto"
+          className="bg-white overflow-auto"
           style={{
+            position: 'fixed',
+            top,
+            left,
+            width: Math.max(width, 220),
+            zIndex: 60,
             minWidth: 220,
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-md)',
             maxHeight: 260,
             padding: 4,
-            animation: 'macan-dropdown-enter 150ms ease-out',
+            animation: openUpward
+              ? 'macan-dropdown-enter-up 150ms ease-out'
+              : 'macan-dropdown-enter 150ms ease-out',
           }}
         >
           {members.length === 0 && (
@@ -198,7 +210,8 @@ const AssigneePicker = ({
               </button>
             </li>
           )}
-        </ul>
+        </ul>,
+        document.body
       )}
 
       {showInviteModal && (
@@ -208,6 +221,10 @@ const AssigneePicker = ({
       <style>{`
         @keyframes macan-dropdown-enter {
           from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes macan-dropdown-enter-up {
+          from { opacity: 0; transform: translateY(4px); }
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>

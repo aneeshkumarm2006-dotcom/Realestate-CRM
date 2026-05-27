@@ -324,10 +324,12 @@ const BoardDetailPage = () => {
         refreshNotifications(currentOrg?._id);
       } catch (err) {
         console.error('Failed to update task:', err);
-        toastError(
-          err?.response?.data?.error ||
-            'Failed to update task. Please try again.'
-        );
+        if (!err?.response?.data?.field) {
+          toastError(
+            err?.response?.data?.error ||
+              'Failed to update task. Please try again.'
+          );
+        }
         throw err;
       }
     },
@@ -954,11 +956,57 @@ const BoardDetailPage = () => {
         onClose={handleCloseTask}
         isAdmin={isAdmin}
         onUpdateTask={async (taskId, payload) => {
+          // Locate the task in the store so we can roll back on failure.
+          // Search both the board buckets and the subitem cache — the panel
+          // can be open on either.
+          const store = useTaskStore.getState();
+          let prev = null;
+          for (const list of Object.values(store.tasksByGroup)) {
+            if (!Array.isArray(list)) continue;
+            const m = list.find((t) => t._id === taskId);
+            if (m) {
+              prev = m;
+              break;
+            }
+          }
+          if (!prev) {
+            for (const list of Object.values(store.subitemsByParent)) {
+              if (!Array.isArray(list)) continue;
+              const m = list.find((t) => t._id === taskId);
+              if (m) {
+                prev = m;
+                break;
+              }
+            }
+          }
+
+          // Apply the change optimistically so the UI feels instant. For
+          // `assignedTo` we hydrate the id list into populated member objects
+          // so the avatar stack renders without flicker until the server
+          // response (with full populate) lands.
+          if (prev) {
+            const optimisticPatch = { ...payload };
+            if (Array.isArray(payload.assignedTo)) {
+              const idToMember = new Map(
+                (members || []).map((m) => [String(m._id), m])
+              );
+              optimisticPatch.assignedTo = payload.assignedTo.map(
+                (id) =>
+                  idToMember.get(String(id)) || {
+                    _id: id,
+                    name: '',
+                  }
+              );
+            }
+            updateTaskLocal({ ...prev, ...optimisticPatch });
+          }
+
           try {
             const updated = await taskService.updateTask(taskId, payload);
             updateTaskLocal(updated);
             return updated;
           } catch (err) {
+            if (prev) updateTaskLocal(prev);
             console.error('Failed to update task from panel:', err);
             toastError(
               err?.response?.data?.error ||

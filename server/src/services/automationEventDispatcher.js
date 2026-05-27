@@ -1,5 +1,6 @@
 const Automation = require('../models/Automation');
 const Task = require('../models/Task');
+const TaskGroup = require('../models/TaskGroup');
 const eventBus = require('./eventBus');
 const { runAutomationOnce } = require('../controllers/automationController');
 
@@ -27,6 +28,79 @@ const evaluateConditions = (automation, payload) => {
     }
   }
   return true;
+};
+
+/**
+ * True if every condition on a GROUP_CREATED automation matches the new
+ * group. Conditions for this trigger only support GROUP_NAME_MATCHES today
+ * (value is a regex string). An empty conditions array matches every group.
+ */
+const evaluateGroupCreatedConditions = (automation, payload) => {
+  const conds = Array.isArray(automation.conditions) ? automation.conditions : [];
+  if (conds.length === 0) return true;
+  const name = payload.groupName == null ? '' : String(payload.groupName);
+  for (const c of conds) {
+    if (!c?.type || c.value == null) return false;
+    if (c.type === 'GROUP_NAME_MATCHES') {
+      let re;
+      try {
+        re = new RegExp(String(c.value));
+      } catch (err) {
+        console.error(
+          '[automation/dispatcher] invalid GROUP_NAME_MATCHES regex',
+          c.value,
+          err.message
+        );
+        return false;
+      }
+      if (!re.test(name)) return false;
+    } else {
+      // Unknown condition types — treat as failing matches so the
+      // automation can't fire on payloads it wasn't designed for.
+      return false;
+    }
+  }
+  return true;
+};
+
+const handleGroupCreated = async (payload) => {
+  if (!payload || !payload.groupId || !payload.boardId) return;
+
+  let triggeringGroup;
+  try {
+    triggeringGroup = await TaskGroup.findById(payload.groupId);
+  } catch (err) {
+    console.error('[automation/dispatcher] failed to load triggering group:', err);
+    return;
+  }
+  if (!triggeringGroup) return;
+
+  let automations;
+  try {
+    automations = await Automation.find({
+      board: payload.boardId,
+      enabled: true,
+      triggerType: 'GROUP_CREATED',
+    });
+  } catch (err) {
+    console.error('[automation/dispatcher] failed to query automations:', err);
+    return;
+  }
+
+  for (const automation of automations) {
+    if (!evaluateGroupCreatedConditions(automation, payload)) continue;
+    try {
+      await runAutomationOnce(automation, { triggeringGroup });
+      automation.lastRunAt = new Date();
+      await automation.save();
+    } catch (err) {
+      console.error(
+        '[automation/dispatcher] failed to run automation',
+        automation?._id?.toString(),
+        err
+      );
+    }
+  }
 };
 
 const handleItemCreated = async (payload) => {
@@ -86,10 +160,16 @@ const mountAutomationEventDispatcher = () => {
       console.error('[automation/dispatcher] unhandled error:', err)
     );
   });
+  eventBus.on('group.created', (payload) => {
+    handleGroupCreated(payload).catch((err) =>
+      console.error('[automation/dispatcher] unhandled error:', err)
+    );
+  });
   console.log('automation event dispatcher mounted');
 };
 
 module.exports = {
   mountAutomationEventDispatcher,
   evaluateConditions,
+  evaluateGroupCreatedConditions,
 };

@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { PRIORITY_COLORS } from '../../utils/priorityColors';
+
+const VIEWPORT_MARGIN = 16;
 
 /**
  * PriorityMenu — small popover menu anchored to a priority chip.
@@ -18,6 +20,7 @@ const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
 
 const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
   const menuRef = useRef(null);
+  const [position, setPosition] = useState({ top: 0, left: 0, openUpward: false });
 
   useEffect(() => {
     const handleClick = (e) => {
@@ -36,11 +39,26 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
     };
   }, [anchorEl, onClose]);
 
-  if (!anchorEl) return null;
+  useLayoutEffect(() => {
+    if (!anchorEl) return undefined;
+    const compute = () => {
+      const r = anchorEl.getBoundingClientRect();
+      const menuH = menuRef.current?.offsetHeight || 0;
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUpward = menuH > 0 && spaceBelow < menuH + VIEWPORT_MARGIN && r.top > spaceBelow;
+      const top = openUpward ? Math.max(VIEWPORT_MARGIN, r.top - menuH - 6) : r.bottom + 6;
+      setPosition({ top, left: r.left, openUpward });
+    };
+    compute();
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [anchorEl]);
 
-  const rect = anchorEl.getBoundingClientRect();
-  const top = rect.bottom + 6;
-  const left = rect.left;
+  if (!anchorEl) return null;
 
   return (
     <div
@@ -48,15 +66,17 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
       role="listbox"
       className="fixed bg-white"
       style={{
-        top,
-        left,
+        top: position.top,
+        left: position.left,
         zIndex: 60,
         minWidth: 160,
         padding: 6,
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-md)',
-        animation: 'macan-dropdown-enter 150ms ease-out',
+        animation: position.openUpward
+          ? 'macan-dropdown-enter-up 150ms ease-out'
+          : 'macan-dropdown-enter 150ms ease-out',
       }}
     >
       {PRIORITY_ORDER.map((key) => {
@@ -96,6 +116,10 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
       <style>{`
         @keyframes macan-dropdown-enter {
           from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes macan-dropdown-enter-up {
+          from { opacity: 0; transform: translateY(4px); }
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>

@@ -71,20 +71,55 @@ const taskTemplateSchema = new mongoose.Schema(
 );
 
 /**
- * Condition row evaluated against the triggering task for ITEM_CREATED
- * automations. `value` is an ObjectId pointing into a board sub-document:
- *   - ITEM_IN_GROUP   → matches against task.group     (TaskGroup._id)
- *   - ITEM_IN_STATUS  → matches against task.status    (Board.statuses._id)
+ * Task template for GROUP_CREATED automations. Mirrors taskTemplateSchema but
+ * drops the `group` requirement — the spawned task always lands in the
+ * newly-created triggering group, so the group is supplied at run time, not
+ * at config time.
+ */
+const groupCreatedTaskTemplateSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    priority: {
+      type: String,
+      enum: ['critical', 'high', 'medium', 'low'],
+      default: 'medium',
+    },
+    assignedTo: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    note: {
+      type: String,
+    },
+    dueInDays: {
+      type: Number,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
+/**
+ * Condition row evaluated against the trigger payload. `value` is stored as
+ * Mixed because the per-type semantics differ:
+ *   - ITEM_IN_GROUP      → ObjectId matching task.group        (TaskGroup._id)
+ *   - ITEM_IN_STATUS     → ObjectId matching task.status       (Board.statuses._id)
+ *   - GROUP_NAME_MATCHES → string regex tested against the new group's name
  */
 const conditionSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+      enum: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS', 'GROUP_NAME_MATCHES'],
       required: true,
     },
     value: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.Mixed,
       required: true,
     },
   },
@@ -157,10 +192,11 @@ const automationSchema = new mongoose.Schema(
       default: true,
     },
     // What fires this automation. SCHEDULE is the legacy cron-style trigger;
-    // ITEM_CREATED runs in response to a task being created on the board.
+    // ITEM_CREATED runs in response to a task being created on the board;
+    // GROUP_CREATED runs in response to a new group being created on the board.
     triggerType: {
       type: String,
-      enum: ['SCHEDULE', 'ITEM_CREATED'],
+      enum: ['SCHEDULE', 'ITEM_CREATED', 'GROUP_CREATED'],
       default: 'SCHEDULE',
       index: true,
     },
@@ -181,6 +217,12 @@ const automationSchema = new mongoose.Schema(
     },
     actions: {
       type: [actionSchema],
+      default: [],
+    },
+    // Task templates spawned when a GROUP_CREATED trigger fires. Each
+    // template seeds a top-level task in the newly-created group.
+    groupCreatedTaskTemplates: {
+      type: [groupCreatedTaskTemplateSchema],
       default: [],
     },
     lastRunAt: {

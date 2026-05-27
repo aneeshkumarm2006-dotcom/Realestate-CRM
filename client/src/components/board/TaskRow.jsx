@@ -8,23 +8,9 @@ import {
 } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
+import { isStatusDone } from '../../utils/statusUtils';
 
 const NAVBAR_HEIGHT = 56;
-
-/**
- * Whether the task's status — interpreted against the board — is the
- * "done" status. Used to decide overdue styling. Works with both the new
- * ObjectId-style status and the legacy enum string for backwards compat.
- */
-const isStatusDone = (board, statusRef) => {
-  if (board && Array.isArray(board.statuses) && statusRef != null) {
-    const match = board.statuses.find(
-      (s) => s._id && s._id.toString() === statusRef.toString()
-    );
-    if (match) return match.key === 'done';
-  }
-  return statusRef === 'done';
-};
 
 /**
  * TaskRow — a single row in the board task table.

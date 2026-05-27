@@ -19,6 +19,19 @@ import UpdatesTab from './UpdatesTab';
 import FilesTab from './FilesTab';
 import ActivityLogTab from './ActivityLogTab';
 import SubitemsList from './SubitemsList';
+import AssigneePicker from './AssigneePicker';
+
+// Mirror of TaskEditRow's toDateInputValue so the date input round-trips
+// the same ISO/YYYY-MM-DD shape used elsewhere in the app.
+const toDateInputValue = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 /**
  * CommentPanel — right-edge slide-out panel showing task detail + comments.
@@ -298,7 +311,116 @@ const CommentPanel = ({
     [task]
   );
 
+  // --- Inline header edits (name / assignees / due date) ----------------
+  // The name uses a click-to-edit pattern: an <h2> by default, an <input>
+  // while editing. Assignees and due date are always-on editors (the
+  // existing AssigneePicker + a native date input) — read-only for
+  // non-admin users.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [savingDueDate, setSavingDueDate] = useState(false);
+  const nameInputRef = useRef(null);
+
+  // Reset edit mode whenever the panel switches to a new task.
+  useEffect(() => {
+    setEditingName(false);
+    setNameDraft('');
+    setSavingName(false);
+    setSavingDueDate(false);
+  }, [taskId]);
+
+  // Autofocus + select the input when entering edit mode.
+  useEffect(() => {
+    if (editingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [editingName]);
+
+  const commitNameEdit = useCallback(async () => {
+    if (!task) return;
+    const next = nameDraft.trim();
+    const prev = task.name || '';
+    if (!next || next === prev) {
+      setEditingName(false);
+      setNameDraft('');
+      return;
+    }
+    if (!onUpdateTask) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      await onUpdateTask(task._id, { name: next });
+      setEditingName(false);
+      setNameDraft('');
+    } catch {
+      // parent surfaces a toast; keep the draft visible so the user can retry
+    } finally {
+      setSavingName(false);
+    }
+  }, [task, nameDraft, onUpdateTask]);
+
+  const cancelNameEdit = useCallback(() => {
+    setEditingName(false);
+    setNameDraft('');
+  }, []);
+
+  const handleAssigneesChange = useCallback(
+    async (nextIds) => {
+      if (!task || !onUpdateTask) return;
+      const prevIds = assignees.map((u) => (typeof u === 'string' ? u : u._id));
+      const sameSet =
+        prevIds.length === nextIds.length &&
+        prevIds.every((id) => nextIds.includes(id));
+      if (sameSet) return;
+      try {
+        await onUpdateTask(task._id, { assignedTo: nextIds });
+      } catch {
+        // toast surfaced by parent; AssigneePicker will re-render from the
+        // store on rollback
+      }
+    },
+    [task, onUpdateTask, assignees]
+  );
+
+  const handleDueDateChange = useCallback(
+    async (e) => {
+      if (!task || !onUpdateTask) return;
+      const raw = e.target.value;
+      const nextIso = raw ? new Date(raw).toISOString() : null;
+      const prevIso = task.dueDate ? new Date(task.dueDate).toISOString() : null;
+      if (nextIso === prevIso) return;
+      setSavingDueDate(true);
+      try {
+        await onUpdateTask(task._id, { dueDate: nextIso });
+      } catch {
+        // toast surfaced by parent
+      } finally {
+        setSavingDueDate(false);
+      }
+    },
+    [task, onUpdateTask]
+  );
+
   if (!isOpen || !task) return null;
+
+  // Members list — used by the inline AssigneePicker. Falls back to the
+  // currently-assigned users so the trigger still shows initials before the
+  // org-members fetch lands.
+  const pickerMembers =
+    orgMembers && orgMembers.length > 0
+      ? orgMembers
+      : assignees.map((u) => ({
+          _id: typeof u === 'string' ? u : u._id,
+          name: u?.name,
+          profilePic: u?.profilePic,
+          email: u?.email,
+        }));
+  const assignedIds = assignees.map((u) => (typeof u === 'string' ? u : u._id));
+  const canEditFields = isAdmin && !!onUpdateTask;
 
   const panel = (
     <>
@@ -383,18 +505,81 @@ const CommentPanel = ({
             borderBottom: '1px solid var(--color-border)',
           }}
         >
-          <h2
-            className="font-display"
-            style={{
-              fontSize: 20,
-              fontWeight: 700,
-              lineHeight: 1.3,
-              color: 'var(--color-text-primary)',
-              wordBreak: 'break-word',
-            }}
-          >
-            {task.name}
-          </h2>
+          {editingName ? (
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitNameEdit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitNameEdit();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelNameEdit();
+                }
+              }}
+              disabled={savingName}
+              aria-label="Task name"
+              className="w-full font-display focus:outline-none"
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                lineHeight: 1.3,
+                color: 'var(--color-text-primary)',
+                background: 'var(--color-bg-surface, #FFFFFF)',
+                border: '1.5px solid var(--color-accent)',
+                borderRadius: 'var(--radius-md)',
+                padding: '4px 8px',
+                boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
+              }}
+            />
+          ) : (
+            <h2
+              role={canEditFields ? 'button' : undefined}
+              tabIndex={canEditFields ? 0 : -1}
+              onClick={
+                canEditFields
+                  ? () => {
+                      setNameDraft(task.name || '');
+                      setEditingName(true);
+                    }
+                  : undefined
+              }
+              onKeyDown={
+                canEditFields
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setNameDraft(task.name || '');
+                        setEditingName(true);
+                      }
+                    }
+                  : undefined
+              }
+              title={canEditFields ? 'Click to edit name' : undefined}
+              className={
+                canEditFields
+                  ? 'font-display transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]'
+                  : 'font-display'
+              }
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                lineHeight: 1.3,
+                color: 'var(--color-text-primary)',
+                wordBreak: 'break-word',
+                cursor: canEditFields ? 'text' : 'default',
+                borderRadius: 'var(--radius-md)',
+                padding: canEditFields ? '4px 8px' : 0,
+                margin: canEditFields ? '-4px -8px' : 0,
+              }}
+            >
+              {task.name}
+            </h2>
+          )}
 
           <div
             className="mt-3 flex flex-wrap items-center gap-2"
@@ -410,7 +595,16 @@ const CommentPanel = ({
 
           <dl className="mt-4 flex flex-col gap-2">
             <MetaRow label="Assigned to">
-              {assignees.length > 0 ? (
+              {canEditFields ? (
+                <div style={{ maxWidth: 280 }}>
+                  <AssigneePicker
+                    members={pickerMembers}
+                    value={assignedIds}
+                    onChange={handleAssigneesChange}
+                    isAdmin={isAdmin}
+                  />
+                </div>
+              ) : assignees.length > 0 ? (
                 <div className="flex items-center gap-2 flex-wrap">
                   {assignees.map((u) => (
                     <span
@@ -442,18 +636,38 @@ const CommentPanel = ({
             </MetaRow>
 
             <MetaRow label="Due date">
-              <span
-                className="font-body"
-                style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: task.dueDate
-                    ? 'var(--color-text-primary)'
-                    : 'var(--color-text-muted)',
-                }}
-              >
-                {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
-              </span>
+              {canEditFields ? (
+                <input
+                  type="date"
+                  value={toDateInputValue(task.dueDate)}
+                  onChange={handleDueDateChange}
+                  disabled={savingDueDate}
+                  aria-label="Due date"
+                  className="font-body bg-white focus:outline-none"
+                  style={{
+                    fontSize: 13,
+                    height: 32,
+                    padding: '0 8px',
+                    border: '1.5px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--color-text-primary)',
+                    maxWidth: 180,
+                  }}
+                />
+              ) : (
+                <span
+                  className="font-body"
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: task.dueDate
+                      ? 'var(--color-text-primary)'
+                      : 'var(--color-text-muted)',
+                  }}
+                >
+                  {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
+                </span>
+              )}
             </MetaRow>
 
             {/* Labels row — only meaningful for board tasks */}

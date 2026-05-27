@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -6,9 +7,15 @@ import { ChevronLeft, ChevronRight, List as ListIcon, LayoutGrid } from 'lucide-
 import PageWrapper from '../components/layout/PageWrapper';
 import { SkeletonCalendarGrid } from '../components/ui/Skeleton';
 import CommentPanel from '../components/board/CommentPanel';
+import CalendarFilterBar, { UNASSIGNED_ID } from '../components/calendar/CalendarFilterBar';
 import useOrgStore from '../store/orgStore';
+import useBoardStore from '../store/boardStore';
 import { getCalendarTasks } from '../services/taskService';
 import { getPriorityColor } from '../utils/priorityColors';
+import { isStatusDone } from '../utils/statusUtils';
+
+// Canonical "done" green from globals.css → --color-status-done.
+const DONE_GREEN = '#16A34A';
 
 /**
  * CalendarPage — month/week calendar view of all tasks with a due date.
@@ -47,8 +54,13 @@ const taskToEvent = (task) => {
  * every event instance.
  */
 const eventPropGetter = (event) => {
-  const priority = event.resource?.priority || 'low';
-  const { solid } = getPriorityColor(priority);
+  const task = event.resource || {};
+  // Completed tasks render green regardless of priority — quick visual cue
+  // that the work for that day is already finished.
+  const done = isStatusDone(task.board, task.status);
+  const solid = done
+    ? DONE_GREEN
+    : getPriorityColor(task.priority || 'low').solid;
   return {
     style: {
       backgroundColor: solid,
@@ -287,7 +299,10 @@ const TaskListView = ({ events, onSelect }) => {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {items.map((ev, i) => {
               const task = ev.resource;
-              const { solid } = getPriorityColor(task.priority || 'low');
+              const done = isStatusDone(task.board, task.status);
+              const solid = done
+                ? DONE_GREEN
+                : getPriorityColor(task.priority || 'low').solid;
               return (
                 <li
                   key={task._id}
@@ -363,6 +378,10 @@ const TaskListView = ({ events, onSelect }) => {
 const CalendarPage = () => {
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const orgId = currentOrg?._id || null;
+  const orgMembers = useOrgStore((s) => s.members);
+  const fetchMembers = useOrgStore((s) => s.fetchMembers);
+  const boards = useBoardStore((s) => s.boards);
+  const fetchBoards = useBoardStore((s) => s.fetchBoards);
 
   const [view, setView] = useState('month');
   const [date, setDate] = useState(() => new Date());
@@ -370,6 +389,62 @@ const CalendarPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
+
+  // --- URL-backed filter state -------------------------------------------
+  // `?boards=id1,id2&assignees=id3,unassigned` survives month navigation and
+  // page reloads. Empty arrays mean "no filter — show everything".
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const boardFilter = useMemo(() => {
+    const raw = searchParams.get('boards');
+    return raw ? raw.split(',').filter(Boolean) : [];
+  }, [searchParams]);
+
+  const assigneeFilter = useMemo(() => {
+    const raw = searchParams.get('assignees');
+    return raw ? raw.split(',').filter(Boolean) : [];
+  }, [searchParams]);
+
+  const updateFilterParam = useCallback(
+    (key, ids) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (ids && ids.length > 0) next.set(key, ids.join(','));
+          else next.delete(key);
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const handleBoardFilterChange = useCallback(
+    (ids) => updateFilterParam('boards', ids),
+    [updateFilterParam]
+  );
+  const handleAssigneeFilterChange = useCallback(
+    (ids) => updateFilterParam('assignees', ids),
+    [updateFilterParam]
+  );
+
+  // Hydrate the boardStore and orgStore.members so the filter bar has options
+  // when the calendar is opened directly (not via a board page).
+  useEffect(() => {
+    if (!orgId) return;
+    if (boards.length === 0) {
+      fetchBoards(orgId).catch((err) => {
+        console.error('Failed to fetch boards for calendar filter:', err);
+      });
+    }
+    if (orgMembers.length === 0) {
+      fetchMembers(orgId).catch((err) => {
+        console.error('Failed to fetch members for calendar filter:', err);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
 
   // Track viewport width to switch between calendar grid and list view
   const [isMobile, setIsMobile] = useState(() =>
@@ -445,6 +520,30 @@ const CalendarPage = () => {
     setSelectedTask(event.resource);
   }, []);
 
+  // Apply board + assignee filters with AND logic. The `unassigned` synthetic
+  // id matches tasks with no assignees; real ids match by member _id.
+  const visibleEvents = useMemo(() => {
+    if (boardFilter.length === 0 && assigneeFilter.length === 0) return events;
+    const boardSet = new Set(boardFilter);
+    const assigneeSet = new Set(assigneeFilter);
+    const matchUnassigned = assigneeSet.has(UNASSIGNED_ID);
+    return events.filter((e) => {
+      const task = e.resource || {};
+      const boardId = task.board?._id || task.board || null;
+      if (boardSet.size > 0 && !boardSet.has(boardId)) return false;
+      if (assigneeSet.size > 0) {
+        const assigned = task.assignedTo || [];
+        const hasAny = assigned.length > 0;
+        const matchesUser = assigned.some((a) =>
+          assigneeSet.has(a?._id || a)
+        );
+        const matchesUnassignedRow = matchUnassigned && !hasAny;
+        if (!matchesUser && !matchesUnassignedRow) return false;
+      }
+      return true;
+    });
+  }, [events, boardFilter, assigneeFilter]);
+
   const showList = isMobile && mobileMode === 'list';
 
   return (
@@ -459,6 +558,17 @@ const CalendarPage = () => {
           onMobileModeChange={setMobileMode}
           isMobile={isMobile}
         />
+
+        <div className="mt-4 flex justify-end">
+          <CalendarFilterBar
+            boards={boards}
+            members={orgMembers}
+            boardFilter={boardFilter}
+            onBoardFilterChange={handleBoardFilterChange}
+            assigneeFilter={assigneeFilter}
+            onAssigneeFilterChange={handleAssigneeFilterChange}
+          />
+        </div>
 
         {error && (
           <div
@@ -478,7 +588,7 @@ const CalendarPage = () => {
 
         <div className="mt-5">
           {showList ? (
-            <TaskListView events={events} onSelect={handleSelectEvent} />
+            <TaskListView events={visibleEvents} onSelect={handleSelectEvent} />
           ) : (
             <div
               className="bg-surface macan-calendar-wrap"
@@ -494,7 +604,7 @@ const CalendarPage = () => {
               ) : (
                 <Calendar
                   localizer={localizer}
-                  events={events}
+                  events={visibleEvents}
                   date={date}
                   view={view}
                   onNavigate={setDate}

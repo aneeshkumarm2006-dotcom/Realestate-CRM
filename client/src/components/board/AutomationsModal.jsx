@@ -18,6 +18,7 @@ import * as automationService from '../../services/automationService';
 const TRIGGER_OPTIONS = [
   { value: 'SCHEDULE', label: 'On a schedule' },
   { value: 'ITEM_CREATED', label: 'When an item is created' },
+  { value: 'GROUP_CREATED', label: 'When a group is created' },
 ];
 
 const CONDITION_TYPES = [
@@ -153,13 +154,34 @@ const describeEventDriven = (automation, groups = [], statuses = []) => {
 };
 
 /**
+ * One-line summary of a GROUP_CREATED automation, e.g.
+ * "When a group is created matching \"^Deux\" → create 3 tasks".
+ */
+const describeGroupCreated = (automation) => {
+  const conds = Array.isArray(automation.conditions) ? automation.conditions : [];
+  const pattern = conds.find((c) => c.type === 'GROUP_NAME_MATCHES')?.value;
+  const templates = Array.isArray(automation.groupCreatedTaskTemplates)
+    ? automation.groupCreatedTaskTemplates
+    : [];
+
+  let when = 'When a group is created';
+  if (pattern) when += ` matching "${pattern}"`;
+
+  if (templates.length === 0) return `${when} → (no tasks)`;
+  return `${when} → create ${templates.length} task${templates.length === 1 ? '' : 's'}`;
+};
+
+/**
  * Top-level describe — branches on triggerType. Returns the schedule string
- * for SCHEDULE automations (preserves existing UI), or the event-driven
- * summary for ITEM_CREATED.
+ * for SCHEDULE automations (preserves existing UI), the event-driven
+ * summary for ITEM_CREATED, or the group-created summary for GROUP_CREATED.
  */
 const describeAutomation = (automation, groups = [], statuses = []) => {
   if (automation.triggerType === 'ITEM_CREATED') {
     return describeEventDriven(automation, groups, statuses);
+  }
+  if (automation.triggerType === 'GROUP_CREATED') {
+    return describeGroupCreated(automation);
   }
   return describeSchedule(automation.schedule);
 };
@@ -187,6 +209,18 @@ const buildEmptyAction = (groups) => ({
   group: groups?.[0]?._id || '',
 });
 
+/**
+ * Blank task-template row for the GROUP_CREATED builder. These tasks land in
+ * the triggering (new) group, so there's no group selector on the row.
+ */
+const buildEmptyGroupCreatedTemplate = () => ({
+  name: '',
+  priority: 'medium',
+  assignedTo: [],
+  dueInDays: '',
+  note: '',
+});
+
 const buildInitialForm = (groups) => ({
   name: '',
   triggerType: 'SCHEDULE',
@@ -206,6 +240,9 @@ const buildInitialForm = (groups) => ({
   // ITEM_CREATED fields
   conditions: [],
   actions: [buildEmptyAction(groups)],
+  // GROUP_CREATED fields
+  groupNamePattern: '',
+  groupCreatedTemplates: [buildEmptyGroupCreatedTemplate()],
   enabled: true,
 });
 
@@ -217,9 +254,16 @@ const formFromAutomation = (a, groups) => {
   const triggerType = a.triggerType || 'SCHEDULE';
   const groupId = idOf(t.group);
 
+  // GROUP_NAME_MATCHES conditions store a raw string, so don't force them
+  // through `idOf` — that would clobber the regex pattern.
   const conditions = (a.conditions || []).map((c) => ({
     type: c.type,
-    value: idOf(c.value) || '',
+    value:
+      c.type === 'GROUP_NAME_MATCHES'
+        ? c.value == null
+          ? ''
+          : String(c.value)
+        : idOf(c.value) || '',
   }));
 
   const actions = (a.actions || []).map((act) => ({
@@ -230,6 +274,20 @@ const formFromAutomation = (a, groups) => {
     assignedTo: (act.config?.assignedTo || []).map((u) => idOf(u)),
     note: act.config?.note || '',
   }));
+
+  const groupCreatedTemplates = (a.groupCreatedTaskTemplates || []).map((tpl) => ({
+    name: tpl.name || '',
+    priority: tpl.priority || 'medium',
+    assignedTo: (tpl.assignedTo || []).map((u) => idOf(u)),
+    dueInDays:
+      Number.isFinite(tpl.dueInDays) && tpl.dueInDays !== null
+        ? String(tpl.dueInDays)
+        : '',
+    note: tpl.note || '',
+  }));
+
+  const groupNamePattern =
+    (a.conditions || []).find((c) => c.type === 'GROUP_NAME_MATCHES')?.value || '';
 
   return {
     name: a.name || '',
@@ -253,6 +311,11 @@ const formFromAutomation = (a, groups) => {
     note: t.note || '',
     conditions,
     actions: actions.length > 0 ? actions : [buildEmptyAction(groups)],
+    groupNamePattern: String(groupNamePattern || ''),
+    groupCreatedTemplates:
+      groupCreatedTemplates.length > 0
+        ? groupCreatedTemplates
+        : [buildEmptyGroupCreatedTemplate()],
     enabled: a.enabled !== false,
   };
 };
@@ -795,6 +858,279 @@ const EventDrivenBuilder = ({
   );
 };
 
+/**
+ * One task-template row in the GROUP_CREATED builder. Unlike ITEM_CREATED
+ * actions, there's no group selector — the spawned task always lands in the
+ * newly-created triggering group.
+ */
+const GroupCreatedTemplateRow = ({
+  template,
+  index,
+  onChange,
+  onRemove,
+  members,
+  disabled,
+}) => (
+  <div
+    className="flex flex-col gap-2"
+    style={{
+      padding: '10px 12px',
+      border: '1.5px solid var(--color-border)',
+      borderRadius: 'var(--radius-md)',
+      background: 'var(--color-bg-input)',
+    }}
+  >
+    <div className="flex items-center gap-2">
+      <span
+        className="font-body"
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: 'var(--color-text-muted)',
+          minWidth: 60,
+        }}
+      >
+        {index === 0 ? 'Task' : `Task ${index + 1}`}
+      </span>
+      <input
+        type="text"
+        placeholder="Task name"
+        value={template.name}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...template, name: e.target.value })}
+        className="font-body"
+        style={{
+          height: 32,
+          padding: '0 8px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1.5px solid var(--color-border)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+          fontSize: 13,
+          flex: '1 1 0',
+          minWidth: 0,
+        }}
+      />
+      <button
+        type="button"
+        aria-label="Remove task"
+        onClick={onRemove}
+        disabled={disabled}
+        className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
+        style={{
+          width: 28,
+          height: 28,
+          border: '1.5px solid var(--color-border)',
+          background: 'transparent',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <X size={12} color="var(--color-text-secondary)" />
+      </button>
+    </div>
+    <div className="grid grid-cols-2 gap-2">
+      <select
+        value={template.priority || 'medium'}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...template, priority: e.target.value })}
+        className="font-body"
+        style={{
+          height: 32,
+          padding: '0 8px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1.5px solid var(--color-border)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+          fontSize: 13,
+        }}
+      >
+        {PRIORITIES.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <input
+        type="number"
+        min={0}
+        placeholder="Due in N days"
+        value={template.dueInDays}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...template, dueInDays: e.target.value })}
+        className="font-body"
+        style={{
+          height: 32,
+          padding: '0 8px',
+          borderRadius: 'var(--radius-sm)',
+          border: '1.5px solid var(--color-border)',
+          background: 'var(--color-bg-surface)',
+          color: 'var(--color-text-primary)',
+          fontSize: 13,
+        }}
+      />
+    </div>
+    <AssigneePicker
+      members={members}
+      value={template.assignedTo || []}
+      onChange={(ids) => onChange({ ...template, assignedTo: ids })}
+      disabled={disabled}
+    />
+    <input
+      type="text"
+      placeholder="Note (optional)"
+      value={template.note}
+      disabled={disabled}
+      onChange={(e) => onChange({ ...template, note: e.target.value })}
+      className="font-body"
+      style={{
+        height: 32,
+        padding: '0 8px',
+        borderRadius: 'var(--radius-sm)',
+        border: '1.5px solid var(--color-border)',
+        background: 'var(--color-bg-surface)',
+        color: 'var(--color-text-primary)',
+        fontSize: 13,
+      }}
+    />
+  </div>
+);
+
+/**
+ * Trigger + actions builder shown when triggerType is GROUP_CREATED.
+ * Renders a "When a group is created" header with an optional name-pattern
+ * filter, an arrow, and a stacked list of task templates that will be
+ * spawned into the new group.
+ */
+const GroupCreatedBuilder = ({
+  form,
+  setForm,
+  saving,
+  members,
+}) => {
+  const templates = form.groupCreatedTemplates || [];
+
+  const updateTemplate = (idx, next) => {
+    setForm((f) => ({
+      ...f,
+      groupCreatedTemplates: f.groupCreatedTemplates.map((t, i) =>
+        i === idx ? next : t
+      ),
+    }));
+  };
+  const removeTemplate = (idx) => {
+    setForm((f) => ({
+      ...f,
+      groupCreatedTemplates: f.groupCreatedTemplates.filter((_, i) => i !== idx),
+    }));
+  };
+  const addTemplate = () => {
+    setForm((f) => ({
+      ...f,
+      groupCreatedTemplates: [
+        ...(f.groupCreatedTemplates || []),
+        buildEmptyGroupCreatedTemplate(),
+      ],
+    }));
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Trigger block */}
+      <div
+        style={{
+          padding: '12px 14px',
+          border: '1.5px solid var(--color-border)',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--color-bg-surface)',
+        }}
+      >
+        <p
+          className="font-body"
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--color-text-primary)',
+          }}
+        >
+          When a group is created
+        </p>
+        <p
+          className="font-body mt-2"
+          style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
+        >
+          Only when group name matches (regex, optional)
+        </p>
+        <input
+          type="text"
+          placeholder="e.g. ^Deux"
+          value={form.groupNamePattern || ''}
+          disabled={saving}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, groupNamePattern: e.target.value }))
+          }
+          className="font-body mt-1 w-full"
+          style={{
+            height: 32,
+            padding: '0 8px',
+            borderRadius: 'var(--radius-sm)',
+            border: '1.5px solid var(--color-border)',
+            background: 'var(--color-bg-input)',
+            color: 'var(--color-text-primary)',
+            fontSize: 13,
+          }}
+        />
+      </div>
+
+      {/* Connector arrow */}
+      <div className="flex justify-center">
+        <ArrowDown
+          size={18}
+          color="var(--color-text-muted)"
+          aria-hidden="true"
+        />
+      </div>
+
+      {/* Templates block */}
+      <p
+        className="font-body"
+        style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
+      >
+        Then create the following tasks in the new group:
+      </p>
+      <div className="flex flex-col gap-2">
+        {templates.map((t, i) => (
+          <GroupCreatedTemplateRow
+            key={i}
+            template={t}
+            index={i}
+            onChange={(next) => updateTemplate(i, next)}
+            onRemove={() => removeTemplate(i)}
+            members={members}
+            disabled={saving}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={addTemplate}
+          disabled={saving}
+          className="font-body inline-flex items-center gap-1 self-start"
+          style={{
+            fontSize: 13,
+            color: 'var(--color-accent)',
+            background: 'transparent',
+            border: 'none',
+            padding: '4px 0',
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <Plus size={14} aria-hidden="true" />
+          Add task
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const AutomationsModal = ({
   isOpen,
   onClose,
@@ -880,6 +1216,33 @@ const AutomationsModal = ({
   };
 
   const buildPayload = () => {
+    if (form.triggerType === 'GROUP_CREATED') {
+      const pattern = (form.groupNamePattern || '').trim();
+      const conditions = pattern
+        ? [{ type: 'GROUP_NAME_MATCHES', value: pattern }]
+        : [];
+      const templates = (form.groupCreatedTemplates || []).map((t) => {
+        const dueInDays =
+          t.dueInDays === '' || t.dueInDays === null || t.dueInDays === undefined
+            ? null
+            : Number(t.dueInDays);
+        return {
+          name: t.name.trim(),
+          priority: t.priority || 'medium',
+          assignedTo: t.assignedTo || [],
+          note: t.note?.trim() || undefined,
+          dueInDays,
+        };
+      });
+      return {
+        name: form.name.trim(),
+        enabled: form.enabled,
+        triggerType: 'GROUP_CREATED',
+        conditions,
+        groupCreatedTaskTemplates: templates,
+      };
+    }
+
     if (form.triggerType === 'ITEM_CREATED') {
       return {
         name: form.name.trim(),
@@ -941,6 +1304,30 @@ const AutomationsModal = ({
 
   const validateLocal = () => {
     if (!form.name.trim()) return 'Automation name is required';
+
+    if (form.triggerType === 'GROUP_CREATED') {
+      const templates = form.groupCreatedTemplates || [];
+      if (templates.length === 0) return 'Add at least one task template';
+      for (let i = 0; i < templates.length; i++) {
+        const t = templates[i];
+        if (!t.name?.trim()) return `Task ${i + 1}: name is required`;
+        if (t.dueInDays !== '' && t.dueInDays !== null && t.dueInDays !== undefined) {
+          const n = Number(t.dueInDays);
+          if (!Number.isFinite(n) || n < 0) {
+            return `Task ${i + 1}: due in days must be a non-negative number`;
+          }
+        }
+      }
+      const pattern = (form.groupNamePattern || '').trim();
+      if (pattern) {
+        try {
+          new RegExp(pattern);
+        } catch (err) {
+          return `Group name pattern is not a valid regex: ${err.message}`;
+        }
+      }
+      return null;
+    }
 
     if (form.triggerType === 'ITEM_CREATED') {
       const acts = form.actions || [];
@@ -1179,7 +1566,7 @@ const AutomationsModal = ({
                     >
                       {describeAutomation(a, groups, boardStatuses)}
                     </p>
-                    {a.triggerType !== 'ITEM_CREATED' && (
+                    {a.triggerType === 'SCHEDULE' && (
                       <p
                         className="font-body"
                         style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
@@ -1195,7 +1582,11 @@ const AutomationsModal = ({
                         ? a.enabled
                           ? 'Runs on item creation'
                           : 'paused'
-                        : `Next run: ${a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}`}
+                        : a.triggerType === 'GROUP_CREATED'
+                          ? a.enabled
+                            ? 'Runs on group creation'
+                            : 'paused'
+                          : `Next run: ${a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}`}
                       {a.lastRunAt && ` · Last: ${formatNextRun(a.lastRunAt)}`}
                     </p>
                   </div>
@@ -1541,6 +1932,15 @@ const AutomationsModal = ({
           groupOptions={groupOptions}
           members={members}
           statuses={boardStatuses}
+        />
+      )}
+
+      {form.triggerType === 'GROUP_CREATED' && (
+        <GroupCreatedBuilder
+          form={form}
+          setForm={setForm}
+          saving={saving}
+          members={members}
         />
       )}
 

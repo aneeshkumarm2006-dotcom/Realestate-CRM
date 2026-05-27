@@ -66,19 +66,37 @@ const populateAutomation = (query) =>
     .populate('taskTemplate.assignedTo', 'name profilePic email')
     .populate('actions.config.group', 'name')
     .populate('actions.config.assignedTo', 'name profilePic email')
+    .populate('groupCreatedTaskTemplates.assignedTo', 'name profilePic email')
     .populate('createdBy', 'name profilePic email');
 
-const VALID_TRIGGER_TYPES = ['SCHEDULE', 'ITEM_CREATED'];
-const VALID_CONDITION_TYPES = ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'];
+const VALID_TRIGGER_TYPES = ['SCHEDULE', 'ITEM_CREATED', 'GROUP_CREATED'];
+const VALID_CONDITION_TYPES = ['ITEM_IN_GROUP', 'ITEM_IN_STATUS', 'GROUP_NAME_MATCHES'];
 const VALID_ACTION_TYPES = ['CREATE_TASK', 'CREATE_SUBITEM'];
 
+// Map each triggerType to the condition types that are legal for it. Used by
+// sanitizeConditions so a GROUP_CREATED automation can't carry an
+// ITEM_IN_STATUS condition (and vice versa).
+const CONDITION_TYPES_BY_TRIGGER = {
+  ITEM_CREATED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  GROUP_CREATED: ['GROUP_NAME_MATCHES'],
+};
+
 /**
- * Validate + normalise a list of conditions for an ITEM_CREATED automation.
- * Returns { conditions } on success, or { error } on failure.
- *   - ITEM_IN_GROUP   → value must be a TaskGroup id on `boardId`
- *   - ITEM_IN_STATUS  → value must be a status sub-doc id on `board.statuses`
+ * Validate + normalise a list of conditions. Returns { conditions } on
+ * success, or { error } on failure.
+ *   - ITEM_IN_GROUP      → value must be a TaskGroup id on `boardId`
+ *   - ITEM_IN_STATUS     → value must be a status sub-doc id on `board.statuses`
+ *   - GROUP_NAME_MATCHES → value must be a string compilable as a JS regex
+ *
+ * `allowedTypes` restricts which condition types are legal for the calling
+ * trigger (e.g. only GROUP_NAME_MATCHES for GROUP_CREATED automations).
  */
-const sanitizeConditions = async (rawConditions, board, boardId) => {
+const sanitizeConditions = async (
+  rawConditions,
+  board,
+  boardId,
+  allowedTypes = VALID_CONDITION_TYPES
+) => {
   if (!Array.isArray(rawConditions)) return { conditions: [] };
   const conditions = [];
   const statusIds = new Set(
@@ -88,9 +106,24 @@ const sanitizeConditions = async (rawConditions, board, boardId) => {
     if (!raw || typeof raw !== 'object') {
       return { error: 'Invalid condition' };
     }
-    if (!VALID_CONDITION_TYPES.includes(raw.type)) {
+    if (!allowedTypes.includes(raw.type)) {
       return { error: `Invalid condition type "${raw.type}"` };
     }
+
+    if (raw.type === 'GROUP_NAME_MATCHES') {
+      const pattern = raw.value == null ? '' : String(raw.value).trim();
+      if (!pattern) {
+        return { error: 'Group name pattern cannot be empty' };
+      }
+      try {
+        new RegExp(pattern);
+      } catch (err) {
+        return { error: `Invalid group name pattern: ${err.message}` };
+      }
+      conditions.push({ type: raw.type, value: pattern });
+      continue;
+    }
+
     if (!raw.value || !mongoose.Types.ObjectId.isValid(raw.value)) {
       return { error: 'Condition value must be an ObjectId' };
     }
@@ -108,6 +141,60 @@ const sanitizeConditions = async (rawConditions, board, boardId) => {
     conditions.push({ type: raw.type, value: valueId });
   }
   return { conditions };
+};
+
+/**
+ * Validate + normalise a `groupCreatedTaskTemplates` array. Each template
+ * seeds one task in the newly-created group when a GROUP_CREATED automation
+ * fires. Empty arrays are rejected — an automation that spawns nothing is
+ * not useful.
+ */
+const sanitizeGroupCreatedTemplates = (rawTemplates, org) => {
+  if (!Array.isArray(rawTemplates) || rawTemplates.length === 0) {
+    return { error: 'At least one task template is required' };
+  }
+  const templates = [];
+  for (const raw of rawTemplates) {
+    if (!raw || typeof raw !== 'object') {
+      return { error: 'Invalid task template' };
+    }
+    if (!raw.name || !String(raw.name).trim()) {
+      return { error: 'Template task name is required' };
+    }
+    const out = { name: String(raw.name).trim() };
+
+    if (raw.priority !== undefined && raw.priority !== null && raw.priority !== '') {
+      if (!VALID_PRIORITIES.includes(raw.priority)) {
+        return { error: 'Invalid priority' };
+      }
+      out.priority = raw.priority;
+    } else {
+      out.priority = 'medium';
+    }
+
+    if (raw.assignedTo !== undefined) {
+      const { ids, error } = validateAssignees(raw.assignedTo, org);
+      if (error) return { error };
+      out.assignedTo = ids;
+    } else {
+      out.assignedTo = [];
+    }
+
+    if (raw.note) out.note = String(raw.note);
+
+    let dueInDays = null;
+    if (raw.dueInDays !== undefined && raw.dueInDays !== null && raw.dueInDays !== '') {
+      const n = Number(raw.dueInDays);
+      if (!Number.isFinite(n) || n < 0) {
+        return { error: 'dueInDays must be a non-negative number' };
+      }
+      dueInDays = n;
+    }
+    out.dueInDays = dueInDays;
+
+    templates.push(out);
+  }
+  return { templates };
 };
 
 /**
@@ -357,6 +444,61 @@ const runActionOnce = async (action, automation, board, triggeringTask) => {
 };
 
 /**
+ * Spawn every template in `automation.groupCreatedTaskTemplates` into the
+ * triggering group. Each spawned task is tagged `createdByAutomation: true`
+ * for parity with other automation flows. Returns the last task created so
+ * `runAutomationNow` keeps its single-taskId response shape.
+ */
+const runGroupCreatedTemplatesOnce = async (automation, board, group) => {
+  const templates = Array.isArray(automation.groupCreatedTaskTemplates)
+    ? automation.groupCreatedTaskTemplates
+    : [];
+  if (templates.length === 0) {
+    console.warn(
+      '[automation] GROUP_CREATED run skipped — no templates on automation',
+      automation?._id?.toString()
+    );
+    return null;
+  }
+
+  const initialStatus = resolveDefaultStatusId(board);
+  const now = new Date();
+  let lastTask = null;
+
+  for (const tpl of templates) {
+    const assigneeIds = (tpl.assignedTo || []).map((u) => u.toString());
+    const dueDate =
+      Number.isFinite(tpl.dueInDays) && tpl.dueInDays !== null
+        ? new Date(now.getTime() + tpl.dueInDays * DAY_MS)
+        : undefined;
+
+    const task = await Task.create({
+      name: tpl.name,
+      board: automation.board,
+      group: group._id,
+      priority: tpl.priority || 'medium',
+      status: initialStatus,
+      assignedTo: assigneeIds,
+      dueDate,
+      note: tpl.note || undefined,
+      isPersonal: false,
+      createdBy: automation.createdBy,
+      createdByAutomation: true,
+    });
+
+    await Board.updateOne(
+      { _id: automation.board },
+      { $set: { updatedAt: new Date() } }
+    );
+
+    await notifyAssignees(task, automation.board, assigneeIds, automation.organisation);
+    lastTask = task;
+  }
+
+  return lastTask;
+};
+
+/**
  * Run a legacy schedule-driven automation once: spawn a Task using the
  * `taskTemplate` shape and fire the same notification + email side
  * effects a manual create would. Returns the spawned task.
@@ -397,6 +539,9 @@ const runLegacyTemplateOnce = async (automation, board) => {
 
 /**
  * Run an automation once. Dispatches on the automation shape:
+ *   - triggerType GROUP_CREATED → run every template in
+ *     `groupCreatedTaskTemplates` against `ctx.triggeringGroup`. Skips when
+ *     no triggering group is supplied (e.g. "Run now" from the modal).
  *   - `actions[]` non-empty → new event-driven path. Runs every action
  *     in order. For CREATE_SUBITEM actions, `ctx.triggeringTask` must be
  *     supplied (the dispatcher passes it in).
@@ -406,6 +551,17 @@ const runLegacyTemplateOnce = async (automation, board) => {
  */
 const runAutomationOnce = async (automation, ctx = {}) => {
   const board = await Board.findById(automation.board).select('statuses');
+
+  if (automation.triggerType === 'GROUP_CREATED') {
+    if (!ctx.triggeringGroup) {
+      console.warn(
+        '[automation] GROUP_CREATED run skipped — no triggering group on',
+        automation?._id?.toString()
+      );
+      return null;
+    }
+    return runGroupCreatedTemplatesOnce(automation, board, ctx.triggeringGroup);
+  }
 
   const actions = Array.isArray(automation.actions) ? automation.actions : [];
   if (actions.length > 0) {
@@ -496,12 +652,33 @@ const createAutomation = async (req, res) => {
     };
 
     if (triggerType === 'ITEM_CREATED') {
-      const cv = await sanitizeConditions(body.conditions, ctx.board, boardId);
+      const cv = await sanitizeConditions(
+        body.conditions,
+        ctx.board,
+        boardId,
+        CONDITION_TYPES_BY_TRIGGER.ITEM_CREATED
+      );
       if (cv.error) return res.status(400).json({ error: cv.error });
       const av = await sanitizeActions(body.actions, ctx.board, boardId, ctx.org);
       if (av.error) return res.status(400).json({ error: av.error });
       doc.conditions = cv.conditions;
       doc.actions = av.actions;
+      doc.nextRunAt = null;
+    } else if (triggerType === 'GROUP_CREATED') {
+      const cv = await sanitizeConditions(
+        body.conditions,
+        ctx.board,
+        boardId,
+        CONDITION_TYPES_BY_TRIGGER.GROUP_CREATED
+      );
+      if (cv.error) return res.status(400).json({ error: cv.error });
+      const tv = sanitizeGroupCreatedTemplates(
+        body.groupCreatedTaskTemplates,
+        ctx.org
+      );
+      if (tv.error) return res.status(400).json({ error: tv.error });
+      doc.conditions = cv.conditions;
+      doc.groupCreatedTaskTemplates = tv.templates;
       doc.nextRunAt = null;
     } else {
       const schedule = sanitizeSchedule(body.schedule);
@@ -602,7 +779,14 @@ const updateAutomation = async (req, res) => {
     }
 
     if (body.conditions !== undefined) {
-      const cv = await sanitizeConditions(body.conditions, ctx.board, automation.board);
+      const allowed =
+        CONDITION_TYPES_BY_TRIGGER[automation.triggerType] || VALID_CONDITION_TYPES;
+      const cv = await sanitizeConditions(
+        body.conditions,
+        ctx.board,
+        automation.board,
+        allowed
+      );
       if (cv.error) return res.status(400).json({ error: cv.error });
       automation.conditions = cv.conditions;
     }
@@ -611,6 +795,15 @@ const updateAutomation = async (req, res) => {
       const av = await sanitizeActions(body.actions, ctx.board, automation.board, ctx.org);
       if (av.error) return res.status(400).json({ error: av.error });
       automation.actions = av.actions;
+    }
+
+    if (body.groupCreatedTaskTemplates !== undefined) {
+      const tv = sanitizeGroupCreatedTemplates(
+        body.groupCreatedTaskTemplates,
+        ctx.org
+      );
+      if (tv.error) return res.status(400).json({ error: tv.error });
+      automation.groupCreatedTaskTemplates = tv.templates;
     }
 
     if (body.schedule !== undefined) {
@@ -661,10 +854,14 @@ const updateAutomation = async (req, res) => {
       };
     }
 
-    // Recompute nextRunAt only when relevant. ITEM_CREATED automations don't
-    // use it — clear to null so the cron runner doesn't pick them up.
+    // Recompute nextRunAt only when relevant. Event-driven automations
+    // (ITEM_CREATED, GROUP_CREATED) don't use it — clear to null so the
+    // cron runner doesn't pick them up.
     if (triggerTypeChanged || scheduleChanged || enabledChanged) {
-      if (automation.triggerType === 'ITEM_CREATED') {
+      if (
+        automation.triggerType === 'ITEM_CREATED' ||
+        automation.triggerType === 'GROUP_CREATED'
+      ) {
         automation.nextRunAt = null;
       } else if (!automation.enabled) {
         automation.nextRunAt = null;

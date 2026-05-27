@@ -678,17 +678,21 @@ const updateTask = async (req, res) => {
       if (body.priority !== prevPriority) activityChanges.push({ field: 'priority', oldValue: prevPriority, newValue: body.priority });
       task.priority = body.priority;
     }
-    if (body.status !== undefined) {
-      const match = findBoardStatus(ctx.board, body.status);
-      if (!match) {
-        return res.status(400).json({ error: 'Invalid status for this board' });
-      }
-      if (prevStatus !== match._id.toString()) {
+    if (body.status !== undefined && body.status !== null) {
+      const requestedStatus = body.status.toString();
+      if (requestedStatus !== prevStatus) {
+        const match = findBoardStatus(ctx.board, body.status);
+        if (!match) {
+          return res.status(400).json({
+            error: `Status "${requestedStatus}" is not configured for this board`,
+            field: 'status',
+          });
+        }
         statusChanged = true;
         activityChanges.push({ field: 'status', oldValue: prevStatus, newValue: match._id.toString() });
+        task.status = match._id;
+        statusName = match.name;
       }
-      task.status = match._id;
-      statusName = match.name;
     }
     if (body.labels !== undefined) {
       const sanitized = sanitizeLabelsForBoard(ctx.board, body.labels);

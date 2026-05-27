@@ -4,6 +4,7 @@ const Task = require('../models/Task');
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const Organisation = require('../models/Organisation');
+const eventBus = require('../services/eventBus');
 
 /**
  * Resolve whether the current user is the admin of the given org.
@@ -92,6 +93,16 @@ const createGroup = async (req, res) => {
       name: name.trim(),
       board: boardId,
       order: resolvedOrder,
+    });
+
+    // Fan out a group.created event so GROUP_CREATED automations can
+    // spawn predefined tasks into the new group. The dispatcher fetches
+    // the live group doc itself, so we only need the ids + name here.
+    eventBus.emit('group.created', {
+      groupId: group._id,
+      groupName: group.name,
+      boardId,
+      createdByUserId: userId,
     });
 
     return res.status(201).json({ group });

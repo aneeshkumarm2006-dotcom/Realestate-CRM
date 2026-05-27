@@ -4,6 +4,12 @@ import Dropdown from '../ui/Dropdown';
 import AssigneePicker from './AssigneePicker';
 import { PRIORITY_COLORS, STATUS_COLORS } from '../../utils/priorityColors';
 
+const sameStringSet = (a, b) => {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((id) => set.has(id));
+};
+
 /**
  * TaskEditRow — inline editable row used for both creating and editing
  * a task within a group's TaskTable.
@@ -77,7 +83,9 @@ const TaskEditRow = ({
     toDateInputValue(initialTask?.dueDate)
   );
   const [saving, setSaving] = useState(false);
+  const [statusError, setStatusError] = useState('');
   const nameInputRef = useRef(null);
+  const statusCellRef = useRef(null);
 
   useEffect(() => {
     if (autoFocus) nameInputRef.current?.focus();
@@ -88,17 +96,54 @@ const TaskEditRow = ({
   const handleSave = async () => {
     if (!canSave) return;
     setSaving(true);
-    try {
-      await onSave?.({
-        name: name.trim(),
+    setStatusError('');
+
+    const trimmedName = name.trim();
+    const isoDue = dueDate ? new Date(dueDate).toISOString() : null;
+
+    let payload;
+    if (!initialTask) {
+      payload = {
+        name: trimmedName,
         priority,
         status,
         assignedTo,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+        dueDate: isoDue,
         sendEmailNotification: true,
-      });
-    } catch {
+      };
+    } else {
+      payload = {};
+      if (trimmedName !== (initialTask.name || '')) payload.name = trimmedName;
+      if (priority !== (initialTask.priority || 'medium')) payload.priority = priority;
+      if (status !== initialStatus) payload.status = status;
+
+      const prevAssignees = (initialTask.assignedTo || []).map((u) =>
+        typeof u === 'string' ? u : u._id
+      );
+      if (!sameStringSet(prevAssignees, assignedTo)) payload.assignedTo = assignedTo;
+
+      const prevIso = initialTask.dueDate ? new Date(initialTask.dueDate).toISOString() : null;
+      if (isoDue !== prevIso) payload.dueDate = isoDue;
+
+      if (Object.keys(payload).length === 0) {
+        setSaving(false);
+        onCancel?.();
+        return;
+      }
+      payload.sendEmailNotification = true;
+    }
+
+    try {
+      await onSave?.(payload);
+    } catch (err) {
       setSaving(false);
+      const data = err?.response?.data;
+      if (data?.field === 'status') {
+        setStatusError(data.error || 'Invalid status for this board');
+        if (statusCellRef.current) {
+          statusCellRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
     }
   };
 
@@ -178,11 +223,27 @@ const TaskEditRow = ({
         />
       </td>
 
-      <td style={{ width: 160, padding: '0 8px' }}>
+      <td
+        ref={statusCellRef}
+        style={{
+          width: 160,
+          padding: '0 8px',
+          outline: statusError
+            ? '2px solid var(--color-status-stuck)'
+            : 'none',
+          outlineOffset: -2,
+          borderRadius: 'var(--radius-md)',
+          transition: 'outline-color 150ms ease-in-out',
+        }}
+        title={statusError || undefined}
+      >
         <Dropdown
           options={statusOptions}
           value={status}
-          onChange={(val) => setStatus(val.toString())}
+          onChange={(val) => {
+            setStatusError('');
+            setStatus(val.toString());
+          }}
           size="sm"
         />
       </td>
