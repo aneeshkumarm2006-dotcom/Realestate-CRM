@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
-import Dropdown from '../ui/Dropdown';
+import Chip from '../ui/Chip';
+import StatusMenu from './StatusMenu';
+import PriorityMenu from './PriorityMenu';
 import AssigneePicker from './AssigneePicker';
-import { PRIORITY_COLORS, STATUS_COLORS } from '../../utils/priorityColors';
 
 const sameStringSet = (a, b) => {
   if (a.length !== b.length) return false;
@@ -14,7 +15,7 @@ const sameStringSet = (a, b) => {
  * TaskEditRow — inline editable row used for both creating and editing
  * a task within a group's TaskTable.
  *
- * The Status dropdown reads its options from the board's `statuses` array
+ * The Status chip reads its options from the board's `statuses` array
  * when a board is passed in (post Phase 2). Falls back to the legacy 4-enum
  * options if no board is provided (kept for safety / personal task lists).
  *
@@ -26,14 +27,6 @@ const sameStringSet = (a, b) => {
  *   onCancel     — () => void
  *   isLast       — removes bottom border when this is the last row
  */
-const PRIORITY_OPTIONS = Object.entries(PRIORITY_COLORS).map(([v, e]) => ({
-  value: v,
-  label: e.label,
-}));
-const LEGACY_STATUS_OPTIONS = Object.entries(STATUS_COLORS).map(([v, e]) => ({
-  value: v,
-  label: e.label,
-}));
 
 const toDateInputValue = (d) => {
   if (!d) return '';
@@ -55,22 +48,18 @@ const TaskEditRow = ({
   isAdmin = false,
   autoFocus = true,
 }) => {
-  const statusOptions = useMemo(() => {
-    if (board && Array.isArray(board.statuses) && board.statuses.length > 0) {
-      return [...board.statuses]
-        .sort((a, b) => (a.order || 0) - (b.order || 0))
-        .map((s) => ({ value: s._id, label: s.name }));
-    }
-    return LEGACY_STATUS_OPTIONS;
-  }, [board]);
-
-  // Resolve initial status. If the task has one, normalise to string so the
-  // Dropdown can compare against `value`.
+  // Resolve initial status. If the task has one, use it; otherwise pick the
+  // first board status (or the legacy `not_started` enum for boardless rows).
   const initialStatus = useMemo(() => {
     if (initialTask?.status) return initialTask.status.toString();
-    if (statusOptions.length > 0) return statusOptions[0].value.toString();
+    if (board && Array.isArray(board.statuses) && board.statuses.length > 0) {
+      const sorted = [...board.statuses].sort(
+        (a, b) => (a.order || 0) - (b.order || 0),
+      );
+      return sorted[0]._id.toString();
+    }
     return 'not_started';
-  }, [initialTask, statusOptions]);
+  }, [initialTask, board]);
 
   const [name, setName] = useState(initialTask?.name || '');
   const [priority, setPriority] = useState(initialTask?.priority || 'medium');
@@ -84,6 +73,8 @@ const TaskEditRow = ({
   );
   const [saving, setSaving] = useState(false);
   const [statusError, setStatusError] = useState('');
+  const [statusMenuAnchor, setStatusMenuAnchor] = useState(null);
+  const [priorityMenuAnchor, setPriorityMenuAnchor] = useState(null);
   const nameInputRef = useRef(null);
   const statusCellRef = useRef(null);
 
@@ -214,12 +205,11 @@ const TaskEditRow = ({
         />
       </td>
 
-      <td style={{ width: 130, padding: '0 8px' }}>
-        <Dropdown
-          options={PRIORITY_OPTIONS}
+      <td style={{ width: 130, padding: '0 16px' }}>
+        <Chip
+          type="priority"
           value={priority}
-          onChange={setPriority}
-          size="sm"
+          onClick={(e) => setPriorityMenuAnchor(e.currentTarget)}
         />
       </td>
 
@@ -227,7 +217,7 @@ const TaskEditRow = ({
         ref={statusCellRef}
         style={{
           width: 160,
-          padding: '0 8px',
+          padding: '0 16px',
           outline: statusError
             ? '2px solid var(--color-status-stuck)'
             : 'none',
@@ -237,14 +227,11 @@ const TaskEditRow = ({
         }}
         title={statusError || undefined}
       >
-        <Dropdown
-          options={statusOptions}
+        <Chip
+          type="status"
           value={status}
-          onChange={(val) => {
-            setStatusError('');
-            setStatus(val.toString());
-          }}
-          size="sm"
+          board={board}
+          onClick={(e) => setStatusMenuAnchor(e.currentTarget)}
         />
       </td>
 
@@ -324,6 +311,30 @@ const TaskEditRow = ({
         </div>
       </td>
     </tr>
+    {priorityMenuAnchor && (
+      <PriorityMenu
+        anchorEl={priorityMenuAnchor}
+        value={priority}
+        onSelect={(val) => {
+          setPriority(val);
+          setPriorityMenuAnchor(null);
+        }}
+        onClose={() => setPriorityMenuAnchor(null)}
+      />
+    )}
+    {statusMenuAnchor && (
+      <StatusMenu
+        anchorEl={statusMenuAnchor}
+        board={board}
+        value={status}
+        onSelect={(val) => {
+          setStatusError('');
+          setStatus(val.toString());
+          setStatusMenuAnchor(null);
+        }}
+        onClose={() => setStatusMenuAnchor(null)}
+      />
+    )}
     </>
   );
 };
