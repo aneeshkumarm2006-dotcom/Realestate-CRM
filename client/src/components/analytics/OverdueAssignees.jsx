@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Users, User as UserIcon } from 'lucide-react';
+import { Users, User as UserIcon, UserX } from 'lucide-react';
 
 const Avatar = ({ user, size = 28 }) => {
   const [imgError, setImgError] = useState(false);
@@ -16,6 +16,7 @@ const Avatar = ({ user, size = 28 }) => {
       />
     );
   }
+  const Icon = user?.unassigned ? UserX : UserIcon;
   return (
     <div
       className="flex items-center justify-center"
@@ -24,11 +25,13 @@ const Avatar = ({ user, size = 28 }) => {
         height: size,
         borderRadius: 9999,
         background: 'var(--color-bg-subtle)',
-        border: '1px solid var(--color-border)',
+        border: user?.unassigned
+          ? '1px dashed var(--color-border)'
+          : '1px solid var(--color-border)',
       }}
       aria-hidden="true"
     >
-      <UserIcon
+      <Icon
         size={Math.round(size * 0.55)}
         color="var(--color-text-muted)"
         strokeWidth={2}
@@ -100,7 +103,10 @@ const OverdueAssignees = ({ assignees = [] }) => {
                   className="font-body truncate"
                   style={{
                     fontSize: 13,
-                    color: 'var(--color-text-primary)',
+                    color: user.unassigned
+                      ? 'var(--color-text-muted)'
+                      : 'var(--color-text-primary)',
+                    fontStyle: user.unassigned ? 'italic' : 'normal',
                     width: 128,
                     flexShrink: 0,
                   }}
