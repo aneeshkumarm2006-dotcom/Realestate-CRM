@@ -66,8 +66,12 @@ const TaskTable = ({
   emptyLabel = 'No tasks in this group yet',
   groupId = null,
   dndDisabled = false,
+  // Bulk selection is owned by BoardDetailPage so the floating action bar
+  // can aggregate selections across every group on the board.
+  selectedIds = null,
+  onToggleSelect,
+  onToggleSelectAll,
 }) => {
-  const [selected, setSelected] = useState(() => new Set());
   const [expanded, setExpanded] = useState(() => new Set());
 
   const fetchSubitems = useTaskStore((s) => s.fetchSubitems);
@@ -107,21 +111,21 @@ const TaskTable = ({
     });
   }, [tasks]);
 
-  const toggleSelect = (id, checked) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  const handleRowSelect = (id, checked) => {
+    onToggleSelect?.(id, checked);
   };
 
-  const toggleSelectAll = (checked) => {
-    if (checked) setSelected(new Set(tasks.map((t) => t._id)));
-    else setSelected(new Set());
+  const handleSelectAll = (checked) => {
+    onToggleSelectAll?.(
+      tasks.map((t) => t._id),
+      checked
+    );
   };
 
-  const allSelected = tasks.length > 0 && selected.size === tasks.length;
+  const allSelected =
+    tasks.length > 0 &&
+    selectedIds != null &&
+    tasks.every((t) => selectedIds.has(t._id));
   const noRows = tasks.length === 0 && !isCreating;
   // When an edit row is active, dropdowns inside rows need to escape the
   // table's horizontal scroll clipping.
@@ -196,7 +200,7 @@ const TaskTable = ({
                   <input
                     type="checkbox"
                     checked={allSelected}
-                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
                     aria-label="Select all tasks"
                     style={{
                       width: 16,
@@ -264,8 +268,8 @@ const TaskTable = ({
                         <TaskRow
                           task={task}
                           board={board}
-                          selected={selected.has(task._id)}
-                          onSelect={toggleSelect}
+                          selected={selectedIds?.has(task._id) || false}
+                          onSelect={handleRowSelect}
                           onOpen={onOpenTask}
                           onStatusClick={onStatusClick}
                           onPriorityClick={onPriorityClick}

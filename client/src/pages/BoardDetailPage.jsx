@@ -39,6 +39,7 @@ import CommentPanel from '../components/board/CommentPanel';
 import AutomationsModal from '../components/board/AutomationsModal';
 import LabelPicker from '../components/board/LabelPicker';
 import EditChipsModal from '../components/board/EditChipsModal';
+import BulkActionBar from '../components/board/BulkActionBar';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -145,6 +146,15 @@ const BoardDetailPage = () => {
   // Automations modal
   const [automationsOpen, setAutomationsOpen] = useState(false);
 
+  // --- Bulk selection ----------------------------------------------------
+  // Aggregated across every group on the board so the floating BulkActionBar
+  // can act on tasks from multiple groups at once.
+  const [selectedTaskIds, setSelectedTaskIds] = useState(() => new Set());
+  // Confirmation modal for bulk delete
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  // Disables the bar while an in-flight bulk mutation is resolving
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   // --- Notification highlight (scroll-to + glow) --------------------------
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
 
@@ -237,6 +247,56 @@ const BoardDetailPage = () => {
       return next;
     });
   };
+
+  // --- Bulk selection callbacks ----------------------------------------
+  // The checkboxes in every TaskTable dispatch through these so a single Set
+  // tracks selections across all groups.
+
+  const handleToggleSelectTask = useCallback((taskId, checked) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(taskId);
+      else next.delete(taskId);
+      return next;
+    });
+  }, []);
+
+  // Header "select all" only applies to its own group's tasks. We OR them
+  // into (or remove them from) the global set.
+  const handleToggleSelectGroup = useCallback((taskIds, checked) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const id of taskIds) next.add(id);
+      } else {
+        for (const id of taskIds) next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedTaskIds(new Set());
+  }, []);
+
+  // Auto-prune selection: if a task disappears from the store (deleted by
+  // any path — bulk, row action, server push) we drop its id from the set
+  // so the floating bar's counter stays accurate.
+  useEffect(() => {
+    if (selectedTaskIds.size === 0) return;
+    const liveIds = new Set();
+    for (const list of Object.values(tasksByGroup)) {
+      if (!Array.isArray(list)) continue;
+      for (const t of list) liveIds.add(t._id);
+    }
+    let changed = false;
+    const next = new Set();
+    for (const id of selectedTaskIds) {
+      if (liveIds.has(id)) next.add(id);
+      else changed = true;
+    }
+    if (changed) setSelectedTaskIds(next);
+  }, [tasksByGroup, selectedTaskIds]);
 
   const handleOpenTask = (task) => {
     if (!task?._id) return;
@@ -497,6 +557,69 @@ const BoardDetailPage = () => {
         err?.response?.data?.error ||
           'Failed to delete task. Please try again.'
       );
+    }
+  };
+
+  // --- Bulk delete ------------------------------------------------------
+  // Fire one DELETE per task in parallel. Each success removes from the
+  // store immediately so the UI shrinks task-by-task instead of jumping.
+  // Failures are toasted but don't abort the rest.
+
+  const handleConfirmBulkDelete = async () => {
+    const ids = Array.from(selectedTaskIds);
+    if (ids.length === 0) {
+      setBulkDeleteOpen(false);
+      return;
+    }
+    setBulkDeleteOpen(false);
+    setBulkBusy(true);
+    let failed = 0;
+    await Promise.all(
+      ids.map((id) =>
+        taskService
+          .deleteTask(id)
+          .then(() => deleteTaskLocal(id))
+          .catch((err) => {
+            failed += 1;
+            console.error('Failed to delete task in bulk:', id, err);
+          })
+      )
+    );
+    setBulkBusy(false);
+    if (failed > 0) {
+      toastError(
+        failed === ids.length
+          ? 'Failed to delete the selected tasks. Please try again.'
+          : `Failed to delete ${failed} of ${ids.length} tasks.`
+      );
+    }
+  };
+
+  // --- Bulk move-to-group ----------------------------------------------
+  // We piggy-back on the existing /api/tasks/reorder endpoint: it supports
+  // cross-group moves when we hand it a target group's full desired order.
+  // That keeps the operation atomic on the server side.
+
+  const handleBulkMoveToGroup = async (targetGroupId) => {
+    if (!targetGroupId) return;
+    const idsToMove = Array.from(selectedTaskIds).filter((id) => {
+      // Skip tasks already in the destination so they don't get re-appended
+      const list = tasksByGroup[targetGroupId] || [];
+      return !list.some((t) => t._id === id);
+    });
+    if (idsToMove.length === 0) return;
+    const targetTasks = tasksByGroup[targetGroupId] || [];
+    const nextOrder = [...targetTasks.map((t) => t._id), ...idsToMove];
+    setBulkBusy(true);
+    try {
+      await reorderTasksAction(targetGroupId, nextOrder);
+      // Tasks now live in the new group; their ids stay in the store, so
+      // selectedTaskIds remains valid and the bar can keep operating on them.
+    } catch (err) {
+      console.error('Failed to bulk-move tasks:', err);
+      toastError('Could not move the selected tasks.');
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -899,6 +1022,9 @@ const BoardDetailPage = () => {
                             onCancelEdit={handleCancelEdit}
                             groupId={group._id}
                             dndDisabled={dndDisabledGlobal || isEditingHere}
+                            selectedIds={selectedTaskIds}
+                            onToggleSelect={handleToggleSelectTask}
+                            onToggleSelectAll={handleToggleSelectGroup}
                           />
                         )}
                       </div>
@@ -1097,6 +1223,55 @@ const BoardDetailPage = () => {
           onClick={() => setHighlightedTaskId(null)}
         />
       )}
+
+      {/* Floating bulk-action bar (visible while >=1 task is ticked) */}
+      {isAdmin && (
+        <BulkActionBar
+          count={selectedTaskIds.size}
+          groups={groups}
+          busy={bulkBusy}
+          onMoveToGroup={handleBulkMoveToGroup}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={handleClearSelection}
+        />
+      )}
+
+      {/* Bulk delete confirmation */}
+      <Modal
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title={`Delete ${selectedTaskIds.size} ${selectedTaskIds.size === 1 ? 'task' : 'tasks'}?`}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setBulkDeleteOpen(false)}
+              disabled={bulkBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirmBulkDelete}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? 'Deleting…' : 'Delete'}
+            </Button>
+          </>
+        }
+      >
+        <p
+          className="font-body"
+          style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}
+        >
+          This will permanently delete{' '}
+          <strong style={{ color: 'var(--color-text-primary)' }}>
+            {selectedTaskIds.size}{' '}
+            {selectedTaskIds.size === 1 ? 'task' : 'tasks'}
+          </strong>{' '}
+          and any comments attached to them. This action cannot be undone.
+        </p>
+      </Modal>
 
       {/* Task comment panel */}
       <CommentPanel
