@@ -16,6 +16,23 @@ const { logActivity } = require('../services/activityService');
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 // Legacy enum keys — accepted for personal tasks (which don't have a board).
 const LEGACY_STATUS_KEYS = ['not_started', 'working_on_it', 'done', 'stuck'];
+// Map legacy enum keys → the display name they originally seeded with. Used
+// as a last-resort fallback in `findBoardStatus` when a board's status was
+// recreated/renamed and lost its `key`, but still carries a recognisable name.
+const LEGACY_KEY_TO_NAME = {
+  not_started: 'not started',
+  working_on_it: 'working on it',
+  done: 'done',
+  stuck: 'stuck',
+};
+// Mirrors boardController.DEFAULT_STATUSES — kept in sync so we can lazily
+// seed any pre-migration board the user accesses through the task API.
+const DEFAULT_STATUSES = [
+  { key: 'not_started',   name: 'Not Started',   color: '#6B7280', order: 0, isDefault: true  },
+  { key: 'working_on_it', name: 'Working on it', color: '#D97706', order: 1, isDefault: false },
+  { key: 'done',          name: 'Done',          color: '#16A34A', order: 2, isDefault: false },
+  { key: 'stuck',         name: 'Stuck',         color: '#DC2626', order: 3, isDefault: false },
+];
 
 /**
  * Whether the current user is the admin of this org.
@@ -28,6 +45,22 @@ const isOrgAdmin = (org, userId) =>
   );
 
 /**
+ * Lazily seed a board's `statuses` array with the legacy default set if it's
+ * empty. Catches pre-migration boards (where `migrateLabelsStatuses.js` never
+ * ran) and any board that somehow lost its statuses, so the client's status
+ * picker — which falls back to legacy enum options when `board.statuses` is
+ * empty — sends values the server can resolve.
+ */
+const ensureBoardStatuses = async (board) => {
+  if (!board) return board;
+  if (Array.isArray(board.statuses) && board.statuses.length > 0) return board;
+  board.statuses = DEFAULT_STATUSES.map((s) => ({ ...s }));
+  if (!Array.isArray(board.labels)) board.labels = [];
+  await board.save();
+  return board;
+};
+
+/**
  * Load the board + its org, validating that the current user is a member
  * of the org. Returns { board, org, isAdmin } on success, or { status, error }
  * on failure.
@@ -35,6 +68,8 @@ const isOrgAdmin = (org, userId) =>
 const loadBoardContext = async (boardId, userId) => {
   const board = await Board.findById(boardId);
   if (!board) return { status: 404, error: 'Board not found' };
+
+  await ensureBoardStatuses(board);
 
   const org = await Organisation.findById(board.organisation);
   if (!org) return { status: 404, error: 'Organisation not found' };
@@ -74,9 +109,15 @@ const findBoardStatus = (board, statusInput) => {
   if (!board || !Array.isArray(board.statuses)) return null;
   if (statusInput == null) return null;
   const target = statusInput.toString();
+  const legacyName = LEGACY_KEY_TO_NAME[target];
   return (
     board.statuses.find((s) => s._id.toString() === target) ||
     board.statuses.find((s) => s.key && s.key === target) ||
+    (legacyName
+      ? board.statuses.find(
+          (s) => s.name && s.name.toLowerCase() === legacyName
+        )
+      : null) ||
     null
   );
 };

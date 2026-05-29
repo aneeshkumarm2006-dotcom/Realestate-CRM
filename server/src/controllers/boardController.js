@@ -77,6 +77,18 @@ const getBoards = async (req, res) => {
 
     const boards = await Board.find({ organisation: orgId })
       .sort({ order: 1, updatedAt: -1 });
+
+    // Lazy heal: pre-migration boards may have an empty `statuses` array,
+    // which causes the client's status picker to fall back to legacy enum
+    // options that the task API can't resolve. Seed defaults on first read.
+    for (const board of boards) {
+      if (!Array.isArray(board.statuses) || board.statuses.length === 0) {
+        board.statuses = DEFAULT_STATUSES.map((s) => ({ ...s }));
+        if (!Array.isArray(board.labels)) board.labels = [];
+        await board.save();
+      }
+    }
+
     return res.json({ boards });
   } catch (err) {
     console.error('getBoards error:', err);
