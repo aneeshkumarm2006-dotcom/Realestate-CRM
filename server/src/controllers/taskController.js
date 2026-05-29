@@ -62,15 +62,23 @@ const resolveDefaultStatus = (board) => {
 };
 
 /**
- * Validate that the provided status id is one of the board's statuses.
- * Returns the matching status subdoc, or null. Accepts string ObjectIds
- * and Mongoose ObjectIds.
+ * Validate that the provided status is one of the board's statuses.
+ * Returns the matching status subdoc, or null. Accepts:
+ *   - string ObjectIds / Mongoose ObjectIds (the new representation)
+ *   - legacy enum strings ('not_started' | 'working_on_it' | 'done' | 'stuck'),
+ *     matched against the status's `key` field. This keeps legacy clients,
+ *     stale client state (board.statuses not yet hydrated), and pre-migration
+ *     task records working without forcing a client round-trip.
  */
 const findBoardStatus = (board, statusInput) => {
   if (!board || !Array.isArray(board.statuses)) return null;
   if (statusInput == null) return null;
   const target = statusInput.toString();
-  return board.statuses.find((s) => s._id.toString() === target) || null;
+  return (
+    board.statuses.find((s) => s._id.toString() === target) ||
+    board.statuses.find((s) => s.key && s.key === target) ||
+    null
+  );
 };
 
 /**
