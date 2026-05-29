@@ -13,10 +13,12 @@ import {
   SkeletonStatCard,
   SkeletonBarChart,
   SkeletonBoardPerformance,
+  SkeletonOverdueAssignees,
 } from '../components/ui/Skeleton';
 import Dropdown from '../components/ui/Dropdown';
 import BarChart from '../components/analytics/BarChart';
 import BoardPerformance from '../components/analytics/BoardPerformance';
+import OverdueAssignees from '../components/analytics/OverdueAssignees';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import { getAnalytics } from '../services/analyticsService';
@@ -62,6 +64,13 @@ const INITIAL_SUMMARY = {
   activeBoards: 0,
 };
 
+const INITIAL_OVERDUE = {
+  count: 0,
+  avgDaysOverdue: 0,
+  byPriority: [],
+  topAssignees: [],
+};
+
 /**
  * Determine whether the signed-in user is the admin of the current org.
  */
@@ -93,6 +102,7 @@ const AnalyticsPage = () => {
   const [statusDistribution, setStatusDistribution] = useState([]);
   const [priorityDistribution, setPriorityDistribution] = useState([]);
   const [boardPerformance, setBoardPerformance] = useState([]);
+  const [overdue, setOverdue] = useState(INITIAL_OVERDUE);
   const [orgBoards, setOrgBoards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -119,6 +129,7 @@ const AnalyticsPage = () => {
         setStatusDistribution(data.statusDistribution || []);
         setPriorityDistribution(data.priorityDistribution || []);
         setBoardPerformance(data.boardPerformance || []);
+        setOverdue({ ...INITIAL_OVERDUE, ...(data.overdue || {}) });
         setOrgBoards(data.boards || []);
       })
       .catch((err) => {
@@ -165,6 +176,17 @@ const AnalyticsPage = () => {
     [priorityDistribution]
   );
 
+  const overduePriorityData = useMemo(
+    () =>
+      (overdue.byPriority || []).map((row) => ({
+        key: row.priority,
+        label: PRIORITY_LABELS[row.priority] || row.priority,
+        count: row.count,
+        color: PRIORITY_COLORS[row.priority] || 'var(--color-accent)',
+      })),
+    [overdue.byPriority]
+  );
+
   const statCards = [
     {
       icon: ListChecks,
@@ -184,6 +206,12 @@ const AnalyticsPage = () => {
       label: 'Overdue Tasks',
       value: summary.overdueTasks,
       color: 'red',
+      subLabel:
+        overdue.count > 0
+          ? `Avg ${overdue.avgDaysOverdue} day${
+              overdue.avgDaysOverdue === 1 ? '' : 's'
+            } overdue`
+          : 'No overdue tasks',
     },
     {
       icon: Folder,
@@ -268,6 +296,7 @@ const AnalyticsPage = () => {
                 value={card.value}
                 color={card.color}
                 suffix={card.suffix}
+                subLabel={card.subLabel}
               />
             ))}
       </div>
@@ -291,6 +320,25 @@ const AnalyticsPage = () => {
               icon={Flag}
               data={priorityData}
             />
+          </>
+        )}
+      </div>
+
+      {/* Overdue insights — by priority + top assignees */}
+      <div className="mt-5 grid gap-5 grid-cols-1 lg:grid-cols-2">
+        {loading && overduePriorityData.length === 0 ? (
+          <>
+            <SkeletonBarChart rows={4} />
+            <SkeletonOverdueAssignees rows={5} />
+          </>
+        ) : (
+          <>
+            <BarChart
+              title="Overdue by Priority"
+              icon={AlertTriangle}
+              data={overduePriorityData}
+            />
+            <OverdueAssignees assignees={overdue.topAssignees} />
           </>
         )}
       </div>

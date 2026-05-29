@@ -55,6 +55,7 @@ const boardSchema = new mongoose.Schema(
       enum: ['public', 'private'],
       default: 'private',
     },
+    order: { type: Number, default: 0, index: true },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

@@ -195,6 +195,69 @@ const useTaskStore = create((set, get) => ({
     return updated;
   },
 
+  /**
+   * Optimistically reorder groups on the board. Reverts on API failure.
+   */
+  reorderGroups: async (boardId, orderedIds) => {
+    const prev = get().groups;
+    const byId = new Map(prev.map((g) => [g._id, g]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean);
+    for (const g of prev) {
+      if (!orderedIds.includes(g._id)) next.push(g);
+    }
+    set({ groups: next });
+    try {
+      const groups = await taskService.reorderGroups(boardId, orderedIds);
+      set({ groups });
+      return groups;
+    } catch (err) {
+      set({ groups: prev });
+      throw err;
+    }
+  },
+
+  /**
+   * Optimistically reorder tasks within a single target group. `orderedIds`
+   * is the full desired order of `targetGroupId` after the drop. If a task
+   * came from a different group, this also removes it from its previous
+   * bucket. Reverts on API failure.
+   */
+  reorderTasks: async (targetGroupId, orderedIds) => {
+    const prev = get().tasksByGroup;
+    // Build a lookup of every top-level task we currently know about so we
+    // can re-bucket cross-group moves.
+    const allById = new Map();
+    for (const list of Object.values(prev)) {
+      for (const t of list || []) allById.set(t._id, t);
+    }
+    const movedIds = new Set(orderedIds);
+    const nextBuckets = {};
+    for (const [gid, list] of Object.entries(prev)) {
+      if (gid === targetGroupId) continue;
+      nextBuckets[gid] = (list || []).filter((t) => !movedIds.has(t._id));
+    }
+    nextBuckets[targetGroupId] = orderedIds
+      .map((id) => {
+        const existing = allById.get(id);
+        return existing ? { ...existing, group: targetGroupId } : null;
+      })
+      .filter(Boolean);
+    set({ tasksByGroup: nextBuckets });
+    try {
+      const data = await taskService.reorderTasks(targetGroupId, orderedIds);
+      const serverTasks = Array.isArray(data?.tasks) ? data.tasks : null;
+      if (serverTasks) {
+        set((s) => ({
+          tasksByGroup: { ...s.tasksByGroup, [targetGroupId]: serverTasks },
+        }));
+      }
+      return data;
+    } catch (err) {
+      set({ tasksByGroup: prev });
+      throw err;
+    }
+  },
+
   // ---- Subitems ---------------------------------------------------------
 
   /**

@@ -175,6 +175,8 @@ const TaskEditRow = ({
       }}
       onKeyDown={handleKeyDown}
     >
+      {/* Drag handle column (visual alignment only — editing rows aren't sortable) */}
+      <td style={{ width: 24, padding: 0 }} />
       <td style={{ width: 40, padding: '0 0 0 16px' }} />
 
       <td style={{ padding: '0 16px', minWidth: 240 }}>

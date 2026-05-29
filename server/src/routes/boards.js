@@ -5,6 +5,7 @@ const {
   createBoard,
   updateBoard,
   deleteBoard,
+  reorderBoards,
   listLabels,
   addLabel,
   updateLabel,
@@ -27,6 +28,10 @@ router.get('/', getBoards);
 
 // POST /api/boards — create a board (admin-only, enforced in controller)
 router.post('/', createBoard);
+
+// PUT /api/boards/reorder — reorder boards within an organisation
+// Must come BEFORE /:id so "reorder" isn't parsed as a board id.
+router.put('/reorder', reorderBoards);
 
 // PUT /api/boards/:id — update a board (admin-only)
 router.put('/:id', updateBoard);

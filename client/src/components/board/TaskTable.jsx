@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowRight, Plus, GripVertical } from 'lucide-react';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import TaskRow from './TaskRow';
 import TaskEditRow from './TaskEditRow';
 import TaskCardList from './TaskCardList';
+import SortableItem from '../dnd/SortableItem';
 import useTaskStore from '../../store/taskStore';
 import * as taskService from '../../services/taskService';
 import { getStatusPalette } from '../../utils/priorityColors';
@@ -32,6 +34,7 @@ import { getStatusPalette } from '../../utils/priorityColors';
  *   emptyLabel       — text rendered when the group has no tasks
  */
 const COLUMNS = [
+  { key: 'drag',     label: '',          width: 24 },
   { key: 'check',    label: '',          width: 40,  align: 'center' },
   { key: 'name',     label: 'Task',      width: null, minWidth: 240 },
   { key: 'priority', label: 'Priority',  width: 130 },
@@ -61,6 +64,8 @@ const TaskTable = ({
   onSaveEdit,
   onCancelEdit,
   emptyLabel = 'No tasks in this group yet',
+  groupId = null,
+  dndDisabled = false,
 }) => {
   const [selected, setSelected] = useState(() => new Set());
   const [expanded, setExpanded] = useState(() => new Set());
@@ -122,8 +127,10 @@ const TaskTable = ({
   // table's horizontal scroll clipping.
   const isInlineEditing = isCreating || editingTaskId !== null;
 
+  const taskIds = useMemo(() => tasks.map((t) => t._id), [tasks]);
+
   return (
-    <>
+    <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
       {/* Mobile stacked cards (<768px) — only for display. When inline editing
           is active on mobile, the table view below takes over so users can
           complete the form. See Design doc Section 8.2. */}
@@ -139,6 +146,8 @@ const TaskTable = ({
             onActionsClick={onActionsClick}
             highlightedTaskId={highlightedTaskId}
             emptyLabel={emptyLabel}
+            groupId={groupId}
+            dndDisabled={dndDisabled}
           />
         </div>
       )}
@@ -221,59 +230,77 @@ const TaskTable = ({
               </td>
             </tr>
           ) : (
-            tasks.map((task, i) => {
-              const isEditing = editingTaskId === task._id;
-              const isLastExisting = i === tasks.length - 1;
-              const isLastRow = isLastExisting && !isCreating;
+            <>
+              {tasks.map((task, i) => {
+                const isEditing = editingTaskId === task._id;
+                const isLastExisting = i === tasks.length - 1;
+                const isLastRow = isLastExisting && !isCreating;
 
-              if (isEditing) {
-                return (
-                  <TaskEditRow
-                    key={task._id}
-                    board={board}
-                    members={members}
-                    initialTask={task}
-                    isLast={isLastRow}
-                    isAdmin={isAdmin}
-                    onSave={(payload) => onSaveEdit?.(task._id, payload)}
-                    onCancel={onCancelEdit}
-                  />
-                );
-              }
-
-              const isExpanded = expanded.has(task._id);
-              return (
-                <Fragment key={task._id}>
-                  <TaskRow
-                    task={task}
-                    board={board}
-                    selected={selected.has(task._id)}
-                    onSelect={toggleSelect}
-                    onOpen={onOpenTask}
-                    onStatusClick={onStatusClick}
-                    onPriorityClick={onPriorityClick}
-                    onLabelsClick={onLabelsClick}
-                    onActionsClick={onActionsClick}
-                    onToggleExpand={
-                      task.hasSubitems ? handleToggleExpand : undefined
-                    }
-                    expanded={isExpanded}
-                    isLast={isLastRow && !isExpanded}
-                    highlighted={highlightedTaskId === task._id}
-                  />
-                  {isExpanded ? (
-                    <SubitemsRow
-                      parent={task}
+                if (isEditing) {
+                  return (
+                    <TaskEditRow
+                      key={task._id}
                       board={board}
-                      colSpan={COLUMNS.length}
-                      onOpenTask={onOpenTask}
+                      members={members}
+                      initialTask={task}
                       isLast={isLastRow}
                       isAdmin={isAdmin}
+                      onSave={(payload) => onSaveEdit?.(task._id, payload)}
+                      onCancel={onCancelEdit}
                     />
-                  ) : null}
-                </Fragment>
-              );
-            })
+                  );
+                }
+
+                const isExpanded = expanded.has(task._id);
+                return (
+                  <SortableItem
+                    key={task._id}
+                    id={task._id}
+                    data={{ type: 'task', groupId }}
+                    disabled={dndDisabled || !groupId}
+                  >
+                    {({ ref, setActivatorNodeRef, style, attributes, listeners, isDragging }) => (
+                      <Fragment>
+                        <TaskRow
+                          task={task}
+                          board={board}
+                          selected={selected.has(task._id)}
+                          onSelect={toggleSelect}
+                          onOpen={onOpenTask}
+                          onStatusClick={onStatusClick}
+                          onPriorityClick={onPriorityClick}
+                          onLabelsClick={onLabelsClick}
+                          onActionsClick={onActionsClick}
+                          onToggleExpand={
+                            task.hasSubitems ? handleToggleExpand : undefined
+                          }
+                          expanded={isExpanded}
+                          isLast={isLastRow && !isExpanded}
+                          highlighted={highlightedTaskId === task._id}
+                          sortableRef={ref}
+                          sortableStyle={style}
+                          sortableAttributes={attributes}
+                          dragHandleRef={setActivatorNodeRef}
+                          dragHandleListeners={listeners}
+                          isDragging={isDragging}
+                          dndDisabled={dndDisabled || !groupId}
+                        />
+                        {isExpanded ? (
+                          <SubitemsRow
+                            parent={task}
+                            board={board}
+                            colSpan={COLUMNS.length}
+                            onOpenTask={onOpenTask}
+                            isLast={isLastRow}
+                            isAdmin={isAdmin}
+                          />
+                        ) : null}
+                      </Fragment>
+                    )}
+                  </SortableItem>
+                );
+              })}
+            </>
           )}
 
           {isCreating && (
@@ -292,7 +319,7 @@ const TaskTable = ({
         </tbody>
       </table>
       </div>
-    </>
+    </SortableContext>
   );
 };
 
@@ -366,7 +393,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
         borderBottom: isLast ? 'none' : '1px solid var(--color-border)',
       }}
     >
-      <td colSpan={colSpan} style={{ padding: '8px 16px 12px 56px' }}>
+      <td colSpan={colSpan} style={{ padding: '8px 16px 12px 80px' }}>
         {error ? (
           <p
             className="font-body"

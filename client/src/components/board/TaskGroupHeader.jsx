@@ -24,6 +24,7 @@ const TaskGroupHeader = ({
   collapsed = false,
   onToggle,
   onDeleteGroup,
+  dragHandle = null,
 }) => {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const progressPct =
@@ -31,7 +32,7 @@ const TaskGroupHeader = ({
 
   return (
     <div
-      className="flex items-center gap-3"
+      className="group/group-header flex items-center gap-3"
       style={{
         height: 48,
         padding: '0 16px',
@@ -39,6 +40,7 @@ const TaskGroupHeader = ({
         borderBottom: '1px solid var(--color-border)',
       }}
     >
+      {dragHandle}
       {/* Chevron toggle */}
       <button
         type="button"

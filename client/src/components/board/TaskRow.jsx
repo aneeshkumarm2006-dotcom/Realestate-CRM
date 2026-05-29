@@ -5,6 +5,7 @@ import {
   Plus,
   Check,
   ChevronRight,
+  GripVertical,
 } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatShortDate, isOverdue } from '../../utils/dateUtils';
@@ -33,11 +34,27 @@ const TaskRow = ({
   expanded = false,
   isLast = false,
   highlighted = false,
+  // Sortable wiring (optional): when provided, the row participates in
+  // @dnd-kit drag-and-drop. The drag handle owns the listeners so clicking
+  // anywhere else still routes to the existing handlers.
+  sortableRef,
+  sortableStyle,
+  sortableAttributes,
+  dragHandleRef,
+  dragHandleListeners,
+  isDragging = false,
+  dndDisabled = false,
 }) => {
   const rowRef = useRef(null);
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const overdue = isOverdue(task.dueDate) && !isStatusDone(board, task.status);
   const labels = Array.isArray(task.labels) ? task.labels : [];
+
+  // Merge sortable ref with the internal rowRef used for highlight scrolling.
+  const setRowRefs = (el) => {
+    rowRef.current = el;
+    if (typeof sortableRef === 'function') sortableRef(el);
+  };
 
   useEffect(() => {
     if (!highlighted || !rowRef.current) return;
@@ -60,18 +77,49 @@ const TaskRow = ({
 
   return (
     <tr
-      ref={rowRef}
+      ref={setRowRefs}
       data-task-id={task._id}
       onClick={handleRowClick}
       className={[
-        'transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)] cursor-pointer',
+        'group/task-row transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)] cursor-pointer',
         highlighted ? 'macan-task-highlight' : '',
       ].join(' ')}
       style={{
+        ...sortableStyle,
         height: 48,
         borderBottom: isLast ? 'none' : '1px solid var(--color-border)',
+        opacity: isDragging ? 0.4 : sortableStyle?.opacity,
+        position: isDragging ? 'relative' : sortableStyle?.position,
+        zIndex: isDragging ? 20 : sortableStyle?.zIndex,
       }}
+      {...(sortableAttributes || {})}
     >
+      {/* Drag handle */}
+      <td style={{ width: 24, padding: '0 0 0 8px' }}>
+        {!dndDisabled && (
+          <button
+            ref={dragHandleRef}
+            type="button"
+            aria-label="Drag to reorder task"
+            {...(dragHandleListeners || {})}
+            onClick={(e) => e.stopPropagation()}
+            data-row-click-ignore
+            className="flex items-center justify-center opacity-0 group-hover/task-row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+            style={{
+              width: 16,
+              height: 24,
+              cursor: 'grab',
+              touchAction: 'none',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+            }}
+          >
+            <GripVertical size={14} color="var(--color-text-muted)" aria-hidden="true" />
+          </button>
+        )}
+      </td>
+
       {/* Checkbox */}
       <td style={{ width: 40, padding: '0 0 0 16px' }}>
         <input

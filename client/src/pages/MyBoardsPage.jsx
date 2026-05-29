@@ -12,7 +12,23 @@ import {
   Globe,
   MoreHorizontal,
   Calendar as CalendarIcon,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
 import PageWrapper from '../components/layout/PageWrapper';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
@@ -23,6 +39,7 @@ import {
 import BoardCard from '../components/board/BoardCard';
 import BoardFormModal from '../components/board/BoardFormModal';
 import DeleteBoardModal from '../components/board/DeleteBoardModal';
+import SortableItem from '../components/dnd/SortableItem';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -68,6 +85,7 @@ const MyBoardsPage = () => {
   const createBoardAction = useBoardStore((s) => s.createBoard);
   const updateBoardAction = useBoardStore((s) => s.updateBoard);
   const deleteBoardAction = useBoardStore((s) => s.deleteBoard);
+  const reorderBoardsAction = useBoardStore((s) => s.reorderBoards);
 
   const isAdmin = useIsCurrentOrgAdmin();
 
@@ -125,6 +143,30 @@ const MyBoardsPage = () => {
   const hasBoards = boards.length > 0;
   const hasResults = filteredBoards.length > 0;
   const searching = search.trim().length > 0;
+
+  // Reordering is disabled while a search filter is active so the user
+  // doesn't accidentally rewrite the full order using a partial slice.
+  const dndDisabled = searching;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleBoardDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || dndDisabled || !orgId) return;
+    const oldIndex = boards.findIndex((b) => b._id === active.id);
+    const newIndex = boards.findIndex((b) => b._id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(boards, oldIndex, newIndex);
+    const orderedIds = next.map((b) => b._id);
+    reorderBoardsAction(orgId, orderedIds).catch((err) => {
+      console.error('Failed to reorder boards:', err);
+    });
+  };
+
+  const boardIds = useMemo(() => filteredBoards.map((b) => b._id), [filteredBoards]);
 
   return (
     <PageWrapper>
@@ -310,28 +352,46 @@ const MyBoardsPage = () => {
             />
           </div>
         ) : view === 'grid' ? (
-          <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredBoards.map((board, i) => (
-              <BoardCard
-                key={board._id}
-                board={board}
-                accentColor={ACCENT_CYCLE[i % ACCENT_CYCLE.length]}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleBoardDragEnd}
+          >
+            <SortableContext items={boardIds} strategy={rectSortingStrategy}>
+              <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredBoards.map((board, i) => (
+                  <SortableBoardCard
+                    key={board._id}
+                    board={board}
+                    accentColor={ACCENT_CYCLE[i % ACCENT_CYCLE.length]}
+                    onOpen={openBoard}
+                    canManage={isAdmin}
+                    onEdit={(b) => setEditTarget(b)}
+                    onDelete={(b) => setDeleteTarget(b)}
+                    dndDisabled={dndDisabled}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleBoardDragEnd}
+          >
+            <SortableContext items={boardIds} strategy={verticalListSortingStrategy}>
+              <BoardListView
+                boards={filteredBoards}
+                accents={ACCENT_CYCLE}
                 onOpen={openBoard}
                 canManage={isAdmin}
                 onEdit={(b) => setEditTarget(b)}
                 onDelete={(b) => setDeleteTarget(b)}
+                dndDisabled={dndDisabled}
               />
-            ))}
-          </div>
-        ) : (
-          <BoardListView
-            boards={filteredBoards}
-            accents={ACCENT_CYCLE}
-            onOpen={openBoard}
-            canManage={isAdmin}
-            onEdit={(b) => setEditTarget(b)}
-            onDelete={(b) => setDeleteTarget(b)}
-          />
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 
@@ -374,6 +434,7 @@ const BoardListView = ({
   canManage,
   onEdit,
   onDelete,
+  dndDisabled = false,
 }) => {
   return (
     <div
@@ -398,12 +459,71 @@ const BoardListView = ({
             canManage={canManage}
             onEdit={onEdit}
             onDelete={onDelete}
+            dndDisabled={dndDisabled}
           />
         );
       })}
     </div>
   );
 };
+
+/**
+ * SortableBoardCard — wraps BoardCard with @dnd-kit sortable behaviour.
+ * The grip handle in the top-left corner owns the drag listeners so the
+ * rest of the card stays clickable for navigation.
+ */
+const SortableBoardCard = ({
+  board,
+  accentColor,
+  onOpen,
+  canManage,
+  onEdit,
+  onDelete,
+  dndDisabled,
+}) => (
+  <SortableItem id={board._id} data={{ type: 'board' }} disabled={dndDisabled}>
+    {({ ref, setActivatorNodeRef, style, attributes, listeners, isDragging }) => (
+      <div
+        ref={ref}
+        className="group/board-sortable"
+        style={{ ...style, position: 'relative', zIndex: isDragging ? 20 : 'auto' }}
+      >
+        {!dndDisabled && (
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            aria-label="Drag to reorder board"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute z-10 flex items-center justify-center opacity-0 group-hover/board-sortable:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+            style={{
+              top: 8,
+              left: 8,
+              width: 24,
+              height: 24,
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(255,255,255,0.85)',
+              boxShadow: 'var(--shadow-card)',
+              cursor: 'grab',
+              touchAction: 'none',
+            }}
+          >
+            <GripVertical size={14} color="var(--color-text-secondary)" aria-hidden="true" />
+          </button>
+        )}
+        <BoardCard
+          board={board}
+          accentColor={accentColor}
+          onOpen={onOpen}
+          canManage={canManage}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </div>
+    )}
+  </SortableItem>
+);
 
 const BoardListRow = ({
   board,
@@ -415,10 +535,14 @@ const BoardListRow = ({
   canManage,
   onEdit,
   onDelete,
+  dndDisabled = false,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
+    <SortableItem id={board._id} data={{ type: 'board' }} disabled={dndDisabled}>
+      {({ ref, setActivatorNodeRef, style, attributes, listeners, isDragging }) => (
     <div
+      ref={ref}
       role="button"
       tabIndex={0}
       onClick={() => !menuOpen && onOpen?.(board)}
@@ -428,12 +552,39 @@ const BoardListRow = ({
           onOpen?.(board);
         }
       }}
-      className="flex items-center gap-4 cursor-pointer transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)] focus-visible:outline-offset-[-2px]"
+      className="group/board-row flex items-center gap-4 cursor-pointer transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)] focus-visible:outline-offset-[-2px]"
       style={{
+        ...style,
         padding: '14px 16px',
         borderBottom: isLast ? 'none' : '1px solid var(--color-border)',
+        background: isDragging ? 'var(--color-bg-subtle)' : undefined,
+        position: 'relative',
+        zIndex: isDragging ? 20 : 'auto',
       }}
     >
+      {!dndDisabled && (
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          aria-label="Drag to reorder board"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center justify-center shrink-0 opacity-0 group-hover/board-row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+          style={{
+            width: 20,
+            height: 24,
+            cursor: 'grab',
+            touchAction: 'none',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            marginLeft: -4,
+          }}
+        >
+          <GripVertical size={14} color="var(--color-text-muted)" aria-hidden="true" />
+        </button>
+      )}
       <div
         aria-hidden="true"
         style={{
@@ -563,6 +714,8 @@ const BoardListRow = ({
         </div>
       )}
     </div>
+      )}
+    </SortableItem>
   );
 };
 

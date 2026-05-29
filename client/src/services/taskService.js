@@ -91,6 +91,29 @@ export const deleteGroup = async (groupId) => {
 };
 
 /**
+ * PUT /api/boards/:boardId/groups/reorder — batch reorder groups on a board.
+ */
+export const reorderGroups = async (boardId, orderedIds) => {
+  const { data } = await api.put(`/api/boards/${boardId}/groups/reorder`, {
+    orderedIds,
+  });
+  return data.groups;
+};
+
+/**
+ * PUT /api/tasks/reorder — reorder tasks within a target group, optionally
+ * pulling in tasks from other groups on the same board. Server returns the
+ * updated task list for the target group.
+ */
+export const reorderTasks = async (targetGroupId, orderedIds) => {
+  const { data } = await api.put('/api/tasks/reorder', {
+    targetGroupId,
+    orderedIds,
+  });
+  return data;
+};
+
+/**
  * POST /api/tasks/:id/checklist — append a new checklist item.
  */
 export const addChecklistItem = async (taskId, text) => {

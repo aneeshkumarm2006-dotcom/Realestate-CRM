@@ -186,9 +186,57 @@ const deleteGroup = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/boards/:boardId/groups/reorder
+ *
+ * Body: { orderedIds: [groupId,...] }
+ * Reorders all groups on the board in a single bulk write. Any org member
+ * may reorder groups (no admin-only gate — mirrors task reordering UX).
+ */
+const reorderGroups = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { boardId } = req.params;
+    const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : null;
+    if (!orderedIds) {
+      return res.status(400).json({ error: 'orderedIds must be an array' });
+    }
+
+    const ctx = await loadBoardContext(boardId, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const currentIds = await TaskGroup.distinct('_id', { board: boardId });
+    const currentSet = new Set(currentIds.map((id) => id.toString()));
+    const orderedSet = new Set(orderedIds.map((id) => String(id)));
+    if (
+      orderedIds.length !== currentIds.length ||
+      ![...orderedSet].every((id) => currentSet.has(id))
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'orderedIds must list every group on the board exactly once' });
+    }
+
+    const ops = orderedIds.map((id, idx) => ({
+      updateOne: {
+        filter: { _id: id, board: boardId },
+        update: { $set: { order: idx } },
+      },
+    }));
+    if (ops.length > 0) await TaskGroup.bulkWrite(ops);
+
+    const groups = await TaskGroup.find({ board: boardId }).sort({ order: 1, createdAt: 1 });
+    return res.json({ groups });
+  } catch (err) {
+    console.error('reorderGroups error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getGroups,
   createGroup,
   updateGroup,
   deleteGroup,
+  reorderGroups,
 };

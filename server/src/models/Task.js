@@ -19,6 +19,7 @@ const taskSchema = new mongoose.Schema(
       enum: ['critical', 'high', 'medium', 'low'],
       default: 'medium',
     },
+    order: { type: Number, default: 0, index: true },
     // Board tasks: ObjectId referencing Board.statuses._id.
     // Personal tasks: legacy enum string ('not_started', 'working_on_it',
     // 'done', 'stuck') — kept as strings because personal tasks don't have

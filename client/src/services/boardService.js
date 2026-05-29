@@ -42,6 +42,17 @@ export const deleteBoard = async (id) => {
   return data;
 };
 
+/**
+ * PUT /api/boards/reorder — reorder boards within an organisation.
+ */
+export const reorderBoards = async (organisation, orderedIds) => {
+  const { data } = await api.put('/api/boards/reorder', {
+    organisation,
+    orderedIds,
+  });
+  return data.boards;
+};
+
 // --- Labels ----------------------------------------------------------------
 
 export const addLabel = async (boardId, payload) => {

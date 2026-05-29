@@ -76,7 +76,7 @@ const getBoards = async (req, res) => {
     }
 
     const boards = await Board.find({ organisation: orgId })
-      .sort({ updatedAt: -1 });
+      .sort({ order: 1, updatedAt: -1 });
     return res.json({ boards });
   } catch (err) {
     console.error('getBoards error:', err);
@@ -190,12 +190,19 @@ const createBoard = async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
+    const lastBoard = await Board.findOne({ organisation })
+      .sort({ order: -1 })
+      .select('order')
+      .lean();
+    const nextBoardOrder = (lastBoard?.order ?? -1) + 1;
+
     const board = await Board.create({
       name: name.trim(),
       description: typeof description === 'string' ? description.trim() : '',
       visibility,
       organisation,
       createdBy: userId,
+      order: nextBoardOrder,
       statuses: DEFAULT_STATUSES.map((s) => ({ ...s })),
       labels: [],
     });
@@ -539,12 +546,65 @@ const reorderStatuses = async (req, res) => {
   }
 };
 
+/**
+ * PUT /api/boards/reorder
+ *
+ * Body: { organisation, orderedIds: [boardId,...] }
+ * Reorders boards within an organisation. Any user who is a member of the
+ * organisation can reorder boards (mirrors the read permission for getBoards).
+ */
+const reorderBoards = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { organisation, orderedIds } = req.body || {};
+    if (!organisation) {
+      return res.status(400).json({ error: 'Organisation ID required' });
+    }
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ error: 'orderedIds must be an array' });
+    }
+
+    const { org, isMember } = await loadOrgForMember(organisation, userId);
+    if (!org) return res.status(404).json({ error: 'Organisation not found' });
+    if (!isMember) {
+      return res.status(403).json({ error: 'Not a member of this organisation' });
+    }
+
+    const currentIds = await Board.distinct('_id', { organisation });
+    const currentSet = new Set(currentIds.map((id) => id.toString()));
+    const orderedSet = new Set(orderedIds.map((id) => String(id)));
+    if (
+      orderedIds.length !== currentIds.length ||
+      ![...orderedSet].every((id) => currentSet.has(id))
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'orderedIds must list every board in the organisation exactly once' });
+    }
+
+    const ops = orderedIds.map((id, idx) => ({
+      updateOne: {
+        filter: { _id: id, organisation },
+        update: { $set: { order: idx } },
+      },
+    }));
+    if (ops.length > 0) await Board.bulkWrite(ops);
+
+    const boards = await Board.find({ organisation }).sort({ order: 1, updatedAt: -1 });
+    return res.json({ boards });
+  } catch (err) {
+    console.error('reorderBoards error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getBoards,
   getDashboardStats,
   createBoard,
   updateBoard,
   deleteBoard,
+  reorderBoards,
   // labels
   listLabels,
   addLabel,

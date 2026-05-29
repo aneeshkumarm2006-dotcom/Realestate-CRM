@@ -5,6 +5,7 @@ const {
   createGroup,
   updateGroup,
   deleteGroup,
+  reorderGroups,
 } = require('../controllers/groupController');
 
 const router = express.Router();
@@ -17,6 +18,8 @@ router.use(authMiddleware);
 // POST   /api/boards/:boardId/groups — create a group (admin-only)
 router.get('/boards/:boardId/groups', getGroups);
 router.post('/boards/:boardId/groups', createGroup);
+// PUT    /api/boards/:boardId/groups/reorder — batch reorder groups
+router.put('/boards/:boardId/groups/reorder', reorderGroups);
 
 // Group-scoped
 // PUT    /api/groups/:id  — update a group (admin-only)

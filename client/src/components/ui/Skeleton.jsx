@@ -419,6 +419,42 @@ export const SkeletonBoardPerformance = ({ rows = 3 }) => (
 );
 
 /* ------------------------------------------------------------------ */
+/*  OVERDUE ASSIGNEES SKELETON (Analytics)                             */
+/* ------------------------------------------------------------------ */
+
+export const SkeletonOverdueAssignees = ({ rows = 5 }) => (
+  <section
+    className="bg-surface"
+    style={{
+      borderRadius: 'var(--radius-lg)',
+      boxShadow: 'var(--shadow-card)',
+      padding: 24,
+    }}
+  >
+    <div className="flex items-center gap-2">
+      <SkeletonCircle size={16} />
+      <SkeletonBlock width={160} height={14} />
+    </div>
+    <div className="flex flex-col" style={{ gap: 14, marginTop: 16 }}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center" style={{ gap: 12 }}>
+          <SkeletonCircle size={28} />
+          <SkeletonBlock width={96} height={12} />
+          <div className="flex-1" style={{ height: 8, position: 'relative' }}>
+            <SkeletonBlock
+              width={`${70 - i * 12}%`}
+              height={8}
+              borderRadius="var(--radius-full)"
+            />
+          </div>
+          <SkeletonBlock width={28} height={12} />
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+/* ------------------------------------------------------------------ */
 /*  CALENDAR SKELETON                                                  */
 /* ------------------------------------------------------------------ */
 

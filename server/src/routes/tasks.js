@@ -9,6 +9,7 @@ const {
   createTask,
   updateTask,
   deleteTask,
+  reorderTasks,
   addChecklistItem,
   updateChecklistItem,
   deleteChecklistItem,
@@ -34,6 +35,10 @@ router.get('/', getTasks);
 
 // POST /api/tasks — create task (board task: admin only; personal: any user)
 router.post('/', createTask);
+
+// PUT /api/tasks/reorder — batch reorder tasks within a target group
+// (handles cross-group moves too). Must come BEFORE /:id.
+router.put('/reorder', reorderTasks);
 
 // PUT /api/tasks/:id — update task (perms enforced in controller)
 router.put('/:id', updateTask);

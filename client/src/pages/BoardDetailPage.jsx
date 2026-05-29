@@ -7,7 +7,22 @@ import {
   Plus,
   Settings as SettingsIcon,
   Zap,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
 import PageWrapper from '../components/layout/PageWrapper';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -16,6 +31,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTaskGroup } from '../components/ui/Skeleton';
 import TaskGroupHeader from '../components/board/TaskGroupHeader';
 import TaskTable from '../components/board/TaskTable';
+import SortableItem from '../components/dnd/SortableItem';
 import StatusMenu from '../components/board/StatusMenu';
 import PriorityMenu from '../components/board/PriorityMenu';
 import TaskActionsMenu from '../components/board/TaskActionsMenu';
@@ -87,6 +103,8 @@ const BoardDetailPage = () => {
   const deleteTaskLocal = useTaskStore((s) => s.deleteTask);
   const addGroupLocal = useTaskStore((s) => s.addGroup);
   const removeGroupLocal = useTaskStore((s) => s.removeGroup);
+  const reorderGroupsAction = useTaskStore((s) => s.reorderGroups);
+  const reorderTasksAction = useTaskStore((s) => s.reorderTasks);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
   const toastError = useToastStore((s) => s.error);
 
@@ -550,6 +568,87 @@ const BoardDetailPage = () => {
   const VisibilityIcon = isPublic ? Globe : Lock;
   const hasGroups = groups.length > 0;
 
+  // --- Drag-and-drop wiring -------------------------------------------------
+  // One DndContext covers BOTH the groups (sortable list) and every group's
+  // tasks (each its own SortableContext). Each sortable carries `data` so
+  // onDragEnd can branch on type and locate the correct target.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const groupIds = useMemo(() => groups.map((g) => g._id), [groups]);
+  // DnD is disabled while an inline edit/create row is open in any group so
+  // the form controls don't fight with the drag sensors.
+  const dndDisabledGlobal = creatingInGroup != null || editingTaskId != null;
+
+  const handleBoardDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeData = active.data.current || {};
+    const overData = over.data.current || {};
+
+    // --- Group reorder ---
+    if (activeData.type === 'group') {
+      if (active.id === over.id) return;
+      // Only respond if we dropped onto another group; ignore task drops here.
+      if (overData.type && overData.type !== 'group') return;
+      const oldIndex = groups.findIndex((g) => g._id === active.id);
+      const newIndex = groups.findIndex((g) => g._id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return;
+      const next = arrayMove(groups, oldIndex, newIndex);
+      reorderGroupsAction(boardId, next.map((g) => g._id)).catch((err) => {
+        console.error('Failed to reorder groups:', err);
+        toastError('Could not reorder groups');
+      });
+      return;
+    }
+
+    // --- Task reorder / move ---
+    if (activeData.type === 'task') {
+      const sourceGroupId = activeData.groupId;
+      // Resolve target group: if dropped on a task, use that task's groupId;
+      // if dropped on a group header/container, the group itself is the target.
+      let targetGroupId = null;
+      if (overData.type === 'task') targetGroupId = overData.groupId;
+      else if (overData.type === 'group') targetGroupId = over.id;
+      else if (overData.type === 'group-dropzone') targetGroupId = overData.groupId;
+      if (!targetGroupId) return;
+
+      const sourceTasks = tasksByGroup[sourceGroupId] || [];
+      const targetTasks = tasksByGroup[targetGroupId] || [];
+
+      // Intra-group reorder
+      if (sourceGroupId === targetGroupId) {
+        if (active.id === over.id) return;
+        const oldIndex = sourceTasks.findIndex((t) => t._id === active.id);
+        const newIndex = sourceTasks.findIndex((t) => t._id === over.id);
+        if (oldIndex < 0 || newIndex < 0) return;
+        const next = arrayMove(sourceTasks, oldIndex, newIndex);
+        reorderTasksAction(targetGroupId, next.map((t) => t._id)).catch((err) => {
+          console.error('Failed to reorder tasks:', err);
+          toastError('Could not reorder tasks');
+        });
+        return;
+      }
+
+      // Cross-group move: insert before the target task, or append if dropped
+      // on the group container itself.
+      const movingTask = sourceTasks.find((t) => t._id === active.id);
+      if (!movingTask) return;
+      let insertAt = targetTasks.length;
+      if (overData.type === 'task') {
+        const idx = targetTasks.findIndex((t) => t._id === over.id);
+        if (idx >= 0) insertAt = idx;
+      }
+      const nextTargetIds = targetTasks.map((t) => t._id);
+      nextTargetIds.splice(insertAt, 0, movingTask._id);
+      reorderTasksAction(targetGroupId, nextTargetIds).catch((err) => {
+        console.error('Failed to move task:', err);
+        toastError('Could not move task');
+      });
+    }
+  };
+
   return (
     <PageWrapper>
       {/* Breadcrumb */}
@@ -694,70 +793,121 @@ const BoardDetailPage = () => {
             />
           </div>
         ) : (
-          groups.map((group, idx) => {
-            const groupTasks = tasksByGroup[group._id] || [];
-            // Resolve the board's "done" status id so the doneCount badge
-            // counts board tasks even after the Phase 2 migration.
-            const doneStatusId =
-              board && Array.isArray(board.statuses)
-                ? (board.statuses.find((s) => s.key === 'done')?._id || null)
-                : null;
-            const doneCount = groupTasks.filter((t) => {
-              if (t.status == null) return false;
-              if (doneStatusId) {
-                return t.status.toString() === doneStatusId.toString();
-              }
-              return t.status === 'done';
-            }).length;
-            const isCollapsed = collapsed.has(group._id);
-            const isEditingHere =
-              editingTaskId != null &&
-              groupTasks.some((t) => t._id === editingTaskId);
-            const needsOverflowVisible = !isCollapsed;
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleBoardDragEnd}
+          >
+            <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
+              {groups.map((group, idx) => {
+                const groupTasks = tasksByGroup[group._id] || [];
+                const doneStatusId =
+                  board && Array.isArray(board.statuses)
+                    ? (board.statuses.find((s) => s.key === 'done')?._id || null)
+                    : null;
+                const doneCount = groupTasks.filter((t) => {
+                  if (t.status == null) return false;
+                  if (doneStatusId) {
+                    return t.status.toString() === doneStatusId.toString();
+                  }
+                  return t.status === 'done';
+                }).length;
+                const isCollapsed = collapsed.has(group._id);
+                const needsOverflowVisible = !isCollapsed;
+                // Disable task DnD inside this group while it's hosting an
+                // inline create/edit row — but leave the group's own handle
+                // sortable so users can still rearrange columns.
+                const isEditingHere =
+                  (editingTaskId != null && groupTasks.some((t) => t._id === editingTaskId)) ||
+                  creatingInGroup === group._id;
 
-            return (
-              <div
-                key={group._id}
-                className={`bg-surface ${
-                  needsOverflowVisible ? 'overflow-visible' : 'overflow-hidden'
-                }`}
-                style={{
-                  borderRadius: 'var(--radius-lg)',
-                  boxShadow: 'var(--shadow-card)',
-                }}
-              >
-                <TaskGroupHeader
-                  name={group.name}
-                  colorDot={GROUP_DOT_CYCLE[idx % GROUP_DOT_CYCLE.length]}
-                  totalCount={groupTasks.length}
-                  doneCount={doneCount}
-                  collapsed={isCollapsed}
-                  onToggle={() => toggleGroup(group._id)}
-                  onDeleteGroup={isAdmin ? () => handleDeleteGroup(group) : undefined}
-                />
-                {!isCollapsed && (
-                  <TaskTable
-                    tasks={groupTasks}
-                    board={board}
-                    members={members}
-                    editingTaskId={editingTaskId}
-                    isCreating={isAdmin}
-                    createKey={newTaskKeysByGroup[group._id] || 0}
-                    isAdmin={isAdmin}
-                    highlightedTaskId={highlightedTaskId}
-                    onOpenTask={handleOpenTask}
-                    onStatusClick={handleStatusClick}
-                    onPriorityClick={handlePriorityClick}
-                    onLabelsClick={handleLabelsClick}
-                    onActionsClick={isAdmin ? handleActionsClick : undefined}
-                    onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
-                    onSaveEdit={handleSaveEditTask}
-                    onCancelEdit={handleCancelEdit}
-                  />
-                )}
-              </div>
-            );
-          })
+                return (
+                  <SortableItem
+                    key={group._id}
+                    id={group._id}
+                    data={{ type: 'group' }}
+                    disabled={dndDisabledGlobal}
+                  >
+                    {({ ref, setActivatorNodeRef, style, attributes, listeners, isDragging }) => (
+                      <div
+                        ref={ref}
+                        className={`bg-surface ${
+                          needsOverflowVisible ? 'overflow-visible' : 'overflow-hidden'
+                        }`}
+                        style={{
+                          ...style,
+                          borderRadius: 'var(--radius-lg)',
+                          boxShadow: 'var(--shadow-card)',
+                          position: 'relative',
+                          zIndex: isDragging ? 30 : 'auto',
+                        }}
+                      >
+                        <TaskGroupHeader
+                          name={group.name}
+                          colorDot={GROUP_DOT_CYCLE[idx % GROUP_DOT_CYCLE.length]}
+                          totalCount={groupTasks.length}
+                          doneCount={doneCount}
+                          collapsed={isCollapsed}
+                          onToggle={() => toggleGroup(group._id)}
+                          onDeleteGroup={isAdmin ? () => handleDeleteGroup(group) : undefined}
+                          dragHandle={
+                            !dndDisabledGlobal && (
+                              <button
+                                ref={setActivatorNodeRef}
+                                type="button"
+                                aria-label={`Drag to reorder group ${group.name}`}
+                                {...attributes}
+                                {...listeners}
+                                className="flex items-center justify-center opacity-0 group-hover/group-header:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+                                style={{
+                                  width: 20,
+                                  height: 24,
+                                  cursor: 'grab',
+                                  touchAction: 'none',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  padding: 0,
+                                  marginLeft: -4,
+                                }}
+                              >
+                                <GripVertical
+                                  size={14}
+                                  color="var(--color-text-muted)"
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            )
+                          }
+                        />
+                        {!isCollapsed && (
+                          <TaskTable
+                            tasks={groupTasks}
+                            board={board}
+                            members={members}
+                            editingTaskId={editingTaskId}
+                            isCreating={isAdmin}
+                            createKey={newTaskKeysByGroup[group._id] || 0}
+                            isAdmin={isAdmin}
+                            highlightedTaskId={highlightedTaskId}
+                            onOpenTask={handleOpenTask}
+                            onStatusClick={handleStatusClick}
+                            onPriorityClick={handlePriorityClick}
+                            onLabelsClick={handleLabelsClick}
+                            onActionsClick={isAdmin ? handleActionsClick : undefined}
+                            onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
+                            onSaveEdit={handleSaveEditTask}
+                            onCancelEdit={handleCancelEdit}
+                            groupId={group._id}
+                            dndDisabled={dndDisabledGlobal || isEditingHere}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </SortableItem>
+                );
+              })}
+            </SortableContext>
+          </DndContext>
         )}
       </section>
 

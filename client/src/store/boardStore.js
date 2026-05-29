@@ -47,6 +47,30 @@ const useBoardStore = create((set, get) => ({
     set((s) => ({ boards: s.boards.filter((b) => b._id !== id) }));
   },
 
+  /**
+   * Optimistic reorder of the boards list for an organisation. Reverts to
+   * the prior order if the API call fails so the UI can't drift out of
+   * sync with the server.
+   */
+  reorderBoards: async (organisation, orderedIds) => {
+    const prev = get().boards;
+    const byId = new Map(prev.map((b) => [b._id, b]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean);
+    // Append any boards not in orderedIds (defensive) to preserve them.
+    for (const b of prev) {
+      if (!orderedIds.includes(b._id)) next.push(b);
+    }
+    set({ boards: next });
+    try {
+      const boards = await boardService.reorderBoards(organisation, orderedIds);
+      set({ boards });
+      return boards;
+    } catch (err) {
+      set({ boards: prev });
+      throw err;
+    }
+  },
+
   // Local-only helpers
   addBoardLocal: (board) =>
     set((s) => ({ boards: [board, ...s.boards] })),

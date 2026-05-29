@@ -26,6 +26,8 @@ const TaskCardList = ({
   onActionsClick,
   highlightedTaskId,
   emptyLabel = 'No tasks in this group yet',
+  groupId = null,
+  dndDisabled = false,
 }) => {
   if (tasks.length === 0) {
     return (
@@ -63,13 +65,25 @@ const TaskCardList = ({
           onPriorityClick={onPriorityClick}
           onLabelsClick={onLabelsClick}
           onActionsClick={onActionsClick}
+          groupId={groupId}
+          dndDisabled={dndDisabled}
         />
       ))}
     </ul>
   );
 };
 
-const TaskCardItem = ({ task, board, highlighted, isLast, onOpenTask, onStatusClick, onPriorityClick, onLabelsClick, onActionsClick }) => {
+const TaskCardItem = ({
+  task,
+  board,
+  highlighted,
+  isLast,
+  onOpenTask,
+  onStatusClick,
+  onPriorityClick,
+  onLabelsClick,
+  onActionsClick,
+}) => {
   const liRef = useRef(null);
 
   useEffect(() => {

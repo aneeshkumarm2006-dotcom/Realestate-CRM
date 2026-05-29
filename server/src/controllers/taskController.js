@@ -183,7 +183,7 @@ const getTasks = async (req, res) => {
     if (groupId) filter.group = groupId;
 
     const tasks = await populateTask(Task.find(filter))
-      .sort({ createdAt: 1 })
+      .sort({ order: 1, createdAt: 1 })
       .lean();
     await annotateHasSubitems(tasks);
 
@@ -456,6 +456,17 @@ const createTask = async (req, res) => {
     );
     if (assigneeErr) return res.status(400).json({ error: assigneeErr });
 
+    // Assign the next order so new tasks land at the end of their group
+    // (or end of their parent's subitem list).
+    const orderScope = resolvedParent
+      ? { parent: resolvedParent }
+      : { group: groupId, parent: null };
+    const lastSibling = await Task.findOne(orderScope)
+      .sort({ order: -1 })
+      .select('order')
+      .lean();
+    const nextTaskOrder = (lastSibling?.order ?? -1) + 1;
+
     const task = await Task.create({
       name: name.trim(),
       board: boardId,
@@ -468,6 +479,7 @@ const createTask = async (req, res) => {
       note: note || undefined,
       isPersonal: false,
       parent: resolvedParent,
+      order: nextTaskOrder,
       createdBy: userId,
     });
 
@@ -1010,6 +1022,77 @@ const reorderChecklist = async (req, res) => {
 };
 
 /**
+ * PUT /api/tasks/reorder — reorder tasks within a single target group.
+ *
+ * Body: { orderedIds: [taskId,...], targetGroupId }
+ *
+ * Handles both intra-group reordering and cross-group moves. The client
+ * sends the FULL desired order of the target group after the drop; tasks
+ * not present in the target group before the drop are assumed to have
+ * moved in from another group on the same board and will have their
+ * `group` field updated. All ids must reference top-level board tasks on
+ * the same board as the target group.
+ */
+const reorderTasks = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { orderedIds, targetGroupId } = req.body || {};
+
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ error: 'orderedIds must be an array' });
+    }
+    if (!targetGroupId || !mongoose.Types.ObjectId.isValid(targetGroupId)) {
+      return res.status(400).json({ error: 'Valid targetGroupId is required' });
+    }
+
+    const targetGroup = await TaskGroup.findById(targetGroupId);
+    if (!targetGroup) {
+      return res.status(404).json({ error: 'Target group not found' });
+    }
+
+    const ctx = await loadBoardContext(targetGroup.board, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    // Load every supplied task and validate same board, top-level, etc.
+    const tasks = await Task.find({ _id: { $in: orderedIds } }).select('_id board parent');
+    if (tasks.length !== orderedIds.length) {
+      return res.status(400).json({ error: 'One or more task ids were not found' });
+    }
+    const boardIdStr = targetGroup.board.toString();
+    for (const t of tasks) {
+      if (!t.board || t.board.toString() !== boardIdStr) {
+        return res.status(400).json({ error: 'All tasks must belong to the target board' });
+      }
+      if (t.parent) {
+        return res.status(400).json({ error: 'Subitems cannot be reordered via this endpoint' });
+      }
+    }
+
+    const ops = orderedIds.map((id, idx) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: idx, group: targetGroupId } },
+      },
+    }));
+    if (ops.length > 0) await Task.bulkWrite(ops);
+
+    await Board.updateOne({ _id: targetGroup.board }, { $set: { updatedAt: new Date() } });
+
+    const updated = await populateTask(
+      Task.find({ group: targetGroupId, parent: null, isPersonal: { $ne: true } })
+    )
+      .sort({ order: 1, createdAt: 1 })
+      .lean();
+    await annotateHasSubitems(updated);
+
+    return res.json({ tasks: updated, groupId: targetGroupId });
+  } catch (err) {
+    console.error('reorderTasks error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
  * DELETE /api/tasks/:id
  */
 const deleteTask = async (req, res) => {
@@ -1188,6 +1271,7 @@ module.exports = {
   createTask,
   updateTask,
   deleteTask,
+  reorderTasks,
   addChecklistItem,
   updateChecklistItem,
   deleteChecklistItem,

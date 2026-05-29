@@ -50,7 +50,8 @@ const getAnalytics = async (req, res) => {
       return res.status(400).json({ error: 'Organisation ID required' });
     }
 
-    const org = await Organisation.findById(orgId);
+    const org = await Organisation.findById(orgId)
+      .populate('members', 'name email profilePic');
     if (!org) return res.status(404).json({ error: 'Organisation not found' });
     const isAdmin =
       (org.admin && org.admin.toString() === userId) ||
@@ -101,18 +102,20 @@ const getAnalytics = async (req, res) => {
       doneIdsByBoard.set(b._id.toString(), doneSet);
     }
 
-    const [tasksForStatus, priorityAgg, overdueCount, perBoardAgg, totalTasks] =
+    const [tasksForStatus, priorityAgg, overdueTasks, perBoardAgg, totalTasks] =
       await Promise.all([
         Task.find(taskFilter).select('status board').lean(),
         Task.aggregate([
           { $match: taskFilter },
           { $group: { _id: '$priority', count: { $sum: 1 } } },
         ]),
-        Task.countDocuments({
+        Task.find({
           ...taskFilter,
           status: { $nin: allDoneIds.length ? allDoneIds : ['done'] },
           dueDate: { $ne: null, $lt: new Date() },
-        }),
+        })
+          .select('priority assignedTo dueDate')
+          .lean(),
         Task.aggregate([
           { $match: taskFilter },
           {
@@ -124,6 +127,45 @@ const getAnalytics = async (req, res) => {
         ]),
         Task.countDocuments(taskFilter),
       ]);
+
+    // Overdue breakdown: by priority, by assignee, average days overdue.
+    const nowMs = Date.now();
+    const MS_PER_DAY = 86400000;
+    const overdueByPriority = Object.fromEntries(PRIORITIES.map((p) => [p, 0]));
+    const overdueByAssignee = new Map();
+    let daysOverdueSum = 0;
+    for (const t of overdueTasks) {
+      if (t.priority && overdueByPriority[t.priority] !== undefined) {
+        overdueByPriority[t.priority] += 1;
+      }
+      const dayDiff = Math.floor(
+        (nowMs - new Date(t.dueDate).getTime()) / MS_PER_DAY
+      );
+      daysOverdueSum += Math.max(0, dayDiff);
+      for (const u of t.assignedTo || []) {
+        const uid = u.toString();
+        overdueByAssignee.set(uid, (overdueByAssignee.get(uid) || 0) + 1);
+      }
+    }
+    const memberById = new Map(
+      (org.members || []).map((m) => [m._id.toString(), m])
+    );
+    const topOverdueAssignees = [...overdueByAssignee.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([uid, count]) => {
+        const m = memberById.get(uid);
+        return {
+          _id: uid,
+          name: m?.name || 'Unknown',
+          profilePic: m?.profilePic || null,
+          count,
+        };
+      });
+    const avgDaysOverdue =
+      overdueTasks.length === 0
+        ? 0
+        : Math.round(daysOverdueSum / overdueTasks.length);
 
     // Bucket status counts by legacy key (custom statuses are dropped from
     // the canonical 4 buckets, but still counted in totalTasks).
@@ -182,12 +224,21 @@ const getAnalytics = async (req, res) => {
       summary: {
         totalTasks,
         completionRate,
-        overdueTasks: overdueCount,
+        overdueTasks: overdueTasks.length,
         activeBoards,
       },
       statusDistribution,
       priorityDistribution,
       boardPerformance,
+      overdue: {
+        count: overdueTasks.length,
+        avgDaysOverdue,
+        byPriority: PRIORITIES.map((priority) => ({
+          priority,
+          count: overdueByPriority[priority] || 0,
+        })),
+        topAssignees: topOverdueAssignees,
+      },
       boards: orgBoards.map((b) => ({ _id: b._id, name: b.name })),
       filters: {
         board: boardFilter || 'all',
