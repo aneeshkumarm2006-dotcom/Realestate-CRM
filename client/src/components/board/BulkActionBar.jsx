@@ -1,9 +1,18 @@
 import { forwardRef, useEffect, useRef, useState } from 'react';
-import { Trash2, FolderInput, X, ChevronDown } from 'lucide-react';
+import {
+  Trash2,
+  FolderInput,
+  X,
+  ChevronDown,
+  CircleDot,
+  Flag,
+} from 'lucide-react';
 
 /**
  * BulkActionBar — floating bottom-center toolbar shown when one or more
  * tasks are ticked anywhere on the board. Exposes:
+ *   - Status (popover with the board's status chips)
+ *   - Priority (popover with critical/high/medium/low chips)
  *   - Move to group (popover with the board's groups)
  *   - Delete (parent owns the confirm modal)
  *   - Clear selection
@@ -13,34 +22,51 @@ import { Trash2, FolderInput, X, ChevronDown } from 'lucide-react';
  * mutations are dispatched via the props.
  *
  * Props:
- *   count          — number of selected task IDs
- *   groups         — board groups (used to populate the move-to-group menu)
- *   onMoveToGroup  — (groupId) => void
- *   onDelete       — () => void (parent shows confirmation)
- *   onClear        — () => void
- *   busy           — disables actions while a bulk operation is in flight
+ *   count            — number of selected task IDs
+ *   groups           — board groups (used to populate the move-to-group menu)
+ *   statusOptions    — [{ id, label, bg, text }] from board.statuses, in display order
+ *   priorityOptions  — [{ key, label, bg, text }] from PRIORITY_COLORS
+ *   onChangeStatus   — (statusId) => void
+ *   onChangePriority — (priorityKey) => void
+ *   onMoveToGroup    — (groupId) => void
+ *   onDelete         — () => void (parent shows confirmation)
+ *   onClear          — () => void
+ *   busy             — disables actions while a bulk operation is in flight
  */
 const BulkActionBar = ({
   count = 0,
   groups = [],
+  statusOptions = [],
+  priorityOptions = [],
+  onChangeStatus,
+  onChangePriority,
   onMoveToGroup,
   onDelete,
   onClear,
   busy = false,
 }) => {
-  const [moveOpen, setMoveOpen] = useState(false);
+  // Only one popover open at a time. `openMenu` is one of: null, 'status',
+  // 'priority', 'move'.
+  const [openMenu, setOpenMenu] = useState(null);
+  const statusBtnRef = useRef(null);
+  const priorityBtnRef = useRef(null);
   const moveBtnRef = useRef(null);
   const popoverRef = useRef(null);
 
   useEffect(() => {
-    if (!moveOpen) return undefined;
+    if (!openMenu) return undefined;
+    const anchors = {
+      status: statusBtnRef,
+      priority: priorityBtnRef,
+      move: moveBtnRef,
+    };
     const handleClick = (e) => {
       if (popoverRef.current?.contains(e.target)) return;
-      if (moveBtnRef.current?.contains(e.target)) return;
-      setMoveOpen(false);
+      if (anchors[openMenu]?.current?.contains(e.target)) return;
+      setOpenMenu(null);
     };
     const handleKey = (e) => {
-      if (e.key === 'Escape') setMoveOpen(false);
+      if (e.key === 'Escape') setOpenMenu(null);
     };
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
@@ -48,7 +74,10 @@ const BulkActionBar = ({
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [moveOpen]);
+  }, [openMenu]);
+
+  const toggleMenu = (key) =>
+    setOpenMenu((prev) => (prev === key ? null : key));
 
   if (count <= 0) return null;
 
@@ -87,6 +116,61 @@ const BulkActionBar = ({
         }}
       />
 
+      {/* Status */}
+      <div style={{ position: 'relative' }}>
+        <BarButton
+          ref={statusBtnRef}
+          icon={CircleDot}
+          label="Status"
+          trailing={ChevronDown}
+          disabled={busy || statusOptions.length === 0}
+          onClick={() => toggleMenu('status')}
+          aria-haspopup="listbox"
+          aria-expanded={openMenu === 'status'}
+        />
+        {openMenu === 'status' && (
+          <ChipPopover
+            ref={popoverRef}
+            label="Set status for selected tasks"
+            items={statusOptions}
+            getKey={(opt) => opt.id}
+            onPick={(opt) => {
+              setOpenMenu(null);
+              onChangeStatus?.(opt.id);
+            }}
+            emptyMessage="No statuses configured"
+          />
+        )}
+      </div>
+
+      {/* Priority */}
+      <div style={{ position: 'relative' }}>
+        <BarButton
+          ref={priorityBtnRef}
+          icon={Flag}
+          label="Priority"
+          trailing={ChevronDown}
+          disabled={busy || priorityOptions.length === 0}
+          onClick={() => toggleMenu('priority')}
+          aria-haspopup="listbox"
+          aria-expanded={openMenu === 'priority'}
+        />
+        {openMenu === 'priority' && (
+          <ChipPopover
+            ref={popoverRef}
+            label="Set priority for selected tasks"
+            items={priorityOptions}
+            getKey={(opt) => opt.key}
+            onPick={(opt) => {
+              setOpenMenu(null);
+              onChangePriority?.(opt.key);
+            }}
+            emptyMessage="No priorities available"
+          />
+        )}
+      </div>
+
+      {/* Move to group */}
       <div style={{ position: 'relative' }}>
         <BarButton
           ref={moveBtnRef}
@@ -94,11 +178,11 @@ const BulkActionBar = ({
           label="Move to"
           trailing={ChevronDown}
           disabled={busy || groups.length === 0}
-          onClick={() => setMoveOpen((v) => !v)}
+          onClick={() => toggleMenu('move')}
           aria-haspopup="menu"
-          aria-expanded={moveOpen}
+          aria-expanded={openMenu === 'move'}
         />
-        {moveOpen && (
+        {openMenu === 'move' && (
           <div
             ref={popoverRef}
             role="menu"
@@ -136,7 +220,7 @@ const BulkActionBar = ({
                   type="button"
                   role="menuitem"
                   onClick={() => {
-                    setMoveOpen(false);
+                    setOpenMenu(null);
                     onMoveToGroup?.(g._id);
                   }}
                   className="w-full text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)] focus:outline-none focus:bg-[color:var(--color-bg-subtle)]"
@@ -209,6 +293,73 @@ const BulkActionBar = ({
     </div>
   );
 };
+
+/**
+ * ChipPopover — shared chip picker used by the Status and Priority buttons.
+ * Renders each option as a chip styled with its own bg/text colors so the
+ * popover looks identical to the per-row StatusMenu / PriorityMenu.
+ */
+const ChipPopover = forwardRef(function ChipPopover(
+  { label, items, getKey, onPick, emptyMessage },
+  ref
+) {
+  return (
+    <div
+      ref={ref}
+      role="listbox"
+      aria-label={label}
+      className="bg-white"
+      style={{
+        position: 'absolute',
+        bottom: 'calc(100% + 8px)',
+        left: 0,
+        minWidth: 180,
+        maxHeight: 280,
+        overflowY: 'auto',
+        padding: 6,
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md)',
+        color: 'var(--color-text-primary)',
+        animation: 'macan-bulkbar-popover-enter 140ms ease-out',
+      }}
+    >
+      {items.length === 0 ? (
+        <p
+          style={{
+            padding: '8px 10px',
+            fontSize: 12,
+            color: 'var(--color-text-muted)',
+          }}
+        >
+          {emptyMessage}
+        </p>
+      ) : (
+        items.map((opt) => (
+          <button
+            key={getKey(opt)}
+            type="button"
+            role="option"
+            onClick={() => onPick(opt)}
+            className="w-full flex items-center text-left font-body font-medium transition-opacity duration-150 hover:opacity-90 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+            style={{
+              margin: '2px 0',
+              padding: '6px 10px',
+              fontSize: 12,
+              borderRadius: 'var(--radius-full)',
+              backgroundColor: opt.bg,
+              color: opt.text,
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {opt.label}
+          </button>
+        ))
+      )}
+    </div>
+  );
+});
 
 /**
  * Pill-style button used inside the dark bar. forwardRef so the Move-to

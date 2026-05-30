@@ -215,7 +215,56 @@ const addComment = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /api/tasks/:taskId/comments/:id
+ *
+ * Edit a comment's text. Only the author can edit. Mentions and replyTo
+ * are immutable on edit — only `text` changes. `editedAt` is stamped so the
+ * client can show an "(edited)" marker.
+ */
+const editComment = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { taskId, id } = req.params;
+    const { text } = req.body || {};
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Comment text is required' });
+    }
+
+    const comment = await Comment.findOne({ _id: id, task: taskId });
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+
+    const task = await Task.findById(taskId);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const access = await checkTaskAccess(task, userId);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    if (!comment.author || comment.author.toString() !== userId) {
+      return res.status(403).json({ error: 'Not authorised' });
+    }
+
+    comment.text = text.trim();
+    comment.editedAt = new Date();
+    await comment.save();
+
+    const populated = await Comment.findById(comment._id)
+      .populate('author', 'name profilePic email')
+      .populate('mentions', 'name profilePic email')
+      .populate({ path: 'replyTo', select: 'author text', populate: { path: 'author', select: 'name' } });
+
+    return res.json({ comment: populated });
+  } catch (err) {
+    console.error('editComment error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getComments,
   addComment,
+  editComment,
 };

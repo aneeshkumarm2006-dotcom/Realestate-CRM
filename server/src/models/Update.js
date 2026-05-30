@@ -54,6 +54,10 @@ const updateSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    editedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

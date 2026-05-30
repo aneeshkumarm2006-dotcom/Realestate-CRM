@@ -180,7 +180,7 @@ const PortalAnchor = ({ rect, children }) => {
  *                     { json, text, mentions: [{_id, name}], isEmpty }
  *   editorRef — optional ref that receives the editor instance (for `.commands` access)
  */
-const RichEditor = ({ placeholder = 'Write an update…', onChange, editorRef }) => {
+const RichEditor = ({ placeholder = 'Write an update…', onChange, editorRef, initialContent = '' }) => {
   const members = useOrgStore((s) => s.members);
   // Keep the members list in a ref so the mention extension reads fresh data
   // without recreating the editor on every member-fetch.
@@ -266,7 +266,7 @@ const RichEditor = ({ placeholder = 'Write an update…', onChange, editorRef })
         renderText: ({ node }) => `@${node.attrs.label || node.attrs.id}`,
       }),
     ],
-    content: '',
+    content: initialContent || '',
     editorProps: {
       attributes: {
         class: 'macan-rich-content',

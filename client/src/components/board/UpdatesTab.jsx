@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Trash2,
   Download,
+  Pencil,
 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -159,6 +160,24 @@ const UpdatesTab = ({ task, onCountChange }) => {
     [taskId, toast]
   );
 
+  const handleEdit = useCallback(
+    async (updateId, payload) => {
+      if (!taskId) return null;
+      try {
+        const updated = await updateService.editUpdate(taskId, updateId, payload);
+        setUpdates((prev) => prev.map((u) => (u._id === updateId ? updated : u)));
+        return updated;
+      } catch (err) {
+        console.error('Failed to edit update:', err);
+        toast.error(
+          err?.response?.data?.error || 'Failed to edit update.'
+        );
+        throw err;
+      }
+    },
+    [taskId, toast]
+  );
+
   const handleFilesSelected = useCallback(
     async (e) => {
       const files = Array.from(e.target.files || []);
@@ -239,6 +258,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
                   update={u}
                   currentUserId={currentUser?._id}
                   onDelete={() => handleDelete(u._id)}
+                  onEdit={(payload) => handleEdit(u._id, payload)}
                 />
               </li>
             ))}
@@ -477,12 +497,70 @@ const UpdatesTab = ({ task, onCountChange }) => {
 };
 
 /**
- * Single update card — author, timestamp, rich body, attachments, delete.
+ * Single update card — author, timestamp, rich body, attachments, edit, delete.
+ *
+ * Author can toggle edit mode, which swaps the read-only body for a RichEditor
+ * pre-loaded with the existing TipTap document. Attachments aren't editable
+ * here — they were uploaded once and stay attached.
  */
-const UpdateCard = ({ update, currentUserId, onDelete }) => {
+const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
   const author = update.author || {};
   const isAuthor = author._id && currentUserId && author._id === currentUserId;
   const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editBodyJson, setEditBodyJson] = useState(update.body || null);
+  const [editBodyText, setEditBodyText] = useState(update.bodyText || '');
+  const [editMentions, setEditMentions] = useState(
+    Array.isArray(update.mentions)
+      ? update.mentions.map((m) => ({ _id: m._id, name: m.name }))
+      : []
+  );
+  const [editEmpty, setEditEmpty] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const editEditorRef = useRef(null);
+
+  const handleEditorChange = useCallback(({ json, text, mentions, isEmpty }) => {
+    setEditBodyJson(json);
+    setEditBodyText(text);
+    setEditMentions(mentions);
+    setEditEmpty(isEmpty);
+  }, []);
+
+  const startEdit = () => {
+    setEditBodyJson(update.body || null);
+    setEditBodyText(update.bodyText || '');
+    setEditMentions(
+      Array.isArray(update.mentions)
+        ? update.mentions.map((m) => ({ _id: m._id, name: m.name }))
+        : []
+    );
+    setEditEmpty(false);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+  };
+
+  const saveEdit = async () => {
+    const hasAttachments =
+      Array.isArray(update.attachments) && update.attachments.length > 0;
+    if (editEmpty && !hasAttachments) return;
+    setSavingEdit(true);
+    try {
+      await onEdit?.({
+        body: editBodyJson,
+        bodyText: editBodyText,
+        mentions: editMentions.map((m) => m._id),
+        attachments: update.attachments || [],
+      });
+      setEditing(false);
+    } catch {
+      // toast surfaced by parent
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   return (
     <article
@@ -517,31 +595,115 @@ const UpdateCard = ({ update, currentUserId, onDelete }) => {
             >
               {timeAgo(update.createdAt)}
             </span>
+            {update.editedAt ? (
+              <span
+                className="font-body"
+                title={`Edited ${formatDate(update.editedAt)}`}
+                style={{ fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}
+              >
+                (edited)
+              </span>
+            ) : null}
           </div>
         </div>
-        {isAuthor && hovered ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            aria-label="Delete update"
-            className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
-            style={{
-              width: 24,
-              height: 24,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--color-text-muted)',
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
-            <Trash2 size={13} aria-hidden="true" />
-          </button>
+        {isAuthor && hovered && !editing ? (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={startEdit}
+              aria-label="Edit update"
+              className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+              style={{
+                width: 24,
+                height: 24,
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              <Pencil size={13} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Delete update"
+              className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+              style={{
+                width: 24,
+                height: 24,
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-text-muted)',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+            </button>
+          </div>
         ) : null}
       </header>
 
       <div style={{ marginTop: 8 }}>
-        <ReadOnlyRichBody body={update.body} fallbackText={update.bodyText} />
+        {editing ? (
+          <>
+            <RichEditor
+              placeholder="Edit your update…"
+              onChange={handleEditorChange}
+              editorRef={editEditorRef}
+              initialContent={update.body || (update.bodyText || '')}
+            />
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelEdit}
+                disabled={savingEdit}
+                className="font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+                style={{
+                  height: 30,
+                  padding: '0 12px',
+                  background: 'transparent',
+                  color: 'var(--color-text-secondary)',
+                  fontWeight: 500,
+                  fontSize: 13,
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: savingEdit ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={
+                  savingEdit ||
+                  (editEmpty &&
+                    (!Array.isArray(update.attachments) ||
+                      update.attachments.length === 0))
+                }
+                className="font-body transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover"
+                style={{
+                  height: 30,
+                  padding: '0 12px',
+                  background: 'var(--color-accent)',
+                  color: '#FFFFFF',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: savingEdit ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {savingEdit ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <ReadOnlyRichBody body={update.body} fallbackText={update.bodyText} />
+        )}
       </div>
 
       {Array.isArray(update.attachments) && update.attachments.length > 0 ? (

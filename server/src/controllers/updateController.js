@@ -213,6 +213,84 @@ const addUpdate = async (req, res) => {
 };
 
 /**
+ * PATCH /api/tasks/:taskId/updates/:id
+ *
+ * Only the update's author can edit. Accepts the same body shape as addUpdate
+ * (body, bodyText, mentions, attachments) and stamps `editedAt`. No
+ * notifications are emitted on edit — newly-added mentions don't ping.
+ */
+const editUpdate = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { taskId, id } = req.params;
+    const { body, bodyText, mentions, attachments } = req.body || {};
+
+    const update = await Update.findOne({ _id: id, task: taskId });
+    if (!update) return res.status(404).json({ error: 'Update not found' });
+
+    const task = await Task.findById(taskId);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    const access = await checkTaskAccess(task, userId);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    if (!update.author || update.author.toString() !== userId) {
+      return res.status(403).json({ error: 'Not authorised' });
+    }
+
+    const hasBody =
+      (body && typeof body === 'object' && Object.keys(body).length > 0) ||
+      (typeof bodyText === 'string' && bodyText.trim().length > 0);
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+    if (!hasBody && !hasAttachments) {
+      return res.status(400).json({ error: 'Update body is required' });
+    }
+
+    let validMentions = [];
+    if (Array.isArray(mentions) && mentions.length > 0 && !task.isPersonal) {
+      const board = access.board || (await Board.findById(task.board));
+      if (board) {
+        const org =
+          access.org || (await Organisation.findById(board.organisation));
+        if (org) {
+          const memberSet = new Set(org.members.map((m) => m.toString()));
+          validMentions = mentions.filter((id) => memberSet.has(id.toString()));
+        }
+      }
+    }
+
+    const cleanAttachments = Array.isArray(attachments)
+      ? attachments
+          .filter((a) => a && typeof a.url === 'string' && a.url.length > 0)
+          .map((a) => ({
+            url: a.url,
+            name: a.name || '',
+            mime: a.mime || '',
+            size: Number.isFinite(a.size) ? a.size : 0,
+          }))
+      : [];
+
+    update.body = body || null;
+    update.bodyText = (bodyText || '').toString().slice(0, 4000);
+    update.mentions = validMentions;
+    update.attachments = cleanAttachments;
+    update.editedAt = new Date();
+    await update.save();
+
+    const populated = await Update.findById(update._id)
+      .populate('author', 'name profilePic email')
+      .populate('mentions', 'name profilePic email');
+
+    return res.json({ update: populated });
+  } catch (err) {
+    console.error('editUpdate error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
  * DELETE /api/tasks/:taskId/updates/:id
  *
  * Only the update's author (or an org admin on the board) can delete.
@@ -300,6 +378,7 @@ const uploadAttachment = async (req, res) => {
 module.exports = {
   getUpdates,
   addUpdate,
+  editUpdate,
   deleteUpdate,
   uploadAttachment,
 };

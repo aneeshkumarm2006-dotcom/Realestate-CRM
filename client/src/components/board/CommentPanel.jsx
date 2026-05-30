@@ -7,10 +7,12 @@ import {
   Plus,
   Settings as SettingsIcon,
   ChevronLeft,
+  Pencil,
 } from 'lucide-react';
 import Chip from '../ui/Chip';
 import { formatDate, timeAgo } from '../../utils/dateUtils';
 import * as commentService from '../../services/commentService';
+import useAuthStore from '../../store/authStore';
 import useNotificationStore from '../../store/notificationStore';
 import useOrgStore from '../../store/orgStore';
 import { getColorPair } from '../../utils/priorityColors';
@@ -72,6 +74,7 @@ const CommentPanel = ({
   const textareaRef = useRef(null);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
   const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
+  const currentUserId = useAuthStore((s) => s.user?._id);
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState('');
@@ -213,6 +216,29 @@ const CommentPanel = ({
       }
     },
     [text, submitting, taskId, refreshNotifications, mentionedUsers, replyingTo]
+  );
+
+  // Edit an existing comment's text. Author-only; the server enforces
+  // authorisation. The replaced comment is patched back into the thread
+  // in-place so the order doesn't change.
+  const handleEditComment = useCallback(
+    async (commentId, newText) => {
+      if (!taskId) return null;
+      try {
+        const updated = await commentService.editComment(taskId, commentId, newText);
+        setComments((prev) =>
+          prev.map((c) => (c._id === commentId ? updated : c))
+        );
+        return updated;
+      } catch (err) {
+        console.error('Failed to edit comment:', err);
+        setError(
+          err?.response?.data?.error || 'Failed to edit comment. Please try again.'
+        );
+        throw err;
+      }
+    },
+    [taskId]
   );
 
   // Insert a selected mention — replace the @query with a chip
@@ -815,7 +841,12 @@ const CommentPanel = ({
                         : '1px solid var(--color-border)',
                   }}
                 >
-                  <CommentItem comment={c} onReply={setReplyingTo} />
+                  <CommentItem
+                    comment={c}
+                    currentUserId={currentUserId}
+                    onReply={setReplyingTo}
+                    onEdit={(newText) => handleEditComment(c._id, newText)}
+                  />
                 </li>
               ))}
             </ul>
@@ -1274,11 +1305,71 @@ const RenderCommentText = ({ text, mentions }) => {
 };
 
 /**
- * One comment entry inside the thread.
+ * One comment entry inside the thread. Authors can switch into an inline
+ * edit mode that swaps the rendered text for a textarea. Mentions and the
+ * reply target are immutable on edit — only the text body changes.
  */
-const CommentItem = ({ comment, onReply }) => {
+const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
   const author = comment.author || {};
+  const isAuthor =
+    author._id && currentUserId && author._id === currentUserId;
   const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.text || '');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const editTextareaRef = useRef(null);
+
+  // Reset edit-mode state if the underlying comment text changes (e.g.
+  // after a successful save).
+  useEffect(() => {
+    if (!editing) setDraft(comment.text || '');
+  }, [comment.text, editing]);
+
+  useEffect(() => {
+    if (editing && editTextareaRef.current) {
+      editTextareaRef.current.focus();
+      const len = editTextareaRef.current.value.length;
+      editTextareaRef.current.setSelectionRange(len, len);
+    }
+  }, [editing]);
+
+  const startEdit = () => {
+    setDraft(comment.text || '');
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft(comment.text || '');
+  };
+
+  const saveEdit = async () => {
+    const next = draft.trim();
+    if (!next || next === (comment.text || '').trim()) {
+      cancelEdit();
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await onEdit?.(next);
+      setEditing(false);
+    } catch {
+      // Toast is surfaced by the parent.
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleEditKeyDown = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      saveEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  };
+
   return (
     <div
       className="flex items-start gap-3"
@@ -1330,41 +1421,150 @@ const CommentItem = ({ comment, onReply }) => {
           >
             {timeAgo(comment.createdAt)}
           </span>
-          {/* Reply button */}
-          <button
-            type="button"
-            onClick={() => onReply?.(comment)}
-            aria-label={`Reply to ${author.name || 'this comment'}`}
-            className="inline-flex items-center gap-1 font-body transition-opacity duration-150"
+          {comment.editedAt ? (
+            <span
+              className="font-body"
+              style={{ fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}
+              title={`Edited ${formatDate(comment.editedAt)}`}
+            >
+              (edited)
+            </span>
+          ) : null}
+          {!editing && (
+            <div
+              className="flex items-center gap-1"
+              style={{
+                opacity: hovered ? 1 : 0,
+                pointerEvents: hovered ? 'auto' : 'none',
+                transition: 'opacity 150ms',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => onReply?.(comment)}
+                aria-label={`Reply to ${author.name || 'this comment'}`}
+                className="inline-flex items-center gap-1 font-body"
+                style={{
+                  fontSize: 11,
+                  color: 'var(--color-accent)',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '1px 4px',
+                  borderRadius: 4,
+                }}
+              >
+                <CornerDownLeft size={12} aria-hidden="true" />
+                Reply
+              </button>
+              {isAuthor && (
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  aria-label="Edit comment"
+                  className="inline-flex items-center gap-1 font-body"
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--color-text-secondary)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '1px 4px',
+                    borderRadius: 4,
+                  }}
+                >
+                  <Pencil size={11} aria-hidden="true" />
+                  Edit
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        {editing ? (
+          <div style={{ marginTop: 4 }}>
+            <textarea
+              ref={editTextareaRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleEditKeyDown}
+              disabled={savingEdit}
+              rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+              aria-label="Edit comment"
+              className="w-full font-body focus:outline-none"
+              style={{
+                resize: 'vertical',
+                fontSize: 14,
+                lineHeight: 1.55,
+                color: 'var(--color-text-primary)',
+                background: 'var(--color-bg-surface, #FFFFFF)',
+                border: '1.5px solid var(--color-accent)',
+                borderRadius: 'var(--radius-md)',
+                padding: '6px 8px',
+                boxShadow: '0 0 0 3px var(--color-accent-light, rgba(37,99,235,0.12))',
+              }}
+            />
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <span
+                className="font-body mr-auto"
+                style={{ fontSize: 11, color: 'var(--color-text-muted)' }}
+              >
+                {savingEdit ? 'Saving…' : 'Cmd/Ctrl + Enter to save, Esc to cancel'}
+              </span>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                disabled={savingEdit}
+                className="font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+                style={{
+                  height: 28,
+                  padding: '0 10px',
+                  background: 'transparent',
+                  color: 'var(--color-text-secondary)',
+                  fontWeight: 500,
+                  fontSize: 12,
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: savingEdit ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={savingEdit || !draft.trim()}
+                className="font-body transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover"
+                style={{
+                  height: 28,
+                  padding: '0 12px',
+                  background: 'var(--color-accent)',
+                  color: '#FFFFFF',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: savingEdit || !draft.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {savingEdit ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p
+            className="font-body"
             style={{
-              fontSize: 11,
-              color: 'var(--color-accent)',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '1px 4px',
-              borderRadius: 4,
-              opacity: hovered ? 1 : 0,
-              pointerEvents: hovered ? 'auto' : 'none',
+              fontSize: 14,
+              lineHeight: 1.55,
+              color: 'var(--color-text-primary)',
+              marginTop: 2,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
             }}
           >
-            <CornerDownLeft size={12} aria-hidden="true" />
-            Reply
-          </button>
-        </div>
-        <p
-          className="font-body"
-          style={{
-            fontSize: 14,
-            lineHeight: 1.55,
-            color: 'var(--color-text-primary)',
-            marginTop: 2,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
-          <RenderCommentText text={comment.text} mentions={comment.mentions} />
-        </p>
+            <RenderCommentText text={comment.text} mentions={comment.mentions} />
+          </p>
+        )}
       </div>
     </div>
   );

@@ -25,3 +25,13 @@ export const addComment = async (taskId, text, mentions = [], replyTo = null) =>
   const { data } = await api.post(`/api/tasks/${taskId}/comments`, { text, mentions, replyTo });
   return data.comment;
 };
+
+/**
+ * PATCH /api/tasks/:taskId/comments/:id
+ *
+ * Edit a comment's text. Author only. Returns the populated comment.
+ */
+export const editComment = async (taskId, commentId, text) => {
+  const { data } = await api.patch(`/api/tasks/${taskId}/comments/${commentId}`, { text });
+  return data.comment;
+};

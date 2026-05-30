@@ -32,6 +32,25 @@ export const addUpdate = async (
 };
 
 /**
+ * PATCH /api/tasks/:taskId/updates/:id
+ *
+ * Edit an existing update. Author only. Same payload shape as addUpdate.
+ */
+export const editUpdate = async (
+  taskId,
+  updateId,
+  { body, bodyText = '', mentions = [], attachments = [] }
+) => {
+  const { data } = await api.patch(`/api/tasks/${taskId}/updates/${updateId}`, {
+    body,
+    bodyText,
+    mentions,
+    attachments,
+  });
+  return data.update;
+};
+
+/**
  * DELETE /api/tasks/:taskId/updates/:id
  */
 export const deleteUpdate = async (taskId, updateId) => {
