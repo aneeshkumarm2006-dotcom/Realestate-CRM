@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AtSign,
   Paperclip,
-  Image as ImageIcon,
   Smile,
   Send,
   Mail,
@@ -415,12 +414,6 @@ const UpdatesTab = ({ task, onCountChange }) => {
             onChange={handleFilesSelected}
             style={{ display: 'none' }}
           />
-          <ToolbarIconButton
-            onClick={() => toast.info('GIF picker coming soon')}
-            title="Insert GIF (coming soon)"
-          >
-            <ImageIcon size={14} aria-hidden="true" />
-          </ToolbarIconButton>
 
           <div style={{ position: 'relative' }}>
             <ToolbarIconButton

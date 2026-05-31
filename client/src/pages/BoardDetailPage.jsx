@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon,
   Zap,
   GripVertical,
+  SearchX,
 } from 'lucide-react';
 import {
   DndContext,
@@ -41,6 +42,7 @@ import AutomationsModal from '../components/board/AutomationsModal';
 import LabelPicker from '../components/board/LabelPicker';
 import EditChipsModal from '../components/board/EditChipsModal';
 import BulkActionBar from '../components/board/BulkActionBar';
+import BoardFilterBar from '../components/board/BoardFilterBar';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -49,6 +51,11 @@ import useNotificationStore from '../store/notificationStore';
 import useToastStore from '../store/toastStore';
 import * as taskService from '../services/taskService';
 import { formatDate } from '../utils/dateUtils';
+import {
+  EMPTY_FILTERS,
+  hasActiveFilters,
+  taskMatchesFilters,
+} from '../utils/taskFilters';
 
 /**
  * Group color cycle — reuses the stat-card palette so groups are visually
@@ -147,6 +154,11 @@ const BoardDetailPage = () => {
   // Automations modal
   const [automationsOpen, setAutomationsOpen] = useState(false);
 
+  // --- Filtering ---------------------------------------------------------
+  // Filter bar at the top of the board narrows the visible tasks by name,
+  // status, priority, label, due date, and assignee. See utils/taskFilters.js.
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+
   // --- Bulk selection ----------------------------------------------------
   // Aggregated across every group on the board so the floating BulkActionBar
   // can act on tasks from multiple groups at once.
@@ -238,6 +250,39 @@ const BoardDetailPage = () => {
         0
       ),
     [tasksByGroup]
+  );
+
+  // Flattened list of every top-level task — used to derive the assignee
+  // option list in the filter bar.
+  const allTasks = useMemo(() => {
+    const out = [];
+    for (const list of Object.values(tasksByGroup)) {
+      if (Array.isArray(list)) out.push(...list);
+    }
+    return out;
+  }, [tasksByGroup]);
+
+  const filtersActive = hasActiveFilters(filters);
+
+  // Apply the active filters per group. When nothing is active we hand back
+  // the original buckets untouched so unfiltered boards skip the work.
+  const filteredTasksByGroup = useMemo(() => {
+    if (!filtersActive) return tasksByGroup;
+    const now = new Date();
+    const out = {};
+    for (const [gid, list] of Object.entries(tasksByGroup)) {
+      out[gid] = (list || []).filter((t) => taskMatchesFilters(t, filters, now));
+    }
+    return out;
+  }, [tasksByGroup, filters, filtersActive]);
+
+  const matchedTaskCount = useMemo(
+    () =>
+      Object.values(filteredTasksByGroup).reduce(
+        (acc, list) => acc + (list?.length || 0),
+        0
+      ),
+    [filteredTasksByGroup]
   );
 
   const toggleGroup = (groupId) => {
@@ -702,8 +747,11 @@ const BoardDetailPage = () => {
   );
   const groupIds = useMemo(() => groups.map((g) => g._id), [groups]);
   // DnD is disabled while an inline edit/create row is open in any group so
-  // the form controls don't fight with the drag sensors.
-  const dndDisabledGlobal = creatingInGroup != null || editingTaskId != null;
+  // the form controls don't fight with the drag sensors. It's also disabled
+  // while filters are active — reordering a filtered subset would write a
+  // bogus order back to the full list.
+  const dndDisabledGlobal =
+    creatingInGroup != null || editingTaskId != null || filtersActive;
 
   const handleBoardDragEnd = (event) => {
     const { active, over } = event;
@@ -883,6 +931,18 @@ const BoardDetailPage = () => {
         )}
       </header>
 
+      {/* Filter bar */}
+      {hasGroups && board && (
+        <BoardFilterBar
+          board={board}
+          allTasks={allTasks}
+          filters={filters}
+          onChange={setFilters}
+          matchedCount={matchedTaskCount}
+          totalCount={totalTaskCount}
+        />
+      )}
+
       {/* Task groups */}
       <section className="mt-6 flex flex-col gap-4">
         {loading && !hasGroups ? (
@@ -916,6 +976,23 @@ const BoardDetailPage = () => {
               onAction={isAdmin ? handleOpenGroupModal : undefined}
             />
           </div>
+        ) : filtersActive && matchedTaskCount === 0 ? (
+          <div
+            className="bg-surface"
+            style={{
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-card)',
+              padding: '48px 16px',
+            }}
+          >
+            <EmptyState
+              icon={SearchX}
+              title="No tasks match your filters"
+              description="Try removing or loosening a filter to see more tasks."
+              actionLabel="Clear all filters"
+              onAction={() => setFilters(EMPTY_FILTERS)}
+            />
+          </div>
         ) : (
           <DndContext
             sensors={sensors}
@@ -924,7 +1001,10 @@ const BoardDetailPage = () => {
           >
             <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
               {groups.map((group, idx) => {
-                const groupTasks = tasksByGroup[group._id] || [];
+                const groupTasks = filteredTasksByGroup[group._id] || [];
+                // While filtering, groups with no surviving tasks drop out of
+                // the view entirely to cut noise.
+                if (filtersActive && groupTasks.length === 0) return null;
                 const doneStatusId =
                   board && Array.isArray(board.statuses)
                     ? (board.statuses.find((s) => s.key === 'done')?._id || null)
@@ -1016,7 +1096,7 @@ const BoardDetailPage = () => {
                               board={board}
                               members={members}
                               editingTaskId={editingTaskId}
-                              isCreating={isAdmin}
+                              isCreating={isAdmin && !filtersActive}
                               createKey={newTaskKeysByGroup[group._id] || 0}
                               isAdmin={isAdmin}
                               highlightedTaskId={highlightedTaskId}
