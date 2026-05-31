@@ -1017,13 +1017,19 @@ const BoardDetailPage = () => {
                   return t.status === 'done';
                 }).length;
                 const isCollapsed = collapsed.has(group._id);
-                const needsOverflowVisible = !isCollapsed;
                 // Disable task DnD inside this group while it's hosting an
                 // inline create/edit row — but leave the group's own handle
                 // sortable so users can still rearrange columns.
                 const isEditingHere =
                   (editingTaskId != null && groupTasks.some((t) => t._id === editingTaskId)) ||
                   creatingInGroup === group._id;
+                // Keep the card clipped to its rounded corners in the normal
+                // state so the grey header and row backgrounds don't poke past
+                // the 14px radius. Only lift the clip while an inline edit/create
+                // row is open here, where the field dropdowns must escape the
+                // card bounds. The inner table/grid wrappers clip their own
+                // overflow, so this doesn't change popover or drag behaviour.
+                const needsOverflowVisible = isEditingHere;
 
                 return (
                   <SortableItem

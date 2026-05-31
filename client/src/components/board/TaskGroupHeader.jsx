@@ -37,7 +37,13 @@ const TaskGroupHeader = ({
         height: 48,
         padding: '0 16px',
         background: 'var(--color-bg-subtle)',
-        borderBottom: '1px solid var(--color-border)',
+        // Match the card's top corners so the grey header curves with the
+        // rounded card edge (matters while the card is overflow-visible during
+        // inline editing). A collapsed group has no table below it, so its
+        // bottom border would just double up the card's own border ring.
+        borderTopLeftRadius: 'var(--radius-lg)',
+        borderTopRightRadius: 'var(--radius-lg)',
+        borderBottom: collapsed ? 'none' : '1px solid var(--color-border)',
       }}
     >
       {dragHandle}
