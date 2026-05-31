@@ -140,36 +140,30 @@ const LEGACY_COLUMN_KEY_TO_TASK_FIELD = {
  * The lookup is intentionally lazy — `require` happens inside the hook so
  * Task.js stays cycle-free w.r.t. Board.js at module load.
  */
-taskSchema.pre('save', async function syncLegacyFieldsFromColumnValues(next) {
-  try {
-    if (this.isPersonal || !this.board) return next();
-    if (!this.columnValues || this.columnValues.size === 0) return next();
+taskSchema.pre('save', async function syncLegacyFieldsFromColumnValues() {
+  if (this.isPersonal || !this.board) return;
+  if (!this.columnValues || this.columnValues.size === 0) return;
 
-    const Board = mongoose.model('Board');
-    const board = await Board.findById(this.board).select('useFlexibleColumns columns').lean();
-    if (!board || !board.useFlexibleColumns) return next();
-    if (!Array.isArray(board.columns) || board.columns.length === 0) return next();
+  const Board = mongoose.model('Board');
+  const board = await Board.findById(this.board).select('useFlexibleColumns columns').lean();
+  if (!board || !board.useFlexibleColumns) return;
+  if (!Array.isArray(board.columns) || board.columns.length === 0) return;
 
-    for (const col of board.columns) {
-      const field = LEGACY_COLUMN_KEY_TO_TASK_FIELD[col.key];
-      if (!field) continue;
-      const colId = col._id ? col._id.toString() : null;
-      if (!colId) continue;
-      // `columnValues` is a Map at runtime.
-      const value = this.columnValues.get(colId);
-      if (value === undefined) continue;
+  for (const col of board.columns) {
+    const field = LEGACY_COLUMN_KEY_TO_TASK_FIELD[col.key];
+    if (!field) continue;
+    const colId = col._id ? col._id.toString() : null;
+    if (!colId) continue;
+    const value = this.columnValues.get(colId);
+    if (value === undefined) continue;
 
-      if (field === 'dueDate') {
-        this.dueDate = value ? new Date(value) : undefined;
-      } else if (field === 'assignedTo' || field === 'labels') {
-        this.set(field, Array.isArray(value) ? value : []);
-      } else {
-        this.set(field, value);
-      }
+    if (field === 'dueDate') {
+      this.dueDate = value ? new Date(value) : undefined;
+    } else if (field === 'assignedTo' || field === 'labels') {
+      this.set(field, Array.isArray(value) ? value : []);
+    } else {
+      this.set(field, value);
     }
-    return next();
-  } catch (err) {
-    return next(err);
   }
 });
 

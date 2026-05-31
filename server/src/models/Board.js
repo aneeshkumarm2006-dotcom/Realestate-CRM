@@ -111,19 +111,16 @@ boardSchema.index({ 'columns.key': 1 }, { sparse: true });
  * write; the hook is a defence-in-depth so a bad bulk update can't slip a
  * malformed board past validation.
  */
-boardSchema.pre('save', function enforcePrimaryColumn(next) {
+boardSchema.pre('save', function enforcePrimaryColumn() {
   if (!Array.isArray(this.columns) || this.columns.length === 0) {
-    return next();
+    return;
   }
   const primaries = this.columns.filter((c) => c.isPrimary === true);
   if (primaries.length !== 1) {
-    return next(
-      new Error(
-        `Board.columns must have exactly one isPrimary column (found ${primaries.length})`
-      )
+    throw new Error(
+      `Board.columns must have exactly one isPrimary column (found ${primaries.length})`
     );
   }
-  return next();
 });
 
 module.exports = mongoose.model('Board', boardSchema);

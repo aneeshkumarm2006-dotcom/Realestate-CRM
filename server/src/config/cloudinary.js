@@ -35,18 +35,34 @@ const avatarUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
+// Resolve the correct Cloudinary resource_type from a multer file object.
+// Images → 'image', Videos → 'video', everything else (PDFs, docs…) → 'raw'
+// so non-image files are served with the correct Content-Type and are not
+// misidentified as images by Cloudinary.
+const resolveResourceType = (file) => {
+  const mime = (file.mimetype || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  return 'raw';
+};
+
 /**
  * Cloudinary storage for task update attachments (images, PDFs, docs).
- * Files keep their original format and live under macan/updates/. The
- * `resource_type: 'auto'` lets Cloudinary infer images vs raw files.
+ * resource_type is derived from the actual MIME type so PDFs land under
+ * /raw/upload/ and are served as application/pdf, not image/jpeg.
  */
 const updateAttachmentStorage = new CloudinaryStorage({
   cloudinary,
-  params: (req, file) => ({
-    folder: 'macan/updates',
-    resource_type: 'auto',
-    public_id: `${Date.now()}-${(file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`,
-  }),
+  params: (req, file) => {
+    const nameWithoutExt = (file.originalname || 'file')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    return {
+      folder: 'macan/updates',
+      resource_type: resolveResourceType(file),
+      public_id: `${Date.now()}-${nameWithoutExt}`,
+    };
+  },
 });
 
 const updateUpload = multer({
@@ -55,17 +71,21 @@ const updateUpload = multer({
 });
 
 /**
- * Cloudinary storage for task-level attachments (uploaded from the Files tab).
- * Same shape as update attachments, but isolated under `macan/tasks/` so files
- * can be audited and pruned per surface.
+ * Cloudinary storage for task-level attachments (Files tab).
+ * Same resource_type logic as updateAttachmentStorage.
  */
 const taskAttachmentStorage = new CloudinaryStorage({
   cloudinary,
-  params: (req, file) => ({
-    folder: 'macan/tasks',
-    resource_type: 'auto',
-    public_id: `${Date.now()}-${(file.originalname || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`,
-  }),
+  params: (req, file) => {
+    const nameWithoutExt = (file.originalname || 'file')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    return {
+      folder: 'macan/tasks',
+      resource_type: resolveResourceType(file),
+      public_id: `${Date.now()}-${nameWithoutExt}`,
+    };
+  },
 });
 
 const taskAttachmentUpload = multer({
