@@ -31,6 +31,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTaskGroup } from '../components/ui/Skeleton';
 import TaskGroupHeader from '../components/board/TaskGroupHeader';
 import TaskTable from '../components/board/TaskTable';
+import DataGrid from '../components/board/DataGrid';
 import SortableItem from '../components/dnd/SortableItem';
 import StatusMenu from '../components/board/StatusMenu';
 import PriorityMenu from '../components/board/PriorityMenu';
@@ -1003,29 +1004,37 @@ const BoardDetailPage = () => {
                           }
                         />
                         {!isCollapsed && (
-                          <TaskTable
-                            tasks={groupTasks}
-                            board={board}
-                            members={members}
-                            editingTaskId={editingTaskId}
-                            isCreating={isAdmin}
-                            createKey={newTaskKeysByGroup[group._id] || 0}
-                            isAdmin={isAdmin}
-                            highlightedTaskId={highlightedTaskId}
-                            onOpenTask={handleOpenTask}
-                            onStatusClick={handleStatusClick}
-                            onPriorityClick={handlePriorityClick}
-                            onLabelsClick={handleLabelsClick}
-                            onActionsClick={isAdmin ? handleActionsClick : undefined}
-                            onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
-                            onSaveEdit={handleSaveEditTask}
-                            onCancelEdit={handleCancelEdit}
-                            groupId={group._id}
-                            dndDisabled={dndDisabledGlobal || isEditingHere}
-                            selectedIds={selectedTaskIds}
-                            onToggleSelect={handleToggleSelectTask}
-                            onToggleSelectAll={handleToggleSelectGroup}
-                          />
+                          board?.useFlexibleColumns ? (
+                            <DataGrid
+                              board={board}
+                              tasks={groupTasks}
+                              readOnly={!isAdmin}
+                            />
+                          ) : (
+                            <TaskTable
+                              tasks={groupTasks}
+                              board={board}
+                              members={members}
+                              editingTaskId={editingTaskId}
+                              isCreating={isAdmin}
+                              createKey={newTaskKeysByGroup[group._id] || 0}
+                              isAdmin={isAdmin}
+                              highlightedTaskId={highlightedTaskId}
+                              onOpenTask={handleOpenTask}
+                              onStatusClick={handleStatusClick}
+                              onPriorityClick={handlePriorityClick}
+                              onLabelsClick={handleLabelsClick}
+                              onActionsClick={isAdmin ? handleActionsClick : undefined}
+                              onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
+                              onSaveEdit={handleSaveEditTask}
+                              onCancelEdit={handleCancelEdit}
+                              groupId={group._id}
+                              dndDisabled={dndDisabledGlobal || isEditingHere}
+                              selectedIds={selectedTaskIds}
+                              onToggleSelect={handleToggleSelectTask}
+                              onToggleSelectAll={handleToggleSelectGroup}
+                            />
+                          )
                         )}
                       </div>
                     )}

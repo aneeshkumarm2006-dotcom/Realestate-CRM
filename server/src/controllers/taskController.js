@@ -12,6 +12,7 @@ const { sendTaskAssignmentEmail } = require('../services/emailService');
 const Notification = require('../models/Notification');
 const eventBus = require('../services/eventBus');
 const { logActivity } = require('../services/activityService');
+const { getColumnType } = require('../utils/columnTypes');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 // Legacy enum keys — accepted for personal tasks (which don't have a board).
@@ -206,6 +207,125 @@ const describeStatus = (board, statusInput) => {
     return statusInput.replace(/_/g, ' ');
   }
   return 'updated';
+};
+
+/**
+ * Compare two column values for equality. Handles arrays (ObjectId lists for
+ * person/tags), plain objects (link/location/timeline), Dates, and primitives.
+ * Used by the event-emit step to suppress no-op writes.
+ */
+const columnValuesEqual = (a, b) => {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    const aIds = a.map((v) => (v == null ? '' : v.toString())).sort();
+    const bIds = b.map((v) => (v == null ? '' : v.toString())).sort();
+    return aIds.every((v, i) => v === bIds[i]);
+  }
+  if (typeof a === 'object' && typeof b === 'object') {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch (_err) {
+      return false;
+    }
+  }
+  return a.toString() === b.toString();
+};
+
+/**
+ * Validate and apply a `columnValues` patch onto a task. Returns either
+ * `{ ok: true, changes: [{ column, fromValue, toValue }] }` or
+ * `{ ok: false, errors: [{ columnId, message }] }` so the caller can ship a
+ * 400 with field-level errors.
+ *
+ * Merges into the existing Map — keys not present in the patch are left alone.
+ */
+const applyColumnValuePatch = (task, board, patch) => {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return { ok: false, errors: [{ columnId: null, message: 'columnValues must be an object' }] };
+  }
+  if (!board || !Array.isArray(board.columns) || board.columns.length === 0) {
+    return { ok: false, errors: [{ columnId: null, message: 'Board has no columns configured' }] };
+  }
+
+  const columnsById = new Map(board.columns.map((c) => [c._id.toString(), c]));
+  const errors = [];
+  const changes = [];
+
+  for (const [cidRaw, rawValue] of Object.entries(patch)) {
+    const cid = cidRaw.toString();
+    const col = columnsById.get(cid);
+    if (!col) {
+      errors.push({ columnId: cid, message: 'Unknown column id on this board' });
+      continue;
+    }
+    const entry = getColumnType(col.type);
+    if (!entry) {
+      errors.push({ columnId: cid, message: `Unknown column type: ${col.type}` });
+      continue;
+    }
+    try {
+      entry.validate(rawValue, col.settings || {});
+    } catch (err) {
+      errors.push({ columnId: cid, message: err.message, code: err.code });
+      continue;
+    }
+    const serialized = entry.serialize ? entry.serialize(rawValue) : rawValue;
+    const prevValue = task.columnValues ? task.columnValues.get(cid) : undefined;
+    if (columnValuesEqual(prevValue, serialized)) continue;
+    task.columnValues.set(cid, serialized);
+    changes.push({ column: col, fromValue: prevValue == null ? null : prevValue, toValue: serialized });
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, changes };
+};
+
+/**
+ * Emit the three F1 column events on eventBus for every successful column
+ * change. Dormant in Phase 1 (no subscriber); F4 wires up triggers in Phase 2.
+ *
+ * - task.column_changed : fired for every change
+ * - task.status_became  : fired when the column type is `status`
+ * - task.person_assigned: fired when a `person` column gains user ids
+ */
+const emitColumnChangeEvents = (task, boardId, changes, actorId) => {
+  for (const change of changes) {
+    const { column, fromValue, toValue } = change;
+    const payload = {
+      taskId: task._id,
+      boardId,
+      columnId: column._id,
+      fromValue,
+      toValue,
+      actorId,
+    };
+    eventBus.emit('task.column_changed', payload);
+
+    if (column.type === 'status') {
+      eventBus.emit('task.status_became', payload);
+    }
+    if (column.type === 'person') {
+      const fromIds = new Set(
+        (Array.isArray(fromValue) ? fromValue : []).map((v) => (v == null ? '' : v.toString()))
+      );
+      const toIds = Array.isArray(toValue) ? toValue : [];
+      const addedUserIds = toIds
+        .map((v) => (v == null ? '' : v.toString()))
+        .filter((id) => id && !fromIds.has(id));
+      if (addedUserIds.length > 0) {
+        eventBus.emit('task.person_assigned', {
+          taskId: task._id,
+          boardId,
+          columnId: column._id,
+          addedUserIds,
+          actorId,
+        });
+      }
+    }
+  }
 };
 
 /**
@@ -613,6 +733,12 @@ const updateTask = async (req, res) => {
       if (!task.createdBy || task.createdBy.toString() !== userId) {
         return res.status(403).json({ error: 'Not authorised' });
       }
+      if (body.columnValues !== undefined) {
+        // Personal tasks have no board, so no columns — reject the write.
+        return res
+          .status(400)
+          .json({ error: 'Personal tasks do not support columnValues' });
+      }
       const changes = [];
       if (typeof body.name === 'string') {
         if (!body.name.trim()) {
@@ -722,7 +848,24 @@ const updateTask = async (req, res) => {
     let statusChanged = false;
     let newAssigneeIds = null;
     let statusName = null;
+    let columnChanges = [];
     const activityChanges = [];
+
+    // ----- columnValues patch (flexible-columns engine, F1) ---------------
+    if (body.columnValues !== undefined) {
+      const result = applyColumnValuePatch(task, ctx.board, body.columnValues);
+      if (!result.ok) {
+        return res.status(400).json({ errors: result.errors });
+      }
+      columnChanges = result.changes;
+      for (const change of result.changes) {
+        activityChanges.push({
+          field: `column:${change.column.key}`,
+          oldValue: change.fromValue,
+          newValue: change.toValue,
+        });
+      }
+    }
 
     if (typeof body.name === 'string') {
       if (!body.name.trim()) {
@@ -819,6 +962,11 @@ const updateTask = async (req, res) => {
         newValue: c.newValue,
         metadata: { taskName: task.name },
       });
+    }
+    // F1: emit column-change events for direct columnValues writes. Dormant
+    // in Phase 1 (no Phase 1 subscriber); F4 triggers will pick them up.
+    if (columnChanges.length > 0) {
+      emitColumnChangeEvents(task, task.board, columnChanges, userId);
     }
     await Board.updateOne(
       { _id: task.board },

@@ -5,6 +5,11 @@ const TaskGroup = require('../models/TaskGroup');
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const Organisation = require('../models/Organisation');
+const {
+  boardTemplates,
+  getBoardTemplate,
+  materializeTemplateColumns,
+} = require('../utils/boardTemplates');
 
 const VALID_VISIBILITIES = ['public', 'private'];
 
@@ -208,6 +213,21 @@ const createBoard = async (req, res) => {
       .lean();
     const nextBoardOrder = (lastBoard?.order ?? -1) + 1;
 
+    // Template path: when `?template=<id>` is provided, look up the
+    // template and seed `board.columns` from it. Flips `useFlexibleColumns`
+    // on so the new board uses the F1 code path from the first request.
+    const templateId = req.query.template || req.body.template;
+    let templateColumns = [];
+    let useFlexibleColumns = false;
+    if (templateId) {
+      const template = getBoardTemplate(templateId);
+      if (!template) {
+        return res.status(400).json({ error: `Unknown template id: ${templateId}` });
+      }
+      templateColumns = materializeTemplateColumns(template);
+      useFlexibleColumns = true;
+    }
+
     const board = await Board.create({
       name: name.trim(),
       description: typeof description === 'string' ? description.trim() : '',
@@ -217,6 +237,8 @@ const createBoard = async (req, res) => {
       order: nextBoardOrder,
       statuses: DEFAULT_STATUSES.map((s) => ({ ...s })),
       labels: [],
+      columns: templateColumns,
+      useFlexibleColumns,
     });
 
     return res.status(201).json({ board });
@@ -610,6 +632,29 @@ const reorderBoards = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/boards/templates
+ *
+ * Returns the built-in template list. Authenticated route — any logged-in
+ * user can browse templates; only admins can create boards from them
+ * (enforced in createBoard).
+ */
+const listBoardTemplates = async (req, res) => {
+  try {
+    return res.json({
+      templates: boardTemplates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        columns: t.columns,
+      })),
+    });
+  } catch (err) {
+    console.error('listBoardTemplates error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   getBoards,
   getDashboardStats,
@@ -617,6 +662,7 @@ module.exports = {
   updateBoard,
   deleteBoard,
   reorderBoards,
+  listBoardTemplates,
   // labels
   listLabels,
   addLabel,

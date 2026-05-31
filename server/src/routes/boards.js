@@ -16,12 +16,24 @@ const {
   updateStatus,
   deleteStatus,
   reorderStatuses,
+  listBoardTemplates,
 } = require('../controllers/boardController');
+const {
+  listColumns,
+  addColumn,
+  updateColumn,
+  reorderColumns,
+  deleteColumn,
+} = require('../controllers/columnController');
 
 const router = express.Router();
 
 // All board routes require authentication
 router.use(authMiddleware);
+
+// GET /api/boards/templates — list available board templates (must come
+// before /:id so "templates" isn't parsed as a board id).
+router.get('/templates', listBoardTemplates);
 
 // GET /api/boards?org=:orgId — list boards for an organisation
 router.get('/', getBoards);
@@ -53,5 +65,13 @@ router.post('/:id/statuses',         addStatus);
 router.put('/:id/statuses/reorder',  reorderStatuses);
 router.put('/:id/statuses/:sid',     updateStatus);
 router.delete('/:id/statuses/:sid',  deleteStatus);
+
+// --- Columns (per board, flexible-columns engine, F1) ---------------------
+// reorder must come BEFORE the /:cid routes so it isn't parsed as a column id
+router.get('/:id/columns',            listColumns);
+router.post('/:id/columns',           addColumn);
+router.patch('/:id/columns/reorder',  reorderColumns);
+router.patch('/:id/columns/:cid',     updateColumn);
+router.delete('/:id/columns/:cid',    deleteColumn);
 
 module.exports = router;

@@ -57,6 +57,15 @@ const taskSchema = new mongoose.Schema(
     note: {
       type: String,
     },
+    // Flexible-columns engine (F1). Map of columnId → value. The exact
+    // shape of `value` depends on the column's type — see columnTypes.js.
+    // Empty for personal tasks and for board tasks until their board has
+    // been migrated (board.useFlexibleColumns).
+    columnValues: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     isPersonal: {
       type: Boolean,
       default: false,
@@ -104,5 +113,64 @@ const taskSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+/**
+ * Maps the well-known column slugs we sync back onto legacy task fields.
+ * Lookups are by `key`, not by `_id`, so the projection survives column
+ * renames as long as the slug is preserved.
+ *
+ * The hook only runs when the parent board has `useFlexibleColumns: true`
+ * AND the task has a board reference (personal tasks are skipped wholesale
+ * per Phase 1 acceptance #6).
+ */
+const LEGACY_COLUMN_KEY_TO_TASK_FIELD = {
+  status: 'status',
+  priority: 'priority',
+  assignees: 'assignedTo',
+  due_date: 'dueDate',
+  tags: 'labels',
+};
+
+/**
+ * Pre-save: when the board uses flexible columns, project values from
+ * `columnValues` back into the legacy task fields so analyticsController.js
+ * and the existing automation dispatcher keep working until they're
+ * rewritten to read `columnValues` directly (Phase 4 / F15).
+ *
+ * The lookup is intentionally lazy — `require` happens inside the hook so
+ * Task.js stays cycle-free w.r.t. Board.js at module load.
+ */
+taskSchema.pre('save', async function syncLegacyFieldsFromColumnValues(next) {
+  try {
+    if (this.isPersonal || !this.board) return next();
+    if (!this.columnValues || this.columnValues.size === 0) return next();
+
+    const Board = mongoose.model('Board');
+    const board = await Board.findById(this.board).select('useFlexibleColumns columns').lean();
+    if (!board || !board.useFlexibleColumns) return next();
+    if (!Array.isArray(board.columns) || board.columns.length === 0) return next();
+
+    for (const col of board.columns) {
+      const field = LEGACY_COLUMN_KEY_TO_TASK_FIELD[col.key];
+      if (!field) continue;
+      const colId = col._id ? col._id.toString() : null;
+      if (!colId) continue;
+      // `columnValues` is a Map at runtime.
+      const value = this.columnValues.get(colId);
+      if (value === undefined) continue;
+
+      if (field === 'dueDate') {
+        this.dueDate = value ? new Date(value) : undefined;
+      } else if (field === 'assignedTo' || field === 'labels') {
+        this.set(field, Array.isArray(value) ? value : []);
+      } else {
+        this.set(field, value);
+      }
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+});
 
 module.exports = mongoose.model('Task', taskSchema);

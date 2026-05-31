@@ -1,10 +1,38 @@
 const Automation = require('../models/Automation');
 const Task = require('../models/Task');
 const TaskGroup = require('../models/TaskGroup');
+const Board = require('../models/Board');
 const eventBus = require('./eventBus');
 const { runAutomationOnce } = require('../controllers/automationController');
 
 let mounted = false;
+
+/**
+ * Read a task's current status id, accounting for the flexible-columns
+ * engine (F1). When `board.useFlexibleColumns === true`, walk the board's
+ * `columns` to find the `status`-typed column (preferring `key === 'status'`)
+ * and return the value from `task.columnValues[colId]`. Otherwise fall back
+ * to the legacy `task.status` field.
+ *
+ * Returns a string (or null). Used by ITEM_IN_STATUS condition evaluation
+ * downstream of the create payload so re-evaluating against a refetched task
+ * picks up the right value regardless of which storage owns it.
+ */
+const readCurrentStatusId = (task, board) => {
+  if (board && board.useFlexibleColumns && Array.isArray(board.columns) && board.columns.length > 0) {
+    const statusCol =
+      board.columns.find((c) => c.key === 'status' && c.type === 'status') ||
+      board.columns.find((c) => c.type === 'status');
+    if (statusCol && task && task.columnValues) {
+      const raw =
+        typeof task.columnValues.get === 'function'
+          ? task.columnValues.get(statusCol._id.toString())
+          : task.columnValues[statusCol._id.toString()];
+      if (raw != null) return raw.toString();
+    }
+  }
+  return task && task.status ? task.status.toString() : null;
+};
 
 /**
  * True if every condition on the automation matches the triggering task.
@@ -120,6 +148,22 @@ const handleItemCreated = async (payload) => {
   if (triggeringTask.createdByAutomation) return;
   if (triggeringTask.parent) return; // subitems never trigger
 
+  // F1 shim: on flexible-columns boards the create payload's `statusId`
+  // can be stale relative to columnValues. Refresh from the board's
+  // status column so ITEM_IN_STATUS conditions evaluate consistently.
+  let board = null;
+  try {
+    board = await Board.findById(payload.boardId).select('useFlexibleColumns columns').lean();
+  } catch (err) {
+    console.error('[automation/dispatcher] failed to load board for shim:', err);
+  }
+  if (board && board.useFlexibleColumns) {
+    const refreshedStatusId = readCurrentStatusId(triggeringTask, board);
+    if (refreshedStatusId) {
+      payload = { ...payload, statusId: refreshedStatusId };
+    }
+  }
+
   let automations;
   try {
     automations = await Automation.find({
@@ -172,4 +216,5 @@ module.exports = {
   mountAutomationEventDispatcher,
   evaluateConditions,
   evaluateGroupCreatedConditions,
+  readCurrentStatusId,
 };

@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import * as boardService from '../services/boardService';
+import * as columnService from '../services/columnService';
+import * as taskService from '../services/taskService';
 
 /**
- * Merge new `labels` / `statuses` into the board record in-place. Returns
- * a new boards array reference so React notices the change.
+ * Merge new `labels` / `statuses` / `columns` into the board record
+ * in-place. Returns a new boards array reference so React notices the change.
  */
 const replaceBoardChips = (boards, boardId, key, list) =>
   boards.map((b) =>
@@ -135,6 +137,72 @@ const useBoardStore = create((set, get) => ({
     const statuses = await boardService.reorderStatuses(boardId, orderedIds);
     set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'statuses', statuses) }));
     return statuses;
+  },
+
+  // --- Columns (flexible-columns engine, F1) -------------------------------
+
+  /**
+   * Refresh `board.columns` from the server. Use after a column CRUD action
+   * if the optimistic update + API response shape doesn't match what the
+   * server returned (e.g. order normalisation).
+   */
+  fetchColumns: async (boardId) => {
+    const columns = await columnService.listColumns(boardId);
+    set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', columns) }));
+    return columns;
+  },
+
+  addColumn: async (boardId, payload) => {
+    const { columns } = await columnService.addColumn(boardId, payload);
+    set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', columns) }));
+    return columns;
+  },
+
+  updateColumn: async (boardId, columnId, payload) => {
+    const { columns } = await columnService.updateColumn(boardId, columnId, payload);
+    set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', columns) }));
+    return columns;
+  },
+
+  reorderColumns: async (boardId, order) => {
+    // Optimistic: reorder local columns immediately so the grid header
+    // doesn't jitter on slow networks. Revert on error.
+    const prev = get().boards.find((b) => b._id === boardId)?.columns || [];
+    const indexById = new Map(order.map((id, i) => [id, i]));
+    const next = prev
+      .slice()
+      .sort((a, b) =>
+        (indexById.get(a._id) ?? Infinity) - (indexById.get(b._id) ?? Infinity)
+      );
+    set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', next) }));
+    try {
+      const columns = await columnService.reorderColumns(boardId, order);
+      set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', columns) }));
+      return columns;
+    } catch (err) {
+      set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', prev) }));
+      throw err;
+    }
+  },
+
+  deleteColumn: async (boardId, columnId) => {
+    const columns = await columnService.deleteColumn(boardId, columnId);
+    set((s) => ({ boards: replaceBoardChips(s.boards, boardId, 'columns', columns) }));
+    return columns;
+  },
+
+  /**
+   * setColumnValue — write a single cell. Calls `PUT /api/tasks/:id` with
+   * `{ columnValues: { [columnId]: value } }`. Callers update their local
+   * task cache separately via taskStore.updateTask(...) after this resolves.
+   *
+   * Returns the populated task so the caller can refresh its row.
+   */
+  setColumnValue: async (taskId, columnId, value) => {
+    const task = await taskService.updateTask(taskId, {
+      columnValues: { [columnId]: value },
+    });
+    return task;
   },
 
   // Helpers
