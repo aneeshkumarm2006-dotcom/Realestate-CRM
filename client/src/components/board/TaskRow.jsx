@@ -29,6 +29,7 @@ const TaskRow = ({
   onStatusClick,
   onPriorityClick,
   onLabelsClick,
+  onOwnerClick,
   onActionsClick,
   onToggleExpand,
   expanded = false,
@@ -234,16 +235,26 @@ const TaskRow = ({
 
       {/* Owner / Assigned to */}
       <td style={{ width: 160, padding: '0 16px' }}>
-        {assignees.length > 0 ? (
-          <AssigneeStack assignees={assignees} />
-        ) : (
-          <span
-            className="font-body"
-            style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
-          >
-            Unassigned
-          </span>
-        )}
+        <div
+          role={onOwnerClick ? 'button' : undefined}
+          tabIndex={onOwnerClick ? 0 : undefined}
+          onClick={onOwnerClick ? (e) => onOwnerClick(task, e) : undefined}
+          onKeyDown={onOwnerClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onOwnerClick(task, e); } : undefined}
+          className={onOwnerClick ? 'rounded transition-colors hover:bg-[color:var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)]' : undefined}
+          style={{ cursor: onOwnerClick ? 'pointer' : 'default', padding: '2px 4px', margin: '-2px -4px', display: 'inline-flex', alignItems: 'center' }}
+          data-row-click-ignore
+        >
+          {assignees.length > 0 ? (
+            <AssigneeStack assignees={assignees} />
+          ) : (
+            <span
+              className="font-body"
+              style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
+            >
+              Unassigned
+            </span>
+          )}
+        </div>
       </td>
 
       {/* Due Date */}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { downloadFile } from '../../utils/fileUrl';
 import {
   AtSign,
   Paperclip,
@@ -710,10 +711,9 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
         >
           {update.attachments.map((a, i) => (
             <li key={`${a.url}-${i}`}>
-              <a
-                href={a.url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => downloadFile(a.url, a.mime || '', a.name || 'file')}
                 className="inline-flex items-center gap-1 font-body transition-colors hover:bg-[color:var(--color-bg-subtle)]"
                 style={{
                   fontSize: 12,
@@ -721,7 +721,8 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
                   border: '1px solid var(--color-border)',
                   borderRadius: 'var(--radius-md)',
                   padding: '4px 8px',
-                  textDecoration: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
                 }}
                 title={a.name || 'attachment'}
               >
@@ -729,7 +730,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
                 <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {a.name || 'attachment'}
                 </span>
-              </a>
+              </button>
             </li>
           ))}
         </ul>

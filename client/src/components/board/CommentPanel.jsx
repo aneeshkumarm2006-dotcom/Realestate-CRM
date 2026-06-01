@@ -10,6 +10,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import Chip from '../ui/Chip';
+import DatePickerPopover from '../ui/DatePickerPopover';
 import { formatDate, timeAgo } from '../../utils/dateUtils';
 import * as commentService from '../../services/commentService';
 import useAuthStore from '../../store/authStore';
@@ -90,6 +91,7 @@ const CommentPanel = ({
   // Tabs (Updates / Comments / Files / Activity Log)
   const [activeTab, setActiveTab] = useState('updates');
   const [updatesCount, setUpdatesCount] = useState(0);
+  const [filesCount, setFilesCount] = useState(0);
 
   // Org members for @mention
   const currentOrg = useOrgStore((s) => s.currentOrg);
@@ -127,6 +129,7 @@ const CommentPanel = ({
       setReplyingTo(null);
       setActiveTab('updates');
       setUpdatesCount(0);
+      setFilesCount(0);
       return;
     }
 
@@ -628,6 +631,7 @@ const CommentPanel = ({
                     value={assignedIds}
                     onChange={handleAssigneesChange}
                     isAdmin={isAdmin}
+                    showNames
                   />
                 </div>
               ) : assignees.length > 0 ? (
@@ -663,23 +667,16 @@ const CommentPanel = ({
 
             <MetaRow label="Due date">
               {canEditFields ? (
-                <input
-                  type="date"
-                  value={toDateInputValue(task.dueDate)}
-                  onChange={handleDueDateChange}
-                  disabled={savingDueDate}
-                  aria-label="Due date"
-                  className="font-body bg-white focus:outline-none"
-                  style={{
-                    fontSize: 13,
-                    height: 32,
-                    padding: '0 8px',
-                    border: '1.5px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    color: 'var(--color-text-primary)',
-                    maxWidth: 180,
-                  }}
-                />
+                <div style={{ maxWidth: 180 }}>
+                  <DatePickerPopover
+                    value={toDateInputValue(task.dueDate)}
+                    onChange={(val) =>
+                      handleDueDateChange({ target: { value: val } })
+                    }
+                    disabled={savingDueDate}
+                    placeholder="Set due date"
+                  />
+                </div>
               ) : (
                 <span
                   className="font-body"
@@ -751,7 +748,7 @@ const CommentPanel = ({
               tabs={[
                 { key: 'updates', label: 'Updates', count: updatesCount },
                 { key: 'comments', label: 'Comments', count: comments.length },
-                { key: 'files', label: 'Files' },
+                { key: 'files', label: 'Files', count: filesCount },
                 { key: 'activity', label: 'Activity Log' },
               ]}
             />
@@ -778,7 +775,7 @@ const CommentPanel = ({
                   flexDirection: 'column',
                 }}
               >
-                <FilesTab task={task} />
+                <FilesTab task={task} onCountChange={setFilesCount} />
               </div>
             )}
 

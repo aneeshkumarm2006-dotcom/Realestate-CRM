@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useLayoutEffect, useState } from 'react';
 
 const VIEWPORT_MARGIN = 16;
 const DEFAULT_MENU_HEIGHT = 260;
@@ -30,10 +30,13 @@ const useDropdownPosition = (
     const spaceBelow = window.innerHeight - r.bottom;
     const openUpward = spaceBelow < menuHeight + VIEWPORT_MARGIN && r.top > spaceBelow;
     const top = openUpward ? Math.max(VIEWPORT_MARGIN, r.top - menuHeight - 4) : r.bottom + 4;
-    setRect({ top, left: r.left, width: r.width, openUpward });
+    // Clamp left so the dropdown never overflows off the right edge of the viewport
+    const dropdownMinWidth = 220;
+    const left = Math.min(r.left, window.innerWidth - dropdownMinWidth - VIEWPORT_MARGIN);
+    setRect({ top, left: Math.max(VIEWPORT_MARGIN, left), width: r.width, openUpward });
   }, [triggerRef, menuHeight]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return undefined;
     recompute();
     const onScroll = () => recompute();

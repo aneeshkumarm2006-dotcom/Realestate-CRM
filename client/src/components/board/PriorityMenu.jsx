@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PRIORITY_COLORS } from '../../utils/priorityColors';
 
 const VIEWPORT_MARGIN = 16;
@@ -60,7 +61,7 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
 
   if (!anchorEl) return null;
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       role="listbox"
@@ -68,7 +69,7 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
       style={{
         top: position.top,
         left: position.left,
-        zIndex: 60,
+        zIndex: 200,
         minWidth: 160,
         padding: 6,
         border: '1px solid var(--color-border)',
@@ -123,7 +124,8 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 };
 

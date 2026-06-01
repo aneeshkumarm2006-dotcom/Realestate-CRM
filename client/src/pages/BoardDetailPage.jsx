@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight,
@@ -32,6 +32,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTaskGroup } from '../components/ui/Skeleton';
 import TaskGroupHeader from '../components/board/TaskGroupHeader';
 import TaskTable from '../components/board/TaskTable';
+import { InlineAssigneeMenu } from '../components/board/AssigneePicker';
 import DataGrid from '../components/board/DataGrid';
 import SortableItem from '../components/dnd/SortableItem';
 import StatusMenu from '../components/board/StatusMenu';
@@ -119,6 +120,22 @@ const BoardDetailPage = () => {
 
   // Collapse state, keyed by group id
   const [collapsed, setCollapsed] = useState(() => new Set());
+  // Track whether we've applied the initial collapse for the current board so
+  // we don't re-collapse groups the user has manually opened.
+  const initialCollapseApplied = useRef(false);
+
+  // Reset the guard whenever the board changes
+  useEffect(() => {
+    initialCollapseApplied.current = false;
+  }, [boardId]);
+
+  // Collapse all groups on first load — gives the clean "categories only" view
+  useEffect(() => {
+    if (groups.length === 0 || initialCollapseApplied.current) return;
+    initialCollapseApplied.current = true;
+    setCollapsed(new Set(groups.map((g) => g._id)));
+  }, [groups]);
+
   // Which group (if any) is currently creating a new task inline
   const [creatingInGroup, setCreatingInGroup] = useState(null);
   // Key counter per group — increment after each save to reset the inline creation row
@@ -129,6 +146,8 @@ const BoardDetailPage = () => {
   const [statusMenu, setStatusMenu] = useState(null); // { task, anchor }
   // Priority chip menu state
   const [priorityMenu, setPriorityMenu] = useState(null); // { task, anchor }
+  // Owner picker popover state
+  const [ownerMenu, setOwnerMenu] = useState(null); // { task, anchor }
   // Labels picker popover state
   const [labelMenu, setLabelMenu] = useState(null); // { task, anchor }
   // Edit-chips modal — `kind` is 'labels' | 'statuses'
@@ -565,6 +584,31 @@ const BoardDetailPage = () => {
         err?.response?.data?.error ||
           'Failed to update priority. Please try again.'
       );
+    }
+  };
+
+  // --- Inline owner change -----------------------------------------------
+
+  const handleOwnerClick = (task, event) => {
+    if (!currentUser) return;
+    const anchor = event?.currentTarget || null;
+    setOwnerMenu({ task, anchor });
+  };
+
+  const handleOwnerChange = async (newAssigneeIds) => {
+    if (!ownerMenu) return;
+    const { task } = ownerMenu;
+    setOwnerMenu((cur) => cur ? { ...cur, task: { ...cur.task, assignedTo: newAssigneeIds } } : cur);
+    const prev = task;
+    updateTaskLocal({ ...task, assignedTo: newAssigneeIds });
+    try {
+      const updated = await taskService.updateTask(task._id, { assignedTo: newAssigneeIds });
+      updateTaskLocal(updated);
+      setOwnerMenu((cur) => cur ? { ...cur, task: updated } : cur);
+    } catch (err) {
+      console.error('Failed to update assignees:', err);
+      updateTaskLocal(prev);
+      toastError(err?.response?.data?.error || 'Failed to update assignees. Please try again.');
     }
   };
 
@@ -1110,6 +1154,7 @@ const BoardDetailPage = () => {
                               onStatusClick={handleStatusClick}
                               onPriorityClick={handlePriorityClick}
                               onLabelsClick={handleLabelsClick}
+                              onOwnerClick={handleOwnerClick}
                               onActionsClick={isAdmin ? handleActionsClick : undefined}
                               onSaveNew={(payload) => handleSaveNewTask(group._id, payload)}
                               onSaveEdit={handleSaveEditTask}
@@ -1167,6 +1212,19 @@ const BoardDetailPage = () => {
               : undefined
           }
           onClose={() => setLabelMenu(null)}
+        />
+      )}
+
+      {/* Inline owner picker */}
+      {ownerMenu && (
+        <InlineAssigneeMenu
+          anchorEl={ownerMenu.anchor}
+          members={members}
+          value={(ownerMenu.task.assignedTo || []).map((u) =>
+            typeof u === 'string' ? u : u._id
+          )}
+          onChange={handleOwnerChange}
+          onClose={() => setOwnerMenu(null)}
         />
       )}
 

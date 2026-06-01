@@ -24,6 +24,7 @@ const AssigneePicker = ({
   onChange,
   disabled = false,
   isAdmin = false,
+  showNames = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -69,7 +70,7 @@ const AssigneePicker = ({
         ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={[
@@ -89,7 +90,11 @@ const AssigneePicker = ({
         }}
       >
         {selectedMembers.length > 0 ? (
-          <AssigneeAvatars assignees={selectedMembers} />
+          showNames ? (
+            <AssigneeAvatarsWithNames assignees={selectedMembers} />
+          ) : (
+            <AssigneeAvatars assignees={selectedMembers} />
+          )
         ) : (
           <span
             className="inline-flex items-center gap-1.5"
@@ -119,7 +124,7 @@ const AssigneePicker = ({
             top,
             left,
             width: Math.max(width, 220),
-            zIndex: 60,
+            zIndex: 200,
             minWidth: 220,
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-md)',
@@ -233,6 +238,38 @@ const AssigneePicker = ({
 };
 
 /**
+ * Avatar + name display for the CommentPanel trigger (showNames mode).
+ * Shows up to 2 members by name; collapses the rest to "+N more".
+ */
+const AssigneeAvatarsWithNames = ({ assignees }) => {
+  const visible = assignees.slice(0, 2);
+  const remaining = assignees.length - visible.length;
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {visible.map((u) => (
+        <span key={u._id} className="inline-flex items-center gap-1.5">
+          <MemberAvatar user={u} />
+          <span
+            className="font-body font-medium truncate"
+            style={{ fontSize: 13, color: 'var(--color-text-primary)', maxWidth: 120 }}
+          >
+            {u.name || u.email || 'Unknown'}
+          </span>
+        </span>
+      ))}
+      {remaining > 0 && (
+        <span
+          className="font-body"
+          style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
+        >
+          +{remaining} more
+        </span>
+      )}
+    </div>
+  );
+};
+
+/**
  * Stacked mini-avatars for the trigger button (up to 3 + overflow bubble).
  */
 const AssigneeAvatars = ({ assignees }) => {
@@ -307,3 +344,111 @@ const MemberAvatar = ({ user, style = {} }) => {
 };
 
 export default AssigneePicker;
+
+/**
+ * InlineAssigneeMenu — the member-list dropdown shown directly anchored to a
+ * trigger element (e.g. a task row's Owner cell). No trigger button — opens
+ * immediately and closes on outside-click or Escape.
+ *
+ * Props:
+ *   anchorEl  — DOM element to anchor the menu to
+ *   members   — org member list
+ *   value     — string[] of selected member ids
+ *   onChange  — (ids: string[]) => void
+ *   onClose   — () => void
+ */
+export const InlineAssigneeMenu = ({ anchorEl, members = [], value = [], onChange, onClose }) => {
+  const menuRef = useRef(null);
+  const triggerRef = useRef(anchorEl);
+  triggerRef.current = anchorEl;
+
+  const selectedIds = new Set(value);
+  const { top, left, width, openUpward } = useDropdownPosition(triggerRef, !!anchorEl);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      if (menuRef.current?.contains(e.target)) return;
+      if (anchorEl?.contains(e.target)) return;
+      onClose?.();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [anchorEl, onClose]);
+
+  const toggle = (memberId) => {
+    const next = new Set(selectedIds);
+    if (next.has(memberId)) next.delete(memberId);
+    else next.add(memberId);
+    onChange?.(Array.from(next));
+  };
+
+  if (!anchorEl) return null;
+
+  return createPortal(
+    <ul
+      ref={menuRef}
+      role="listbox"
+      aria-multiselectable="true"
+      className="bg-white overflow-auto"
+      style={{
+        position: 'fixed',
+        top,
+        left,
+        width: Math.max(width, 220),
+        zIndex: 200,
+        minWidth: 220,
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md)',
+        maxHeight: 260,
+        padding: 4,
+        animation: openUpward
+          ? 'macan-dropdown-enter-up 150ms ease-out'
+          : 'macan-dropdown-enter 150ms ease-out',
+      }}
+    >
+      {members.length === 0 ? (
+        <li className="px-3 py-2 font-body text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          No members
+        </li>
+      ) : members.map((m) => {
+        const isSelected = selectedIds.has(m._id);
+        return (
+          <li key={m._id} role="option" aria-selected={isSelected}>
+            <button
+              type="button"
+              onClick={() => toggle(m._id)}
+              className="w-full flex items-center gap-2 px-2 text-left font-body text-[13px] transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)] focus:outline-none"
+              style={{ height: 36, borderRadius: 'var(--radius-sm)', color: 'var(--color-text-primary)' }}
+            >
+              <span
+                aria-hidden="true"
+                className="inline-flex items-center justify-center shrink-0"
+                style={{
+                  width: 16, height: 16,
+                  borderRadius: 'var(--radius-sm)',
+                  border: isSelected ? '1.5px solid var(--color-accent)' : '1.5px solid var(--color-border-strong)',
+                  background: isSelected ? 'var(--color-accent)' : 'transparent',
+                }}
+              >
+                {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} aria-hidden="true" />}
+              </span>
+              <MemberAvatar user={m} />
+              <span className="flex-1 truncate">{m.name}</span>
+            </button>
+          </li>
+        );
+      })}
+      <style>{`
+        @keyframes macan-dropdown-enter { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes macan-dropdown-enter-up { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+      `}</style>
+    </ul>,
+    document.body
+  );
+};

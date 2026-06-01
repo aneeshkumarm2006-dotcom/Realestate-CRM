@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Plus, GripVertical } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowRight, ArrowUp, ArrowDown, Plus, GripVertical } from 'lucide-react';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import TaskRow from './TaskRow';
 import TaskEditRow from './TaskEditRow';
@@ -34,17 +34,65 @@ import { getStatusPalette } from '../../utils/priorityColors';
  *   emptyLabel       — text rendered when the group has no tasks
  */
 const COLUMNS = [
-  { key: 'drag',     label: '',          width: 24 },
-  { key: 'check',    label: '',          width: 40,  align: 'center' },
-  { key: 'name',     label: 'Task',      width: null, minWidth: 240 },
-  { key: 'priority', label: 'Priority',  width: 130 },
-  { key: 'status',   label: 'Status',    width: 160 },
-  { key: 'labels',   label: 'Labels',    width: 180 },
-  { key: 'owner',    label: 'Owner',     width: 160 },
-  { key: 'due',      label: 'Due Date',  width: 140 },
-  { key: 'comments', label: '',          width: 48 },
-  { key: 'actions',  label: '',          width: 48 },
+  { key: 'drag',     label: '',          width: 24,  sortable: false },
+  { key: 'check',    label: '',          width: 40,  align: 'center', sortable: false },
+  { key: 'name',     label: 'Task',      width: null, minWidth: 240, sortable: true },
+  { key: 'priority', label: 'Priority',  width: 130, sortable: true },
+  { key: 'status',   label: 'Status',    width: 160, sortable: true },
+  { key: 'labels',   label: 'Labels',    width: 180, sortable: true },
+  { key: 'owner',    label: 'Owner',     width: 160, sortable: true },
+  { key: 'due',      label: 'Due Date',  width: 140, sortable: true },
+  { key: 'comments', label: '',          width: 48,  sortable: false },
+  { key: 'actions',  label: '',          width: 48,  sortable: false },
 ];
+
+const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+
+// Status keys ordered by "most complete first" for the default asc direction.
+const STATUS_KEY_RANK = { done: 0, working_on_it: 1, not_started: 2, stuck: 3 };
+
+const getStatusRank = (board, statusId) => {
+  if (!statusId) return 99;
+  const id = statusId.toString();
+  if (board && Array.isArray(board.statuses)) {
+    const s = board.statuses.find((s) => s._id.toString() === id);
+    if (s) {
+      if (s.key && STATUS_KEY_RANK[s.key] !== undefined) return STATUS_KEY_RANK[s.key];
+      return 10 + (s.order || 0);
+    }
+  }
+  return STATUS_KEY_RANK[id] ?? 99;
+};
+
+const sortTasks = (tasks, key, dir, board) => {
+  if (!key) return tasks;
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...tasks].sort((a, b) => {
+    let cmp = 0;
+    if (key === 'name') {
+      cmp = (a.name || '').localeCompare(b.name || '');
+    } else if (key === 'priority') {
+      const ra = PRIORITY_RANK[a.priority] ?? 99;
+      const rb = PRIORITY_RANK[b.priority] ?? 99;
+      cmp = ra - rb;
+    } else if (key === 'status') {
+      cmp = getStatusRank(board, a.status) - getStatusRank(board, b.status);
+    } else if (key === 'labels') {
+      const la = Array.isArray(a.labels) && a.labels.length > 0 ? 0 : 1;
+      const lb = Array.isArray(b.labels) && b.labels.length > 0 ? 0 : 1;
+      cmp = la - lb;
+    } else if (key === 'owner') {
+      const na = a.assignedTo?.[0]?.name || a.assignedTo?.[0] || '';
+      const nb = b.assignedTo?.[0]?.name || b.assignedTo?.[0] || '';
+      cmp = String(na).localeCompare(String(nb));
+    } else if (key === 'due') {
+      const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+      const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+      cmp = da - db;
+    }
+    return cmp * mul;
+  });
+};
 
 const TaskTable = ({
   tasks = [],
@@ -59,6 +107,7 @@ const TaskTable = ({
   onStatusClick,
   onPriorityClick,
   onLabelsClick,
+  onOwnerClick,
   onActionsClick,
   onSaveNew,
   onSaveEdit,
@@ -73,6 +122,29 @@ const TaskTable = ({
   onToggleSelectAll,
 }) => {
   const [expanded, setExpanded] = useState(() => new Set());
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
+  const handleSortColumn = useCallback((key) => {
+    setSortKey((prevKey) => {
+      if (prevKey !== key) {
+        setSortDir('asc');
+        return key;
+      }
+      setSortDir((prevDir) => {
+        if (prevDir === 'asc') return 'desc';
+        return 'asc'; // will be cleared below
+      });
+      // If it was already desc, clear the sort
+      if (sortDir === 'desc') return null;
+      return key;
+    });
+  }, [sortDir]);
+
+  const sortedTasks = useMemo(
+    () => sortTasks(tasks, sortKey, sortDir, board),
+    [tasks, sortKey, sortDir, board]
+  );
 
   const fetchSubitems = useTaskStore((s) => s.fetchSubitems);
   const subitemsByParent = useTaskStore((s) => s.subitemsByParent);
@@ -117,21 +189,21 @@ const TaskTable = ({
 
   const handleSelectAll = (checked) => {
     onToggleSelectAll?.(
-      tasks.map((t) => t._id),
+      sortedTasks.map((t) => t._id),
       checked
     );
   };
 
   const allSelected =
-    tasks.length > 0 &&
+    sortedTasks.length > 0 &&
     selectedIds != null &&
-    tasks.every((t) => selectedIds.has(t._id));
-  const noRows = tasks.length === 0 && !isCreating;
+    sortedTasks.every((t) => selectedIds.has(t._id));
+  const noRows = sortedTasks.length === 0 && !isCreating;
   // When an edit row is active, dropdowns inside rows need to escape the
   // table's horizontal scroll clipping.
   const isInlineEditing = isCreating || editingTaskId !== null;
 
-  const taskIds = useMemo(() => tasks.map((t) => t._id), [tasks]);
+  const taskIds = useMemo(() => sortedTasks.map((t) => t._id), [sortedTasks]);
 
   return (
     <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
@@ -147,6 +219,7 @@ const TaskTable = ({
             onStatusClick={onStatusClick}
             onPriorityClick={onPriorityClick}
             onLabelsClick={onLabelsClick}
+            onOwnerClick={onOwnerClick}
             onActionsClick={onActionsClick}
             highlightedTaskId={highlightedTaskId}
             emptyLabel={emptyLabel}
@@ -179,41 +252,60 @@ const TaskTable = ({
               borderBottom: '1px solid var(--color-border)',
             }}
           >
-            {COLUMNS.map((col) => (
-              <th
-                key={col.key}
-                scope="col"
-                style={{
-                  width: col.width || undefined,
-                  minWidth: col.minWidth || undefined,
-                  padding: '0 16px',
-                  textAlign: 'left',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.07em',
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                {col.key === 'check' ? (
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    aria-label="Select all tasks"
-                    style={{
-                      width: 16,
-                      height: 16,
-                      accentColor: 'var(--color-accent)',
-                      cursor: 'pointer',
-                    }}
-                  />
-                ) : (
-                  col.label
-                )}
-              </th>
-            ))}
+            {COLUMNS.map((col) => {
+              const isActive = sortKey === col.key;
+              return (
+                <th
+                  key={col.key}
+                  scope="col"
+                  style={{
+                    width: col.width || undefined,
+                    minWidth: col.minWidth || undefined,
+                    padding: '0 16px',
+                    textAlign: 'left',
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.07em',
+                    color: isActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                    cursor: col.sortable ? 'pointer' : 'default',
+                    userSelect: 'none',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onClick={col.sortable ? () => handleSortColumn(col.key) : undefined}
+                  title={col.sortable ? `Sort by ${col.label}` : undefined}
+                >
+                  {col.key === 'check' ? (
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      aria-label="Select all tasks"
+                      style={{
+                        width: 16,
+                        height: 16,
+                        accentColor: 'var(--color-accent)',
+                        cursor: 'pointer',
+                      }}
+                    />
+                  ) : col.sortable ? (
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      {isActive ? (
+                        sortDir === 'asc'
+                          ? <ArrowUp size={11} aria-hidden="true" />
+                          : <ArrowDown size={11} aria-hidden="true" />
+                      ) : (
+                        <ArrowUp size={11} aria-hidden="true" style={{ opacity: 0.25 }} />
+                      )}
+                    </span>
+                  ) : (
+                    col.label
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
 
@@ -235,9 +327,9 @@ const TaskTable = ({
             </tr>
           ) : (
             <>
-              {tasks.map((task, i) => {
+              {sortedTasks.map((task, i) => {
                 const isEditing = editingTaskId === task._id;
-                const isLastExisting = i === tasks.length - 1;
+                const isLastExisting = i === sortedTasks.length - 1;
                 const isLastRow = isLastExisting && !isCreating;
 
                 if (isEditing) {
@@ -274,6 +366,7 @@ const TaskTable = ({
                           onStatusClick={onStatusClick}
                           onPriorityClick={onPriorityClick}
                           onLabelsClick={onLabelsClick}
+                          onOwnerClick={onOwnerClick}
                           onActionsClick={onActionsClick}
                           onToggleExpand={
                             task.hasSubitems ? handleToggleExpand : undefined

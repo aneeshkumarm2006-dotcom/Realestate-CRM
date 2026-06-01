@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { getColorPair, STATUS_COLORS } from '../../utils/priorityColors';
 
@@ -85,7 +86,7 @@ const StatusMenu = ({ anchorEl, board, value, onSelect, onEditChips, onClose }) 
 
   if (!anchorEl) return null;
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       role="listbox"
@@ -93,7 +94,7 @@ const StatusMenu = ({ anchorEl, board, value, onSelect, onEditChips, onClose }) 
       style={{
         top: position.top,
         left: position.left,
-        zIndex: 60,
+        zIndex: 200,
         minWidth: 180,
         padding: 6,
         border: '1px solid var(--color-border)',
@@ -167,7 +168,8 @@ const StatusMenu = ({ anchorEl, board, value, onSelect, onEditChips, onClose }) 
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 };
 

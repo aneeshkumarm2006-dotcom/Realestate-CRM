@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
+import DatePickerPopover from '../ui/DatePickerPopover';
 import { createTask } from '../../services/taskService';
 
 /**
@@ -165,13 +166,20 @@ const PersonalTaskModal = ({ isOpen, onClose, onCreated }) => {
           />
         </div>
 
-        <Input
-          label="Due Date"
-          type="date"
-          value={form.dueDate}
-          onChange={set('dueDate')}
-          disabled={saving}
-        />
+        <div>
+          <label
+            className="font-body font-semibold block"
+            style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}
+          >
+            Due Date
+          </label>
+          <DatePickerPopover
+            value={form.dueDate}
+            onChange={(val) => setForm((f) => ({ ...f, dueDate: val }))}
+            disabled={saving}
+            placeholder="Set due date"
+          />
+        </div>
 
         <Input
           label="Note"

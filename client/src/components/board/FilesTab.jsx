@@ -12,6 +12,7 @@ import {
   FileArchive,
 } from 'lucide-react';
 import * as taskAttachmentService from '../../services/taskAttachmentService';
+import { downloadFile } from '../../utils/fileUrl';
 import useToastStore from '../../store/toastStore';
 import useAuthStore from '../../store/authStore';
 import { timeAgo } from '../../utils/dateUtils';
@@ -40,6 +41,7 @@ const iconForMime = (mime = '') => {
   return FileIcon;
 };
 
+
 const formatBytes = (bytes) => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -53,12 +55,17 @@ const formatBytes = (bytes) => {
  * the "Files" tab in CommentPanel. Uploads go to Cloudinary via the server's
  * multer middleware; the resulting URL is persisted on the task document.
  */
-const FilesTab = ({ task }) => {
+const FilesTab = ({ task, onCountChange }) => {
   const taskId = task?._id || null;
   const toast = useToastStore.getState();
   const currentUser = useAuthStore((s) => s.user);
 
   const [attachments, setAttachments] = useState([]);
+
+  // Keep parent tab count in sync
+  useEffect(() => {
+    onCountChange?.(attachments.length);
+  }, [attachments.length, onCountChange]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -288,6 +295,8 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const isImage = (attachment.mime || '').startsWith('image/');
+  const handleDownload = () =>
+    downloadFile(attachment.url, attachment.mime || '', attachment.name || 'file');
 
   return (
     <div
@@ -347,25 +356,50 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
 
       {/* Name + meta */}
       <div className="min-w-0 flex-1">
-        <a
-          href={attachment.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-body transition-colors hover:text-[color:var(--color-accent)]"
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: 'var(--color-text-primary)',
-            textDecoration: 'none',
-            display: 'block',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={attachment.name || 'attachment'}
-        >
-          {attachment.name || 'attachment'}
-        </a>
+        {isImage ? (
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-body transition-colors hover:text-[color:var(--color-accent)]"
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'var(--color-text-primary)',
+              textDecoration: 'none',
+              display: 'block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={attachment.name || 'attachment'}
+          >
+            {attachment.name || 'attachment'}
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="font-body transition-colors hover:text-[color:var(--color-accent)] text-left"
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'var(--color-text-primary)',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              display: 'block',
+              width: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={attachment.name || 'attachment'}
+          >
+            {attachment.name || 'attachment'}
+          </button>
+        )}
         <div
           className="font-body flex items-center gap-2 flex-wrap"
           style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}
@@ -388,23 +422,23 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
 
       {/* Actions */}
       <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-        <a
-          href={attachment.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          download={attachment.name || true}
+        <button
+          type="button"
+          onClick={handleDownload}
           aria-label="Download file"
           title="Download"
           className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
           style={{
             width: 28,
             height: 28,
+            background: 'transparent',
+            border: 'none',
             color: 'var(--color-text-secondary)',
-            textDecoration: 'none',
+            cursor: 'pointer',
           }}
         >
           <Download size={14} aria-hidden="true" />
-        </a>
+        </button>
         {canDelete && (
           confirmOpen ? (
             <>

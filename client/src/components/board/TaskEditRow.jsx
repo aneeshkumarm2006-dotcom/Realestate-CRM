@@ -4,6 +4,7 @@ import Chip from '../ui/Chip';
 import StatusMenu from './StatusMenu';
 import PriorityMenu from './PriorityMenu';
 import AssigneePicker from './AssigneePicker';
+import DatePickerPopover from '../ui/DatePickerPopover';
 
 const sameStringSet = (a, b) => {
   if (a.length !== b.length) return false;
@@ -257,20 +258,10 @@ const TaskEditRow = ({
       </td>
 
       <td style={{ width: 140, padding: '0 8px' }}>
-        <input
-          type="date"
+        <DatePickerPopover
           value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          aria-label="Due date"
-          className="w-full font-body bg-white focus:outline-none"
-          style={{
-            fontSize: 13,
-            height: 32,
-            padding: '0 8px',
-            border: '1.5px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--color-text-primary)',
-          }}
+          onChange={setDueDate}
+          placeholder="Due date"
         />
       </td>
 
