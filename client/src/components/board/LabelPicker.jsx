@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings as SettingsIcon, Check } from 'lucide-react';
 import { getColorPair } from '../../utils/priorityColors';
+
+const VIEWPORT_MARGIN = 16;
+const DEFAULT_MENU_HEIGHT = 300;
 
 /**
  * LabelPicker — popover anchored to a task's Labels cell. Shows every label
@@ -25,6 +29,29 @@ const LabelPicker = ({
   onClose,
 }) => {
   const ref = useRef(null);
+  const [position, setPosition] = useState({ top: 0, left: 0, openUpward: false });
+
+  useLayoutEffect(() => {
+    if (!anchorEl) return;
+    const compute = () => {
+      const r = anchorEl.getBoundingClientRect();
+      const menuHeight = ref.current?.offsetHeight || DEFAULT_MENU_HEIGHT;
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUpward = spaceBelow < menuHeight + VIEWPORT_MARGIN && r.top > spaceBelow;
+      const top = openUpward
+        ? Math.max(VIEWPORT_MARGIN, r.top - menuHeight - 4)
+        : r.bottom + 4;
+      const left = Math.min(r.left, window.innerWidth - 280 - VIEWPORT_MARGIN);
+      setPosition({ top, left: Math.max(VIEWPORT_MARGIN, left), openUpward });
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    window.addEventListener('scroll', compute, true);
+    return () => {
+      window.removeEventListener('resize', compute);
+      window.removeEventListener('scroll', compute, true);
+    };
+  }, [anchorEl]);
 
   useEffect(() => {
     const handleClick = (e) => {
@@ -55,26 +82,24 @@ const LabelPicker = ({
 
   if (!anchorEl) return null;
 
-  const rect = anchorEl.getBoundingClientRect();
-  const top = rect.bottom + 6;
-  const left = rect.left;
-
-  return (
+  return createPortal(
     <div
       ref={ref}
       role="listbox"
       className="fixed bg-white"
       style={{
-        top,
-        left,
-        zIndex: 60,
+        top: position.top,
+        left: position.left,
+        zIndex: 200,
         minWidth: 220,
         maxWidth: 280,
         padding: 6,
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-md)',
-        animation: 'macan-dropdown-enter 150ms ease-out',
+        animation: position.openUpward
+          ? 'macan-dropdown-enter-up 150ms ease-out'
+          : 'macan-dropdown-enter 150ms ease-out',
       }}
     >
       {labels.length === 0 && (
@@ -167,8 +192,13 @@ const LabelPicker = ({
           from { opacity: 0; transform: translateY(-4px); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        @keyframes macan-dropdown-enter-up {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 };
 
