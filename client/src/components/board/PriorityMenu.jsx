@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Check } from 'lucide-react';
 import { PRIORITY_COLORS } from '../../utils/priorityColors';
 
 const VIEWPORT_MARGIN = 16;
@@ -102,9 +103,7 @@ const PriorityMenu = ({ anchorEl, value, onSelect, onClose }) => {
               borderRadius: 'var(--radius-full)',
               backgroundColor: entry.bg,
               color: entry.text,
-              outline: isSelected
-                ? '2px solid var(--color-accent)'
-                : 'none',
+              outline: isSelected ? '2px solid var(--color-accent)' : 'none',
               outlineOffset: isSelected ? 1 : 0,
               border: 'none',
               cursor: 'pointer',
