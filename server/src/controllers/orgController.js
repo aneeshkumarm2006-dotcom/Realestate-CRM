@@ -32,10 +32,8 @@ const createOrg = async (req, res) => {
       inviteCode: generateInviteCode(),
     });
 
-    // Attach org to user's organisations list
-    await User.findByIdAndUpdate(userId, {
-      $addToSet: { organisations: org._id },
-    });
+    // Attach org to user's organisations list. The creator is the owner.
+    await User.addMembership(userId, org._id, 'owner', org.createdAt);
 
     return res.status(201).json({ org });
   } catch (err) {
@@ -89,9 +87,8 @@ const joinOrg = async (req, res) => {
     if (!alreadyMember) {
       org.members.push(userId);
       await org.save();
-      await User.findByIdAndUpdate(userId, {
-        $addToSet: { organisations: org._id },
-      });
+      // New joiners land as plain members; they can be promoted later.
+      await User.addMembership(userId, org._id, 'member');
     }
 
     return res.json({ org });
@@ -158,9 +155,7 @@ const removeMember = async (req, res) => {
     org.members = org.members.filter((m) => m.toString() !== targetUserId);
     await org.save();
 
-    await User.findByIdAndUpdate(targetUserId, {
-      $pull: { organisations: org._id },
-    });
+    await User.removeMembership(targetUserId, org._id);
 
     return res.json({ message: 'Member removed', org });
   } catch (err) {
@@ -274,6 +269,12 @@ const changeRole = async (req, res) => {
     }
 
     await org.save();
+
+    // Keep the denormalised per-membership role in sync with org.admins[].
+    await User.updateOne(
+      { _id: targetUserId, 'organisations.workspaceId': org._id },
+      { $set: { 'organisations.$.role': role === 'admin' ? 'admin' : 'member' } }
+    );
 
     const adminIds = org.admins.map((a) => a.toString());
     return res.json({ message: 'Role updated', adminIds });

@@ -39,6 +39,7 @@ import {
 import BoardCard from '../components/board/BoardCard';
 import BoardFormModal from '../components/board/BoardFormModal';
 import DeleteBoardModal from '../components/board/DeleteBoardModal';
+import ShareBoardModal from '../components/workspace/ShareBoardModal';
 import SortableItem from '../components/dnd/SortableItem';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
@@ -94,6 +95,7 @@ const MyBoardsPage = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [shareTarget, setShareTarget] = useState(null);
 
   const orgId = currentOrg?._id || null;
 
@@ -368,6 +370,7 @@ const MyBoardsPage = () => {
                     canManage={isAdmin}
                     onEdit={(b) => setEditTarget(b)}
                     onDelete={(b) => setDeleteTarget(b)}
+                    onShare={(b) => setShareTarget(b)}
                     dndDisabled={dndDisabled}
                   />
                 ))}
@@ -388,6 +391,7 @@ const MyBoardsPage = () => {
                 canManage={isAdmin}
                 onEdit={(b) => setEditTarget(b)}
                 onDelete={(b) => setDeleteTarget(b)}
+                onShare={(b) => setShareTarget(b)}
                 dndDisabled={dndDisabled}
               />
             </SortableContext>
@@ -419,6 +423,13 @@ const MyBoardsPage = () => {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
       />
+
+      {/* Share board (cross-workspace grant) */}
+      <ShareBoardModal
+        isOpen={!!shareTarget}
+        board={shareTarget}
+        onClose={() => setShareTarget(null)}
+      />
     </PageWrapper>
   );
 };
@@ -434,6 +445,7 @@ const BoardListView = ({
   canManage,
   onEdit,
   onDelete,
+  onShare,
   dndDisabled = false,
 }) => {
   return (
@@ -459,6 +471,7 @@ const BoardListView = ({
             canManage={canManage}
             onEdit={onEdit}
             onDelete={onDelete}
+            onShare={onShare}
             dndDisabled={dndDisabled}
           />
         );
@@ -479,6 +492,7 @@ const SortableBoardCard = ({
   canManage,
   onEdit,
   onDelete,
+  onShare,
   dndDisabled,
 }) => (
   <SortableItem id={board._id} data={{ type: 'board' }} disabled={dndDisabled}>
@@ -519,6 +533,7 @@ const SortableBoardCard = ({
           canManage={canManage}
           onEdit={onEdit}
           onDelete={onDelete}
+          onShare={onShare}
         />
       </div>
     )}
@@ -535,6 +550,7 @@ const BoardListRow = ({
   canManage,
   onEdit,
   onDelete,
+  onShare,
   dndDisabled = false,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -691,6 +707,25 @@ const BoardListRow = ({
                 >
                   Edit
                 </button>
+                {onShare && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onShare?.(board);
+                    }}
+                    className="w-full text-left font-body hover:bg-[color:var(--color-bg-subtle)] transition-colors duration-150"
+                    style={{
+                      fontSize: 13,
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  >
+                    Share
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"

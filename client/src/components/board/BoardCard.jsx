@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  Share2,
 } from 'lucide-react';
 import { timeAgo } from '../../utils/dateUtils';
 
@@ -28,6 +29,7 @@ const BoardCard = ({
   canManage = false,
   onEdit,
   onDelete,
+  onShare,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -230,6 +232,26 @@ const BoardCard = ({
                     <Pencil size={14} aria-hidden="true" />
                     Edit
                   </button>
+                  {onShare && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onShare?.(board);
+                      }}
+                      className="w-full flex items-center gap-2 font-body text-left hover:bg-[color:var(--color-bg-subtle)] transition-colors duration-150"
+                      style={{
+                        fontSize: 13,
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        color: 'var(--color-text-primary)',
+                      }}
+                    >
+                      <Share2 size={14} aria-hidden="true" />
+                      Share
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="menuitem"

@@ -7,6 +7,7 @@ const Update = require('../models/Update');
 const Notification = require('../models/Notification');
 const Automation = require('../models/Automation');
 const User = require('../models/User');
+const WorkspaceGrant = require('../models/WorkspaceGrant');
 
 /**
  * Permanently delete an organisation and everything that lives under it.
@@ -15,8 +16,11 @@ const User = require('../models/User');
  *   1. Updates, Comments, Notifications — scoped by task IDs in the org's boards
  *   2. Notifications — scoped directly by organisation (covers non-task notifs)
  *   3. Tasks → TaskGroups → Automations → Boards
- *   4. Pull org ID from every member/admin's User.organisations array
- *   5. Delete the Organisation document
+ *   4. WorkspaceGrants where this workspace is the grantor OR the granted
+ *      resource (the workspace itself, or any of its boards) — F3 Acceptance #5
+ *   5. Pull this workspace from every member/admin's User.organisations array
+ *      (and repoint their defaultWorkspaceId if it pointed here)
+ *   6. Delete the Organisation document
  *
  * Shared by orgController.deleteOrg and profileController.deleteAccount so
  * the two paths can't drift.
@@ -44,9 +48,26 @@ const cascadeDeleteOrg = async (orgId) => {
 
   await Automation.deleteMany({ organisation: orgId });
 
+  // Drop every grant that touches this workspace, on either side:
+  //   - workspaceId === orgId            → grants this workspace handed out
+  //   - resourceId === orgId             → a 'workspace'-type grant OF this workspace
+  //   - resourceId ∈ boards(orgId)       → 'board'-type grants of its boards
+  await WorkspaceGrant.deleteMany({
+    $or: [
+      { workspaceId: orgId },
+      { resourceId: orgId },
+      ...(boardIds.length ? [{ resourceId: { $in: boardIds } }] : []),
+    ],
+  });
+
+  // Remove the membership and repoint defaults that pointed at this workspace.
   await User.updateMany(
-    { organisations: orgId },
-    { $pull: { organisations: orgId } }
+    { 'organisations.workspaceId': orgId },
+    { $pull: { organisations: { workspaceId: orgId } } }
+  );
+  await User.updateMany(
+    { defaultWorkspaceId: orgId },
+    { $set: { defaultWorkspaceId: null } }
   );
 
   await Organisation.deleteOne({ _id: orgId });

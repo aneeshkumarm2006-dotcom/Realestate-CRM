@@ -5,6 +5,7 @@ const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const Organisation = require('../models/Organisation');
 const eventBus = require('../services/eventBus');
+const { userHasResourceAccess } = require('../middleware/roleCheck');
 
 /**
  * Resolve whether the current user is the admin of the given org.
@@ -36,6 +37,22 @@ const loadBoardContext = async (boardId, userId) => {
 };
 
 /**
+ * Read-only variant that also honours active cross-workspace grants (F3) so a
+ * granted viewer can list a shared board's groups. WRITE handlers keep using
+ * membership-only `loadBoardContext`.
+ */
+const loadBoardReadContext = async (boardId, userId) => {
+  const ctx = await loadBoardContext(boardId, userId);
+  if (!ctx.error || ctx.status !== 403) return ctx;
+  const granted = await userHasResourceAccess(userId, 'board', boardId, { write: false });
+  if (!granted) return ctx;
+  const board = await Board.findById(boardId);
+  if (!board) return { status: 404, error: 'Board not found' };
+  const org = await Organisation.findById(board.organisation);
+  return { board, org, isAdmin: false, viaGrant: true };
+};
+
+/**
  * GET /api/boards/:boardId/groups
  *
  * List groups for a board, sorted by order asc then createdAt asc.
@@ -47,7 +64,7 @@ const getGroups = async (req, res) => {
     const userId = req.user.userId;
     const { boardId } = req.params;
 
-    const ctx = await loadBoardContext(boardId, userId);
+    const ctx = await loadBoardReadContext(boardId, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
     const groups = await TaskGroup.find({ board: boardId }).sort({

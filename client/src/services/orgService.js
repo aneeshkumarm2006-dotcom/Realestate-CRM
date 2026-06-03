@@ -1,46 +1,9 @@
-import api from './api';
-
-export const createOrg = async (name) => {
-  const { data } = await api.post('/api/orgs', { name });
-  return data.org;
-};
-
-export const getOrg = async (orgId) => {
-  const { data } = await api.get(`/api/orgs/${orgId}`);
-  return data.org;
-};
-
-export const joinOrg = async (inviteCode) => {
-  const { data } = await api.post(`/api/orgs/join/${inviteCode}`);
-  return data.org;
-};
-
-export const listMembers = async (orgId) => {
-  const { data } = await api.get(`/api/orgs/${orgId}/members`);
-  return data; // { members, adminId, adminIds }
-};
-
-export const changeRole = async (orgId, userId, role) => {
-  const { data } = await api.put(`/api/orgs/${orgId}/members/${userId}/role`, { role });
-  return data; // { message, adminIds }
-};
-
-export const removeMember = async (orgId, userId) => {
-  const { data } = await api.delete(`/api/orgs/${orgId}/members/${userId}`);
-  return data;
-};
-
-export const regenerateInvite = async (orgId) => {
-  const { data } = await api.post(`/api/orgs/${orgId}/regenerate-invite`);
-  return data.inviteCode;
-};
-
-export const sendInvite = async (orgId, email) => {
-  const { data } = await api.post(`/api/orgs/${orgId}/send-invite`, { email });
-  return data;
-};
-
-export const deleteOrg = async (orgId) => {
-  const { data } = await api.delete(`/api/orgs/${orgId}`);
-  return data;
-};
+/**
+ * orgService — back-compat shim (Phase 1 / F3).
+ *
+ * The real implementation moved to `workspaceService.js` when Organisation was
+ * renamed to "Workspace" at the API surface. This re-export keeps existing
+ * `import * as orgService from '../services/orgService'` call sites working for
+ * one release cycle. New code should import from `workspaceService.js`.
+ */
+export * from './workspaceService';

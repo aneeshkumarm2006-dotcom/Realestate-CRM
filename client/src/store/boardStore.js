@@ -83,6 +83,22 @@ const useBoardStore = create((set, get) => ({
       boards: s.boards.map((b) => (b._id === board._id ? board : b)),
     })),
 
+  /**
+   * Insert a board if absent, or merge over the existing one. Used to seed a
+   * board from another workspace (shared with the user via a grant) into the
+   * cache before navigating to it, so BoardDetailPage can resolve its metadata.
+   */
+  upsertBoardLocal: (board) =>
+    set((s) => {
+      if (!board || !board._id) return {};
+      const exists = s.boards.some((b) => b._id === board._id);
+      return {
+        boards: exists
+          ? s.boards.map((b) => (b._id === board._id ? { ...b, ...board } : b))
+          : [board, ...s.boards],
+      };
+    }),
+
   removeBoardLocal: (id) =>
     set((s) => ({ boards: s.boards.filter((b) => b._id !== id) })),
 

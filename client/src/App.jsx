@@ -22,6 +22,7 @@ import ProductivityPage from './pages/ProductivityPage';
 import MyTasksPage from './pages/MyTasksPage';
 import SettingsPage from './pages/SettingsPage';
 import MembersPage from './pages/MembersPage';
+import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ToastContainer from './components/ui/Toast';
 
@@ -99,6 +100,7 @@ function App() {
   const user = useAuthStore((s) => s.user);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
   const setOrgsFromUser = useOrgStore((s) => s.setOrgsFromUser);
+  const fetchSharedBoards = useOrgStore((s) => s.fetchSharedBoards);
   const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
   const clearNotifications = useNotificationStore((s) => s.clear);
@@ -111,10 +113,12 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // Keep orgStore synced with the user's organisations
+  // Keep orgStore synced with the user's organisations, and pull the boards
+  // shared with this user (other workspaces) so the navbar can list them.
   useEffect(() => {
     if (user) {
       setOrgsFromUser(user);
+      fetchSharedBoards().catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -159,6 +163,7 @@ function App() {
               <Route path="/productivity" element={<ProductivityPage />} />
             </Route>
             <Route path="/members" element={<MembersPage />} />
+            <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Route>

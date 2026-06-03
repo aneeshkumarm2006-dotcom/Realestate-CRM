@@ -26,7 +26,11 @@ app.get('/', (req, res) => {
 
 // Routes
 app.use('/auth', require('./routes/auth'));
-app.use('/api/orgs', require('./routes/orgs'));
+// Org/workspace router mounted under both prefixes (F3 surface rename). The
+// MongoDB collection stays `organisations`; the API exposes "Workspace".
+const orgsRouter = require('./routes/orgs');
+app.use('/api/orgs', orgsRouter);
+app.use('/api/workspaces', orgsRouter);
 app.use('/api/boards', require('./routes/boards'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api', require('./routes/groups'));

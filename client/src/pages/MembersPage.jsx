@@ -369,7 +369,7 @@ const InviteSection = ({ currentOrg }) => {
   );
 };
 
-const MembersPage = () => {
+const MembersPage = ({ embedded = false }) => {
   const user = useAuthStore((s) => s.user);
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const members = useOrgStore((s) => s.members);
@@ -428,17 +428,21 @@ const MembersPage = () => {
 
   const resolvedAdminId = adminId || orgAdminId;
 
-  return (
-    <PageWrapper>
+  const content = (
       <div className="mx-auto" style={{ maxWidth: 900 }}>
         <header className="mb-6">
-          <h1
-            className="font-display font-bold text-[color:var(--color-text-primary)]"
-            style={{ fontSize: 28, letterSpacing: '-0.01em' }}
+          {!embedded && (
+            <h1
+              className="font-display font-bold text-[color:var(--color-text-primary)]"
+              style={{ fontSize: 28, letterSpacing: '-0.01em' }}
+            >
+              Members
+            </h1>
+          )}
+          <p
+            className="font-body text-sm text-[color:var(--color-text-secondary)]"
+            style={{ marginTop: embedded ? 0 : 4 }}
           >
-            Members
-          </h1>
-          <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
             {members.length} {members.length === 1 ? 'person' : 'people'} in this workspace
           </p>
         </header>
@@ -602,8 +606,9 @@ const MembersPage = () => {
           </p>
         </Modal>
       </div>
-    </PageWrapper>
   );
+
+  return embedded ? content : <PageWrapper>{content}</PageWrapper>;
 };
 
 export default MembersPage;

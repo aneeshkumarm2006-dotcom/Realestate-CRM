@@ -10,6 +10,7 @@ const {
   getBoardTemplate,
   materializeTemplateColumns,
 } = require('../utils/boardTemplates');
+const { grantedBoardAccessForUser } = require('../middleware/roleCheck');
 
 const VALID_VISIBILITIES = ['public', 'private'];
 
@@ -645,18 +646,20 @@ const reorderBoards = async (req, res) => {
  *
  * Boards a `connect_boards` column on this board may target. Pre-F3 that's
  * every OTHER board in the same workspace; F3 adds boards reachable through an
- * active WorkspaceGrant. Member-gated. The column list is included so the
- * client can offer source-column choices when building a mirror.
+ * active WorkspaceGrant (flagged `workspace.shared: true`). Member-gated. The
+ * column list is included so the client can offer source-column choices when
+ * building a mirror.
  *
  * Returns: { connectable: [{ board, workspace }] }
  */
 const getConnectableBoards = async (req, res) => {
   try {
-    const ctx = await loadBoardContext(req.params.id, req.user.userId);
+    const userId = req.user.userId;
+    const ctx = await loadBoardContext(req.params.id, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
     const visibilityFilter = ctx.isAdmin ? {} : { visibility: 'public' };
-    const boards = await Board.find({
+    const sameWsBoards = await Board.find({
       organisation: ctx.board.organisation,
       _id: { $ne: ctx.board._id },
       ...visibilityFilter,
@@ -665,11 +668,43 @@ const getConnectableBoards = async (req, res) => {
       .sort({ order: 1, updatedAt: -1 })
       .lean();
 
-    const workspace = {
+    const ownWorkspace = {
       _id: ctx.org._id,
       name: ctx.org.displayName || ctx.org.name || 'Workspace',
+      shared: false,
     };
-    const connectable = boards.map((board) => ({ board, workspace }));
+    const connectable = sameWsBoards.map((board) => ({ board, workspace: ownWorkspace }));
+
+    // F3: boards in OTHER workspaces the caller can reach via an active grant.
+    const grantedAccess = await grantedBoardAccessForUser(userId); // Map<boardId, role>
+    const grantedIds = [...grantedAccess.keys()].filter(
+      (id) => id !== ctx.board._id.toString()
+    );
+    if (grantedIds.length) {
+      const grantedBoards = await Board.find({
+        _id: { $in: grantedIds },
+        organisation: { $ne: ctx.board.organisation },
+      })
+        .select('name visibility columns organisation')
+        .lean();
+      const wsIds = [...new Set(grantedBoards.map((b) => b.organisation.toString()))];
+      const orgs = await Organisation.find({ _id: { $in: wsIds } })
+        .select('name displayName')
+        .lean();
+      const orgById = new Map(orgs.map((o) => [o._id.toString(), o]));
+      for (const board of grantedBoards) {
+        const org = orgById.get(board.organisation.toString());
+        connectable.push({
+          board,
+          workspace: {
+            _id: org ? org._id : board.organisation,
+            name: org ? org.displayName || org.name || 'Workspace' : 'Shared workspace',
+            shared: true,
+          },
+        });
+      }
+    }
+
     return res.json({ connectable });
   } catch (err) {
     console.error('getConnectableBoards error:', err);

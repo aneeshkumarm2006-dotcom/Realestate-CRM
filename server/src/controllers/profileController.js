@@ -3,6 +3,7 @@ const Organisation = require('../models/Organisation');
 const Task = require('../models/Task');
 const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
+const WorkspaceGrant = require('../models/WorkspaceGrant');
 const { cascadeDeleteOrg } = require('../services/orgCascade');
 
 /**
@@ -92,6 +93,10 @@ const deleteAccount = async (req, res) => {
       { members: userId },
       { $pull: { members: userId, admins: userId } }
     );
+
+    // F3: drop cross-workspace grants this user received (so the grants tables
+    // of other workspaces don't keep dangling rows for a deleted user).
+    await WorkspaceGrant.deleteMany({ granteeUserId: userId });
 
     // ── 3. Personal tasks this user created ───────────────────────────────
     const personalTaskIds = await Task.distinct('_id', {

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Organisation = require('../models/Organisation');
 
 /**
  * Sign a JWT for a given user document.
@@ -39,19 +40,49 @@ const googleCallback = (req, res) => {
 };
 
 /**
- * GET /auth/me — return the current authenticated user (populated organisations).
+ * GET /auth/me — return the current authenticated user.
+ *
+ * F3 reshaped `User.organisations` into `{ workspaceId, role, joinedAt }`
+ * subdocs. To keep the frontend (which reads `user.organisations` as an array
+ * of workspace objects) working unchanged, each membership is FLATTENED back
+ * into its workspace doc with `role` / `joinedAt` merged in.
+ *
+ * Reads lean and resolves workspace ids manually so it tolerates BOTH the new
+ * shape AND the legacy flat-ObjectId shape — that way the deploy → run
+ * `migrateUserMemberships.js` window never makes an existing user look
+ * workspace-less. Memberships whose workspace no longer exists are dropped, and
+ * order is preserved.
  */
 const getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId)
-      .populate('organisations')
-      .select('-__v');
-
+    const user = await User.findById(req.user.userId).select('-__v').lean();
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    return res.json({ user });
+    const raw = Array.isArray(user.organisations) ? user.organisations : [];
+    const membershipWorkspaceId = (m) => (m && m.workspaceId != null ? m.workspaceId : m);
+
+    const ids = raw.map(membershipWorkspaceId).filter(Boolean);
+    const orgs = ids.length
+      ? await Organisation.find({ _id: { $in: ids } }).lean()
+      : [];
+    const orgById = new Map(orgs.map((o) => [o._id.toString(), o]));
+
+    const organisations = [];
+    for (const m of raw) {
+      const wsId = membershipWorkspaceId(m);
+      if (!wsId) continue;
+      const org = orgById.get(wsId.toString());
+      if (!org) continue; // workspace deleted — drop the dangling membership
+      organisations.push({
+        ...org,
+        role: (m && m.role) || 'member',
+        joinedAt: (m && m.joinedAt) || org.createdAt,
+      });
+    }
+
+    return res.json({ user: { ...user, organisations } });
   } catch (err) {
     console.error('getCurrentUser error:', err);
     return res.status(500).json({ error: 'Server error' });

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 import useOrgStore from '../../store/orgStore';
+import useBoardStore from '../../store/boardStore';
 import useNotificationStore from '../../store/notificationStore';
 import { timeAgo } from '../../utils/dateUtils';
 import api from '../../services/api';
@@ -68,7 +69,7 @@ const NavLinks = ({ isAdmin, onNavigate }) => {
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/boards', label: 'My Boards' },
     { to: '/my-tasks', label: 'My Tasks' },
-    { to: '/members', label: 'Members' },
+    { to: '/workspace-settings', label: 'Members' },
     ...(isAdmin
       ? [
           { to: '/analytics', label: 'Analytics' },
@@ -722,6 +723,20 @@ const Avatar = ({ user, size = 32 }) => {
   );
 };
 
+/** Small uppercase section label for the workspace switcher groups. */
+const SwitcherSectionLabel = ({ children }) => (
+  <div
+    className="px-4 pt-2 pb-1 font-body font-semibold uppercase"
+    style={{
+      fontSize: 10,
+      letterSpacing: '0.06em',
+      color: 'var(--color-text-muted)',
+    }}
+  >
+    {children}
+  </div>
+);
+
 const AvatarDropdown = ({ user, onLogout }) => {
   const [open, setOpen] = useState(false);
   const [showOrgPicker, setShowOrgPicker] = useState(false);
@@ -730,6 +745,11 @@ const AvatarDropdown = ({ user, onLogout }) => {
   const orgs = useOrgStore((s) => s.orgs);
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const setCurrentOrg = useOrgStore((s) => s.setCurrentOrg);
+  const sharedBoards = useOrgStore((s) => s.sharedBoards);
+  const fetchSharedBoards = useOrgStore((s) => s.fetchSharedBoards);
+  const upsertBoardLocal = useBoardStore((s) => s.upsertBoardLocal);
+
+  const hasSwitcher = orgs.length > 1 || sharedBoards.length > 0;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -768,6 +788,21 @@ const AvatarDropdown = ({ user, onLogout }) => {
     setCurrentOrg(orgId);
     setShowOrgPicker(false);
     setOpen(false);
+  };
+
+  // Refresh the shared list when the switcher opens so revoked grants drop off.
+  const handleOpenSwitcher = () => {
+    setShowOrgPicker(true);
+    fetchSharedBoards().catch(() => {});
+  };
+
+  // Open a board shared from another workspace: seed it into the board cache so
+  // BoardDetailPage can resolve its metadata, then navigate.
+  const handleOpenSharedBoard = (entry) => {
+    if (entry?.board) upsertBoardLocal(entry.board);
+    setShowOrgPicker(false);
+    setOpen(false);
+    if (entry?.board?._id) navigate(`/boards/${entry.board._id}`);
   };
 
   return (
@@ -814,18 +849,18 @@ const AvatarDropdown = ({ user, onLogout }) => {
           {!showOrgPicker ? (
             <div className="py-1">
               <MenuItem icon={UserIcon} label="Profile" onClick={handleProfile} />
-              {orgs.length > 1 && (
+              {hasSwitcher && (
                 <MenuItem
                   icon={RefreshCw}
-                  label="Switch Org"
+                  label="Switch Workspace"
                   rightIcon={ChevronDown}
-                  onClick={() => setShowOrgPicker(true)}
+                  onClick={handleOpenSwitcher}
                 />
               )}
               <MenuItem icon={LogOut} label="Logout" onClick={handleLogout} danger />
             </div>
           ) : (
-            <div className="py-1 max-h-64 overflow-y-auto">
+            <div className="py-1 max-h-80 overflow-y-auto">
               <button
                 type="button"
                 onClick={() => setShowOrgPicker(false)}
@@ -833,6 +868,9 @@ const AvatarDropdown = ({ user, onLogout }) => {
               >
                 ← Back
               </button>
+
+              {/* My workspaces */}
+              <SwitcherSectionLabel>My workspaces</SwitcherSectionLabel>
               {orgs.map((org) => {
                 const isCurrent = org._id === currentOrg?._id;
                 return (
@@ -859,10 +897,58 @@ const AvatarDropdown = ({ user, onLogout }) => {
                           : 'var(--color-border-strong)',
                       }}
                     />
-                    <span className="truncate flex-1">{org.name}</span>
+                    <span className="truncate flex-1">{org.displayName || org.name}</span>
                   </button>
                 );
               })}
+
+              {/* Shared with me */}
+              {sharedBoards.length > 0 && (
+                <>
+                  <SwitcherSectionLabel>Shared with me</SwitcherSectionLabel>
+                  {sharedBoards.map((entry) => (
+                    <button
+                      key={entry.board?._id}
+                      type="button"
+                      onClick={() => handleOpenSharedBoard(entry)}
+                      className="w-full px-4 py-2 flex items-center gap-2 text-left font-body transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+                    >
+                      <Folder
+                        size={13}
+                        color="var(--color-text-muted)"
+                        aria-hidden="true"
+                        style={{ flexShrink: 0 }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] text-[color:var(--color-text-primary)] truncate">
+                          {entry.board?.name || 'Shared board'}
+                        </span>
+                        <span className="block text-[11px] text-[color:var(--color-text-muted)] truncate">
+                          {entry.workspace?.displayName || entry.workspace?.name || 'Workspace'}
+                        </span>
+                      </span>
+                      <span
+                        className="shrink-0 font-body font-semibold"
+                        style={{
+                          fontSize: 10,
+                          padding: '1px 7px',
+                          borderRadius: 'var(--radius-full)',
+                          background:
+                            entry.role === 'editor'
+                              ? 'var(--color-accent-light)'
+                              : 'var(--color-bg-subtle)',
+                          color:
+                            entry.role === 'editor'
+                              ? 'var(--color-accent-text)'
+                              : 'var(--color-text-muted)',
+                        }}
+                      >
+                        {entry.role === 'editor' ? 'Editor' : 'Viewer'}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>

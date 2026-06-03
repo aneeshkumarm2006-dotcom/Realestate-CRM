@@ -21,6 +21,8 @@ const {
   invalidateOwnMirrors,
   readLinks,
 } = require('../services/mirrorRefresh');
+const { restrictSingleMirror } = require('../services/mirrorAccess');
+const { userHasResourceAccess } = require('../middleware/roleCheck');
 const { logActivity } = require('../services/activityService');
 
 const isOrgAdmin = (org, userId) =>
@@ -101,11 +103,16 @@ const linkTask = async (req, res) => {
 
     const targetBoard = await Board.findById(targetBoardId).select('organisation columns');
     if (!targetBoard) return res.status(400).json({ error: 'Target board not found' });
-    // Write on both boards — pre-F3 that means same workspace (org).
+    // Linking references a target ROW, which is a read on the target board.
+    // Same-workspace targets are always allowed; cross-workspace targets (F3)
+    // require the linking user to hold an active grant on the target board.
     if (targetBoard.organisation.toString() !== ctx.board.organisation.toString()) {
-      return res
-        .status(403)
-        .json({ error: 'Cross-workspace links require a grant (arrives with F3)' });
+      const hasGrant = await userHasResourceAccess(userId, 'board', targetBoardId, { write: false });
+      if (!hasGrant) {
+        return res
+          .status(403)
+          .json({ error: 'Cross-workspace links require an active grant on the target board' });
+      }
     }
 
     // restrictTo filter: enforce only when the referenced column still exists
@@ -248,7 +255,9 @@ const getMirror = async (req, res) => {
     }
 
     const value = await getMirrorValue(task, ctx.board, column, { persist: true });
-    return res.json({ value });
+    // F3: cross-workspace sources the caller lacks a grant for read "Restricted".
+    const visible = await restrictSingleMirror(task, ctx.board, column, userId, value);
+    return res.json({ value: visible });
   } catch (err) {
     console.error('getMirror error:', err);
     return res.status(500).json({ error: 'Server error' });

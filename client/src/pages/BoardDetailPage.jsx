@@ -93,15 +93,17 @@ const BoardDetailPage = () => {
   const { id: boardId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const isAdmin = useIsCurrentOrgAdmin();
+  const rawIsAdmin = useIsCurrentOrgAdmin();
   const currentUser = useAuthStore((s) => s.user);
 
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const members = useOrgStore((s) => s.members);
   const fetchMembers = useOrgStore((s) => s.fetchMembers);
+  const sharedBoards = useOrgStore((s) => s.sharedBoards);
   const boards = useBoardStore((s) => s.boards);
   const fetchBoards = useBoardStore((s) => s.fetchBoards);
   const getBoardById = useBoardStore((s) => s.getBoardById);
+  const upsertBoardLocal = useBoardStore((s) => s.upsertBoardLocal);
 
   const groups = useTaskStore((s) => s.groups);
   const tasksByGroup = useTaskStore((s) => s.tasksByGroup);
@@ -194,6 +196,14 @@ const BoardDetailPage = () => {
   const board = getBoardById(boardId) || null;
   const orgId = currentOrg?._id || null;
 
+  // A board belonging to ANOTHER workspace (opened via a "Shared with me" grant)
+  // is read-only here: structural + value edits are gated to members of the
+  // board's own workspace (the server enforces this too). Forcing isAdmin off
+  // disables every edit affordance — AddColumn, group management, cell edits.
+  const isSharedBoard =
+    !!board && !!currentOrg && String(board.organisation || '') !== String(currentOrg._id || '');
+  const isAdmin = rawIsAdmin && !isSharedBoard;
+
   // If we navigated directly and the boards list is empty, fetch it so the
   // header can resolve the board metadata.
   useEffect(() => {
@@ -203,6 +213,15 @@ const BoardDetailPage = () => {
       );
     }
   }, [board, orgId, boards.length, fetchBoards]);
+
+  // Shared boards (other workspaces) aren't in the current org's board list, so
+  // on a direct load/reload of `/boards/:id` seed it from the "Shared with me"
+  // set if present, so the read-only grid can render.
+  useEffect(() => {
+    if (board || !boardId) return;
+    const shared = sharedBoards.find((s) => s.board && s.board._id === boardId);
+    if (shared) upsertBoardLocal(shared.board);
+  }, [board, boardId, sharedBoards, upsertBoardLocal]);
 
   // Fetch groups + tasks for this board
   useEffect(() => {

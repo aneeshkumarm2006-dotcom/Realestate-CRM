@@ -14,6 +14,8 @@ const eventBus = require('../services/eventBus');
 const { logActivity } = require('../services/activityService');
 const { getColumnType } = require('../utils/columnTypes');
 const { embedMirrorValues } = require('../services/mirrorRefresh');
+const { restrictEmbeddedMirrors } = require('../services/mirrorAccess');
+const { userHasResourceAccess } = require('../middleware/roleCheck');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 // Legacy enum keys — accepted for personal tasks (which don't have a board).
@@ -82,6 +84,29 @@ const loadBoardContext = async (boardId, userId) => {
   }
 
   return { board, org, isAdmin: isOrgAdmin(org, userId) };
+};
+
+/**
+ * Read-only board context that ALSO honours active cross-workspace grants (F3).
+ * Members resolve exactly as in loadBoardContext; a non-member holding a viewer
+ * or editor grant on the board gets read access (`isAdmin: false`, `viaGrant`).
+ *
+ * Only the READ endpoints (task list, subitems) use this. WRITE handlers keep
+ * using membership-only `loadBoardContext`, so a `viewer` grant can read but not
+ * edit (F3 Acceptance #1).
+ */
+const loadBoardReadContext = async (boardId, userId) => {
+  const ctx = await loadBoardContext(boardId, userId);
+  if (!ctx.error || ctx.status !== 403) return ctx;
+
+  const granted = await userHasResourceAccess(userId, 'board', boardId, { write: false });
+  if (!granted) return ctx;
+
+  const board = await Board.findById(boardId);
+  if (!board) return { status: 404, error: 'Board not found' };
+  await ensureBoardStatuses(board);
+  const org = await Organisation.findById(board.organisation);
+  return { board, org, isAdmin: false, viaGrant: true };
 };
 
 /**
@@ -364,7 +389,8 @@ const getTasks = async (req, res) => {
       return res.status(400).json({ error: 'Board ID required' });
     }
 
-    const ctx = await loadBoardContext(boardId, userId);
+    // Read path — members OR users with an active grant on the board (F3).
+    const ctx = await loadBoardReadContext(boardId, userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
     // Top-level tasks only — subitems are fetched on demand via /:id/subitems.
@@ -384,6 +410,9 @@ const getTasks = async (req, res) => {
     // value so the DataGrid renders a plain value (no-op when the board has no
     // mirror columns).
     await embedMirrorValues(tasks, ctx.board);
+    // F3: hide cross-workspace mirror values from users without an active grant
+    // on the target board (renders "Restricted").
+    await restrictEmbeddedMirrors(tasks, ctx.board, userId);
 
     return res.json({ tasks });
   } catch (err) {
@@ -415,7 +444,7 @@ const getSubitems = async (req, res) => {
         return res.status(403).json({ error: 'Not authorised' });
       }
     } else {
-      const ctx = await loadBoardContext(parent.board, userId);
+      const ctx = await loadBoardReadContext(parent.board, userId);
       if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
     }
 
