@@ -96,7 +96,7 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
   }
 
   return (
-    <div style={{ width: '100%', overflowX: 'auto' }}>
+    <div className="macan-thin-scrollbar" style={{ width: '100%', overflowX: 'auto' }}>
       <div
         style={{
           display: 'grid',

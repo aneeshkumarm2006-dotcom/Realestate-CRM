@@ -344,6 +344,26 @@ li.macan-task-highlight {
   }
 }
 
+/* Thin horizontal scrollbar for flexible-column grids (template boards). */
+.macan-thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+.macan-thin-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.macan-thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.macan-thin-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 999px;
+}
+.macan-thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .macan-highlight-overlay {
     animation: none;
