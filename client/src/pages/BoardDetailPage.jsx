@@ -1114,6 +1114,11 @@ const BoardDetailPage = () => {
                           boxShadow: 'var(--shadow-card)',
                           position: 'relative',
                           zIndex: isDragging ? 30 : 'auto',
+                          // Give an expanded group a floor height so a sparse
+                          // board (e.g. a freshly created template with only a
+                          // row or two) still reads as a proper card instead of
+                          // a thin strip. Collapsed groups stay header-only.
+                          minHeight: isCollapsed ? undefined : 180,
                         }}
                       >
                         <TaskGroupHeader
