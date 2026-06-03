@@ -350,8 +350,8 @@ li.macan-task-highlight {
   scrollbar-color: var(--color-border-strong) transparent;
 }
 .macan-thin-scrollbar::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+  height: 3px;
+  width: 3px;
 }
 .macan-thin-scrollbar::-webkit-scrollbar-track {
   background: transparent;
@@ -362,6 +362,12 @@ li.macan-task-highlight {
 }
 .macan-thin-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
+}
+.macan-thin-scrollbar::-webkit-scrollbar-button,
+.macan-thin-scrollbar::-webkit-scrollbar-corner {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
