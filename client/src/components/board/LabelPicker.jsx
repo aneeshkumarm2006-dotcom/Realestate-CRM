@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings as SettingsIcon } from 'lucide-react';
+import { Settings as SettingsIcon, Check } from 'lucide-react';
 import { getColorPair } from '../../utils/priorityColors';
 
 const VIEWPORT_MARGIN = 16;
@@ -41,7 +41,7 @@ const LabelPicker = ({
       const top = openUpward
         ? Math.max(VIEWPORT_MARGIN, r.top - menuHeight - 4)
         : r.bottom + 4;
-      const left = Math.min(r.left, window.innerWidth - 280 - VIEWPORT_MARGIN);
+      const left = Math.min(r.left, window.innerWidth - 200 - VIEWPORT_MARGIN);
       setPosition({ top, left: Math.max(VIEWPORT_MARGIN, left), openUpward });
     };
     compute();
@@ -91,8 +91,7 @@ const LabelPicker = ({
         top: position.top,
         left: position.left,
         zIndex: 200,
-        minWidth: 220,
-        maxWidth: 280,
+        minWidth: 180,
         padding: 6,
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-md)',
@@ -124,25 +123,42 @@ const LabelPicker = ({
             role="option"
             aria-selected={isSelected}
             onClick={() => onToggle?.(label._id, !isSelected)}
-            className={[
-              'w-full flex items-center text-left font-body font-medium',
-              'transition-opacity duration-150 hover:opacity-90',
-              'focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]',
-            ].join(' ')}
+            className="w-full flex items-center gap-2 text-left transition-opacity duration-150 hover:opacity-90 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
             style={{
               margin: '2px 0',
-              padding: '6px 10px',
-              fontSize: 12,
-              borderRadius: 'var(--radius-full)',
-              backgroundColor: pair.bg,
-              color: pair.text,
-              outline: isSelected ? '2px solid var(--color-accent)' : 'none',
-              outlineOffset: isSelected ? 1 : 0,
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-sm)',
+              background: isSelected ? 'var(--color-bg-subtle)' : 'transparent',
               border: 'none',
               cursor: 'pointer',
             }}
           >
-            {label.name}
+            <span
+              className="inline-flex items-center font-body font-medium"
+              style={{
+                fontSize: 12,
+                padding: '3px 10px',
+                borderRadius: 'var(--radius-full)',
+                backgroundColor: pair.bg,
+                color: pair.text,
+                flex: 1,
+                lineHeight: 1.2,
+              }}
+            >
+              {label.name}
+            </span>
+            <span
+              aria-hidden="true"
+              className="inline-flex items-center justify-center"
+              style={{
+                width: 16,
+                height: 16,
+                color: isSelected ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                opacity: isSelected ? 1 : 0.25,
+              }}
+            >
+              <Check size={14} />
+            </span>
           </button>
         );
       })}
