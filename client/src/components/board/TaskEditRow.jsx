@@ -225,7 +225,7 @@ const TaskEditRow = ({
             ? '2px solid var(--color-status-stuck)'
             : 'none',
           outlineOffset: -2,
-          borderRadius: 'var(--radius-md)',
+          borderRadius: 0,
           transition: 'outline-color 150ms ease-in-out',
         }}
         title={statusError || undefined}
