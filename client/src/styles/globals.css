@@ -364,6 +364,14 @@ li.macan-task-highlight {
   background: var(--color-text-muted);
 }
 .macan-thin-scrollbar::-webkit-scrollbar-button,
+.macan-thin-scrollbar::-webkit-scrollbar-button:start,
+.macan-thin-scrollbar::-webkit-scrollbar-button:end,
+.macan-thin-scrollbar::-webkit-scrollbar-button:horizontal:start,
+.macan-thin-scrollbar::-webkit-scrollbar-button:horizontal:end,
+.macan-thin-scrollbar::-webkit-scrollbar-button:vertical:start,
+.macan-thin-scrollbar::-webkit-scrollbar-button:vertical:end,
+.macan-thin-scrollbar::-webkit-scrollbar-button:single-button,
+.macan-thin-scrollbar::-webkit-scrollbar-button:double-button,
 .macan-thin-scrollbar::-webkit-scrollbar-corner {
   display: none;
   width: 0;
