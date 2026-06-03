@@ -196,6 +196,29 @@ const annotateHasSubitems = async (tasks) => {
 };
 
 /**
+ * Annotate a list of POJO tasks with `commentCount: number` so the board view
+ * can show a comment-count badge on each row's comment icon. One aggregation
+ * groups comments by task — cheaper than a per-row count query.
+ */
+const annotateCommentCounts = async (tasks) => {
+  if (!Array.isArray(tasks) || tasks.length === 0) return tasks;
+  const ids = tasks.map((t) => t._id).filter(Boolean);
+  if (ids.length === 0) {
+    for (const t of tasks) t.commentCount = 0;
+    return tasks;
+  }
+  const counts = await Comment.aggregate([
+    { $match: { task: { $in: ids } } },
+    { $group: { _id: '$task', count: { $sum: 1 } } },
+  ]);
+  const byTask = new Map(counts.map((c) => [c._id.toString(), c.count]));
+  for (const t of tasks) {
+    t.commentCount = t?._id ? byTask.get(t._id.toString()) || 0 : 0;
+  }
+  return tasks;
+};
+
+/**
  * Friendly status label for notification messages. Uses the board's
  * status name if the task references one of its statuses; otherwise
  * falls back to a humanised version of the input.
@@ -355,6 +378,7 @@ const getTasks = async (req, res) => {
       .sort({ order: 1, createdAt: 1 })
       .lean();
     await annotateHasSubitems(tasks);
+    await annotateCommentCounts(tasks);
 
     return res.json({ tasks });
   } catch (err) {
@@ -423,6 +447,7 @@ const getMyTasks = async (req, res) => {
       .sort({ dueDate: 1, createdAt: -1 })
       .lean();
     await annotateHasSubitems(tasks);
+    await annotateCommentCounts(tasks);
 
     return res.json({ tasks });
   } catch (err) {
@@ -492,6 +517,7 @@ const getCalendarTasks = async (req, res) => {
       .sort({ dueDate: 1, createdAt: 1 })
       .lean();
     await annotateHasSubitems(tasks);
+    await annotateCommentCounts(tasks);
 
     return res.json({ tasks, month, year });
   } catch (err) {
@@ -1281,6 +1307,7 @@ const reorderTasks = async (req, res) => {
       .sort({ order: 1, createdAt: 1 })
       .lean();
     await annotateHasSubitems(updated);
+    await annotateCommentCounts(updated);
 
     return res.json({ tasks: updated, groupId: targetGroupId });
   } catch (err) {

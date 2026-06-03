@@ -110,6 +110,7 @@ const BoardDetailPage = () => {
   const clearTasks = useTaskStore((s) => s.clear);
   const addTaskLocal = useTaskStore((s) => s.addTask);
   const updateTaskLocal = useTaskStore((s) => s.updateTask);
+  const setCommentCount = useTaskStore((s) => s.setCommentCount);
   const deleteTaskLocal = useTaskStore((s) => s.deleteTask);
   const addGroupLocal = useTaskStore((s) => s.addGroup);
   const removeGroupLocal = useTaskStore((s) => s.removeGroup);
@@ -1497,6 +1498,7 @@ const BoardDetailPage = () => {
         onOpenSubitem={handleOpenSubitem}
         onBack={handleBackInStack}
         canGoBack={selectedTaskStack.length > 1}
+        onCommentCountChange={setCommentCount}
       />
 
       {/* Automations */}

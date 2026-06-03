@@ -50,6 +50,8 @@ const TaskRow = ({
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const overdue = isOverdue(task.dueDate) && !isStatusDone(board, task.status);
   const labels = Array.isArray(task.labels) ? task.labels : [];
+  const commentCount =
+    typeof task.commentCount === 'number' ? task.commentCount : 0;
 
   // Merge sortable ref with the internal rowRef used for highlight scrolling.
   const setRowRefs = (el) => {
@@ -287,11 +289,41 @@ const TaskRow = ({
         <button
           type="button"
           onClick={() => onOpen?.(task)}
-          aria-label="Open comments"
+          aria-label={
+            commentCount > 0
+              ? `Open comments (${commentCount})`
+              : 'Open comments'
+          }
           className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
-          style={{ width: 28, height: 28, margin: '0 auto', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+          style={{ position: 'relative', width: 28, height: 28, margin: '0 auto', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
         >
           <MessageSquare size={15} color="var(--color-text-secondary)" aria-hidden="true" />
+          {commentCount > 0 && (
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: -3,
+                right: -3,
+                minWidth: 15,
+                height: 15,
+                padding: '0 3px',
+                boxSizing: 'border-box',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 9999,
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                fontSize: 9,
+                fontWeight: 700,
+                lineHeight: 1,
+                border: '1.5px solid var(--color-bg-surface, #FFFFFF)',
+              }}
+            >
+              {commentCount > 9 ? '9+' : commentCount}
+            </span>
+          )}
         </button>
       </td>
 

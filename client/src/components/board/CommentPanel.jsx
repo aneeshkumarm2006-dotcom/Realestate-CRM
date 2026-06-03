@@ -65,6 +65,7 @@ const CommentPanel = ({
   onOpenSubitem,
   onBack,
   canGoBack = false,
+  onCommentCountChange,
 }) => {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -73,6 +74,10 @@ const CommentPanel = ({
   const [error, setError] = useState('');
   const threadRef = useRef(null);
   const textareaRef = useRef(null);
+  // Tracks which task the currently-held `comments` belong to, so the
+  // count-report effect never attributes one task's count to another while a
+  // new task's comments are still loading.
+  const loadedTaskIdRef = useRef(null);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
   const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
   const currentUserId = useAuthStore((s) => s.user?._id);
@@ -130,16 +135,23 @@ const CommentPanel = ({
       setActiveTab('updates');
       setUpdatesCount(0);
       setFilesCount(0);
+      loadedTaskIdRef.current = null;
       return;
     }
 
     let cancelled = false;
+    // Invalidate the previous task's loaded marker until this task's
+    // comments land.
+    loadedTaskIdRef.current = null;
     setLoading(true);
     setError('');
     commentService
       .getComments(taskId)
       .then((list) => {
-        if (!cancelled) setComments(list || []);
+        if (!cancelled) {
+          setComments(list || []);
+          loadedTaskIdRef.current = taskId;
+        }
       })
       .catch((err) => {
         console.error('Failed to load comments:', err);
@@ -164,6 +176,16 @@ const CommentPanel = ({
     if (!threadRef.current) return;
     threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [comments, loading]);
+
+  // Keep the board row's comment-count badge in sync. Reports the loaded
+  // count (which also self-corrects any drift) and every subsequent add.
+  // Only fires once this task's comments have actually loaded, so a stale
+  // count is never attributed to a different task.
+  useEffect(() => {
+    if (!isOpen || !taskId || loading) return;
+    if (loadedTaskIdRef.current !== taskId) return;
+    onCommentCountChange?.(taskId, comments.length);
+  }, [isOpen, taskId, loading, comments.length, onCommentCountChange]);
 
   // ESC closes the panel + scroll lock on <body>
   useEffect(() => {

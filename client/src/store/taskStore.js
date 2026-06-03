@@ -2,6 +2,23 @@ import { create } from 'zustand';
 import * as taskService from '../services/taskService';
 
 /**
+ * Merge a single-task server response over the task we already have, keeping
+ * the client-side list annotations (`commentCount`, `hasSubitems`) that
+ * single-task endpoints don't return. Falls back to the incoming value when
+ * the previous task didn't carry one either.
+ */
+const mergeServerTask = (prev, next) => {
+  if (!prev) return next;
+  return {
+    ...next,
+    commentCount:
+      next.commentCount !== undefined ? next.commentCount : prev.commentCount,
+    hasSubitems:
+      next.hasSubitems !== undefined ? next.hasSubitems : prev.hasSubitems,
+  };
+};
+
+/**
  * useTaskStore — tracks tasks (and their groups) for the board detail view.
  *
  * Tasks are keyed by their group id in `tasksByGroup` so each group's table
@@ -68,16 +85,23 @@ const useTaskStore = create((set, get) => ({
   /**
    * Replace a task in place. Subitems (tasks with a `parent`) land in the
    * `subitemsByParent` cache; top-level tasks land in their group bucket.
+   *
+   * Single-task server responses (e.g. PUT /api/tasks/:id) don't carry the
+   * client-side annotations `commentCount`/`hasSubitems` (those are added only
+   * on the list endpoints), so we preserve the previous values when the
+   * incoming task omits them — otherwise an inline edit would wipe the row's
+   * comment badge and subitem chevron.
    */
   updateTask: (task) =>
     set((s) => {
+      const replace = (t) => (t._id === task._id ? mergeServerTask(t, task) : t);
       const parentId = task?.parent ? task.parent.toString() : null;
       if (parentId) {
         const list = s.subitemsByParent[parentId] || [];
         return {
           subitemsByParent: {
             ...s.subitemsByParent,
-            [parentId]: list.map((t) => (t._id === task._id ? task : t)),
+            [parentId]: list.map(replace),
           },
         };
       }
@@ -87,9 +111,35 @@ const useTaskStore = create((set, get) => ({
       return {
         tasksByGroup: {
           ...s.tasksByGroup,
-          [gid]: existing.map((t) => (t._id === task._id ? task : t)),
+          [gid]: existing.map(replace),
         },
       };
+    }),
+
+  /**
+   * Set the comment count for a single task (top-level or subitem). Used by
+   * the comment panel to keep the row badge live as comments are added.
+   */
+  setCommentCount: (taskId, count) =>
+    set((s) => {
+      let changed = false;
+      const bump = (t) => {
+        if (t._id === taskId && t.commentCount !== count) {
+          changed = true;
+          return { ...t, commentCount: count };
+        }
+        return t;
+      };
+      const nextGroups = {};
+      for (const [gid, list] of Object.entries(s.tasksByGroup)) {
+        nextGroups[gid] = (list || []).map(bump);
+      }
+      const nextSubitems = {};
+      for (const [pid, list] of Object.entries(s.subitemsByParent)) {
+        nextSubitems[pid] = (list || []).map(bump);
+      }
+      if (!changed) return s;
+      return { tasksByGroup: nextGroups, subitemsByParent: nextSubitems };
     }),
 
   /**
@@ -346,7 +396,9 @@ const useTaskStore = create((set, get) => ({
       return {
         subitemsByParent: {
           ...s.subitemsByParent,
-          [parentId]: list.map((t) => (t._id === task._id ? task : t)),
+          [parentId]: list.map((t) =>
+            t._id === task._id ? mergeServerTask(t, task) : t
+          ),
         },
       };
     }),
