@@ -96,15 +96,14 @@ const getBoardTemplate = (id) =>
   boardTemplates.find((t) => t.id === id) || null;
 
 /**
- * Materialise a template's `columns[]` into the shape expected by the
- * Board schema's `columns` subdoc (assigns `order`, defaults `width`,
- * defaults missing `settings` to `{}`, ensures exactly one isPrimary).
- *
- * Returns a plain array — caller pushes into `board.columns` and saves.
+ * Shape a raw column spec list into the form the Board schema's `columns`
+ * subdoc expects: assigns `order` by index, defaults `width`, defaults
+ * missing `settings` to `{}`, and guarantees exactly one `isPrimary`
+ * (the Board pre-save invariant). Returns a plain array.
  */
-const materializeTemplateColumns = (template) => {
-  if (!template || !Array.isArray(template.columns)) return [];
-  const out = template.columns.map((c, i) => ({
+const shapeColumns = (cols) => {
+  if (!Array.isArray(cols)) return [];
+  const out = cols.map((c, i) => ({
     key: c.key,
     name: c.name,
     type: c.type,
@@ -119,8 +118,91 @@ const materializeTemplateColumns = (template) => {
   return out;
 };
 
+/**
+ * Materialise a template's `columns[]` into the shape expected by the
+ * Board schema's `columns` subdoc.
+ *
+ * Returns a plain array — caller pushes into `board.columns` and saves.
+ */
+const materializeTemplateColumns = (template) => {
+  if (!template || !Array.isArray(template.columns)) return [];
+  return shapeColumns(template.columns);
+};
+
+/**
+ * Build a default `columns[]` array for a board that is being converted to
+ * the flexible-columns engine (or created without a template). The columns
+ * mirror the legacy fixed fields so existing task data keeps rendering.
+ *
+ * Column `key`s MUST match `LEGACY_COLUMN_KEY_TO_TASK_FIELD` in Task.js so
+ * the pre-save sync keeps projecting values back onto the legacy fields:
+ *   status, priority, assignees, due_date, tags.
+ *
+ * The Status and Tags option ids are set to the stringified `_id` of the
+ * corresponding `board.statuses` / `board.labels` subdoc. This makes the
+ * existing one-directional sync (columnValues → legacy field) a correct
+ * pass-through: a status column value *is* the legacy status id.
+ *
+ * Status is omitted when the board has no statuses; Tags is omitted when the
+ * board has no labels.
+ */
+const buildDefaultColumns = (board) => {
+  const statuses = Array.isArray(board && board.statuses) ? board.statuses : [];
+  const labels = Array.isArray(board && board.labels) ? board.labels : [];
+
+  const cols = [
+    { key: 'name', name: 'Name', type: 'text', isPrimary: true },
+  ];
+
+  if (statuses.length > 0) {
+    cols.push({
+      key: 'status',
+      name: 'Status',
+      type: 'status',
+      settings: {
+        options: statuses.map((s) => ({
+          id: s._id.toString(),
+          label: s.name,
+          color: s.color,
+          order: s.order,
+          isDefault: !!s.isDefault,
+        })),
+      },
+    });
+  }
+
+  cols.push({
+    key: 'priority',
+    name: 'Priority',
+    type: 'status',
+    settings: { options: priorityOptions },
+  });
+  cols.push({ key: 'assignees', name: 'Owner', type: 'person' });
+  cols.push({ key: 'due_date', name: 'Due Date', type: 'date' });
+
+  if (labels.length > 0) {
+    cols.push({
+      key: 'tags',
+      name: 'Tags',
+      type: 'tags',
+      settings: {
+        options: labels.map((l) => ({
+          id: l._id.toString(),
+          label: l.name,
+          color: l.color,
+          order: l.order,
+        })),
+      },
+    });
+  }
+
+  return shapeColumns(cols);
+};
+
 module.exports = {
   boardTemplates,
   getBoardTemplate,
+  shapeColumns,
   materializeTemplateColumns,
+  buildDefaultColumns,
 };

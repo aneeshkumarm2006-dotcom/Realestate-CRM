@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { focusedInputStyle, cellWrapperStyle, formatDateInput } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 const DateCell = ({ value, readOnly, onChange }) => {
   const [editing, setEditing] = useState(false);
@@ -27,7 +28,11 @@ const DateCell = ({ value, readOnly, onChange }) => {
         style={{ ...cellWrapperStyle, cursor: readOnly ? 'default' : 'text' }}
         onClick={() => !readOnly && setEditing(true)}
       >
-        <span>{value ? new Date(value).toLocaleDateString() : ''}</span>
+        {value ? (
+          <span>{new Date(value).toLocaleDateString()}</span>
+        ) : !readOnly ? (
+          <CellPlaceholder text="Set date" />
+        ) : null}
       </div>
     );
   }

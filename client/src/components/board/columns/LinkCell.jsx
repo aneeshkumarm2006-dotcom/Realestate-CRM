@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { focusedInputStyle, cellWrapperStyle } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 const LinkCell = ({ value, readOnly, onChange }) => {
   const [editing, setEditing] = useState(false);
@@ -44,9 +45,9 @@ const LinkCell = ({ value, readOnly, onChange }) => {
           >
             {display}
           </a>
-        ) : (
-          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-        )}
+        ) : !readOnly ? (
+          <CellPlaceholder text="Add link" />
+        ) : null}
       </div>
     );
   }

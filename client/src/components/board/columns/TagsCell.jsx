@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { cellWrapperStyle, optionSorted } from './cellShared';
 import { getColorPair } from '../../../utils/priorityColors';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * TagsCell — multi-select over `settings.options`. Renders each selected tag
@@ -57,7 +58,7 @@ const TagsCell = ({ value, column, readOnly, onChange }) => {
         onClick={() => !readOnly && setOpen((v) => !v)}
       >
         {selected.length === 0 ? (
-          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+          !readOnly ? <CellPlaceholder text="Add tags" /> : null
         ) : (
           selected.map((id) => {
             const opt = options.find((o) => o.id.toString() === id);

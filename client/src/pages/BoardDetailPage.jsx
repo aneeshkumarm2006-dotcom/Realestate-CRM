@@ -9,6 +9,7 @@ import {
   Zap,
   GripVertical,
   SearchX,
+  Columns3,
 } from 'lucide-react';
 import {
   DndContext,
@@ -39,7 +40,7 @@ import StatusMenu from '../components/board/StatusMenu';
 import PriorityMenu from '../components/board/PriorityMenu';
 import TaskActionsMenu from '../components/board/TaskActionsMenu';
 import CommentPanel from '../components/board/CommentPanel';
-import AutomationsModal from '../components/board/AutomationsModal';
+import AutomationBuilder from '../components/board/AutomationBuilder';
 import LabelPicker from '../components/board/LabelPicker';
 import EditChipsModal from '../components/board/EditChipsModal';
 import BulkActionBar from '../components/board/BulkActionBar';
@@ -104,6 +105,7 @@ const BoardDetailPage = () => {
   const fetchBoards = useBoardStore((s) => s.fetchBoards);
   const getBoardById = useBoardStore((s) => s.getBoardById);
   const upsertBoardLocal = useBoardStore((s) => s.upsertBoardLocal);
+  const enableFlexibleColumns = useBoardStore((s) => s.enableFlexibleColumns);
 
   const groups = useTaskStore((s) => s.groups);
   const tasksByGroup = useTaskStore((s) => s.tasksByGroup);
@@ -120,6 +122,8 @@ const BoardDetailPage = () => {
   const reorderTasksAction = useTaskStore((s) => s.reorderTasks);
   const refreshNotifications = useNotificationStore((s) => s.fetchNotifications);
   const toastError = useToastStore((s) => s.error);
+  const toastSuccess = useToastStore((s) => s.success);
+  const [enablingColumns, setEnablingColumns] = useState(false);
 
   // Collapse state, keyed by group id
   const [collapsed, setCollapsed] = useState(() => new Set());
@@ -742,6 +746,29 @@ const BoardDetailPage = () => {
     setGroupModalOpen(true);
   };
 
+  // Convert a legacy (fixed-column) board to the flexible-columns engine.
+  // Existing Name/Status/Priority/Owner/Due data is preserved and shown as
+  // editable columns; the admin can then add custom columns from the grid.
+  const handleEnableColumns = async () => {
+    if (enablingColumns || !board) return;
+    if (
+      !window.confirm(
+        'Enable custom columns on this board? Your existing tasks and their data are preserved — Name, Status, Priority, Owner and Due Date become editable columns you can add to.'
+      )
+    ) {
+      return;
+    }
+    setEnablingColumns(true);
+    try {
+      await enableFlexibleColumns(boardId);
+      toastSuccess('Custom columns enabled');
+    } catch (err) {
+      toastError(err?.response?.data?.error || 'Could not enable custom columns');
+    } finally {
+      setEnablingColumns(false);
+    }
+  };
+
   const handleCloseGroupModal = () => {
     if (creatingGroup) return;
     setGroupModalOpen(false);
@@ -960,6 +987,16 @@ const BoardDetailPage = () => {
 
         {isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
+            {board && !board.useFlexibleColumns && (
+              <Button
+                variant="secondary"
+                icon={Columns3}
+                onClick={handleEnableColumns}
+                disabled={enablingColumns}
+              >
+                {enablingColumns ? 'Enabling…' : 'Enable custom columns'}
+              </Button>
+            )}
             <Button
               variant="secondary"
               icon={Zap}
@@ -1170,6 +1207,19 @@ const BoardDetailPage = () => {
                               board={board}
                               tasks={groupTasks}
                               readOnly={!isAdmin}
+                              onSaveNew={
+                                isAdmin
+                                  ? (payload) => handleSaveNewTask(group._id, payload)
+                                  : undefined
+                              }
+                              onOpenTask={handleOpenTask}
+                              onActionsClick={isAdmin ? handleActionsClick : undefined}
+                              selectedIds={selectedTaskIds}
+                              onToggleSelect={handleToggleSelectTask}
+                              onToggleSelectAll={handleToggleSelectGroup}
+                              highlightedTaskId={highlightedTaskId}
+                              groupId={group._id}
+                              dndDisabled={dndDisabledGlobal || isEditingHere}
                             />
                           ) : (
                             <TaskTable
@@ -1533,7 +1583,7 @@ const BoardDetailPage = () => {
 
       {/* Automations */}
       {isAdmin && (
-        <AutomationsModal
+        <AutomationBuilder
           isOpen={automationsOpen}
           onClose={() => setAutomationsOpen(false)}
           boardId={boardId}

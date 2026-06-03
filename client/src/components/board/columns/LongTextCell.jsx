@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { focusedInputStyle, cellWrapperStyle } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * LongTextCell — multi-line text. Inline edit expands into a textarea on
@@ -27,16 +28,20 @@ const LongTextCell = ({ value, readOnly, onChange }) => {
         onClick={() => !readOnly && setEditing(true)}
         title={value || ''}
       >
-        <span
-          style={{
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {value || ''}
-        </span>
+        {value ? (
+          <span
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {value}
+          </span>
+        ) : !readOnly ? (
+          <CellPlaceholder text="Add text" />
+        ) : null}
       </div>
     );
   }

@@ -1,34 +1,85 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { Fragment, useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MoreHorizontal } from 'lucide-react';
+import {
+  MoreHorizontal,
+  MessageSquare,
+  GripVertical,
+  ChevronRight,
+  ArrowRight,
+  Plus,
+} from 'lucide-react';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { cellComponentFor } from './columns';
 import AddColumnButton from './AddColumnButton';
+import SortableItem from '../dnd/SortableItem';
 import useBoardStore from '../../store/boardStore';
 import useTaskStore from '../../store/taskStore';
 import useToastStore from '../../store/toastStore';
+import * as taskService from '../../services/taskService';
+import { getStatusPalette } from '../../utils/priorityColors';
+
+// Uniform column sizing — every data column is the same width and stretches
+// to fill the grid; the control tracks (drag handle, checkbox, row actions)
+// and the trailing add-column cell are fixed.
+const COLUMN_WIDTH = 180;
+const DRAG_WIDTH = 24;
+const CHECK_WIDTH = 40;
+// Trailing control tracks mirror the classic TaskTable: a 48px comments
+// column (message icon + unread badge) and a 48px actions column. The extra
+// 44px add-column cell is unique to the flexible grid and stays put.
+const COMMENTS_WIDTH = 48;
+const ACTIONS_WIDTH = 48;
+const ADD_COLUMN_WIDTH = 44;
+const ROW_HEIGHT = 48;
 
 /**
  * DataGrid — generic grid driven by `board.columns` and a flat `tasks`
- * array. Replaces the fixed-column TaskTable for boards that have
- * `useFlexibleColumns: true`.
+ * array. Used for boards with `useFlexibleColumns: true`.
  *
- * Layout: CSS Grid with one column per `board.columns[i].width`. The header
- * row carries the column name + a chevron menu (rename / width / delete).
- * Each body row is a task; cells render via the cellComponentFor registry.
+ * Each task renders as a single draggable row (its own CSS grid sharing the
+ * header's column template) so it has full row-level parity with the classic
+ * TaskTable: a drag handle, a selection checkbox, open + actions buttons, and
+ * inline subitems. The fixed control tracks sit on either side of the dynamic
+ * data columns.
  *
  * Props:
- *   board    — current board doc (with `columns`)
- *   tasks    — array of tasks to render (already filtered to the right group)
- *   readOnly — disables every cell + hides the AddColumn button
+ *   board        — current board doc (with `columns`)
+ *   tasks        — tasks to render (already filtered to the right group)
+ *   readOnly     — disables editing/creating/selecting/dragging
+ *   onSaveNew    — async ({ name }) => void — create a task in this group
+ *   onOpenTask   — (task) => void — open a task's detail panel
+ *   onActionsClick — (task, event) => void — open the row ⋯ menu
+ *   selectedIds  — Set of selected task ids (bulk selection)
+ *   onToggleSelect — (taskId, checked) => void
+ *   onToggleSelectAll — (taskIds, checked) => void
+ *   highlightedTaskId — id of a row to highlight
+ *   groupId      — owning group id (drag payload)
+ *   dndDisabled  — disables drag sensors
  */
-const DataGrid = ({ board, tasks = [], readOnly = false }) => {
+const DataGrid = ({
+  board,
+  tasks = [],
+  readOnly = false,
+  onSaveNew,
+  onOpenTask,
+  onActionsClick,
+  selectedIds = null,
+  onToggleSelect,
+  onToggleSelectAll,
+  highlightedTaskId = null,
+  groupId = null,
+  dndDisabled = false,
+}) => {
   const [headerMenu, setHeaderMenu] = useState(null); // { columnId, anchor }
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [expanded, setExpanded] = useState(() => new Set());
   const setColumnValue = useBoardStore((s) => s.setColumnValue);
   const updateColumn = useBoardStore((s) => s.updateColumn);
   const deleteColumn = useBoardStore((s) => s.deleteColumn);
   const updateTaskLocal = useTaskStore((s) => s.updateTask);
+  const fetchSubitems = useTaskStore((s) => s.fetchSubitems);
+  const subitemsByParent = useTaskStore((s) => s.subitemsByParent);
   const toastError = useToastStore((s) => s.error);
 
   const columns = useMemo(
@@ -36,11 +87,38 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
     [board?.columns]
   );
 
-  // CSS grid template — last column is the "+ add column" cell.
+  const selectable = !readOnly && !!selectedIds && typeof onToggleSelect === 'function';
+  const draggable = !readOnly && !dndDisabled && !!groupId;
+
+  const taskIds = useMemo(() => tasks.map((t) => t._id), [tasks]);
+
+  const allSelected =
+    tasks.length > 0 && selectedIds != null && tasks.every((t) => selectedIds.has(t._id));
+
+  // CSS grid template shared by the header and every row. Data columns
+  // stretch equally (`1fr`) so the grid always fills the container width; the
+  // control + add-column tracks are fixed.
   const gridTemplate = useMemo(() => {
-    const colDefs = columns.map((c) => `${c.width || 160}px`);
-    return [...colDefs, '40px'].join(' ');
+    const dataDefs = columns.map(() => `minmax(${COLUMN_WIDTH}px, 1fr)`);
+    return [
+      `${DRAG_WIDTH}px`,
+      `${CHECK_WIDTH}px`,
+      ...dataDefs,
+      `${COMMENTS_WIDTH}px`,
+      `${ACTIONS_WIDTH}px`,
+      `${ADD_COLUMN_WIDTH}px`,
+    ].join(' ');
   }, [columns]);
+
+  // Minimum width so the grid scrolls horizontally instead of squishing when
+  // there are more columns than fit.
+  const minRowWidth =
+    DRAG_WIDTH +
+    CHECK_WIDTH +
+    columns.length * COLUMN_WIDTH +
+    COMMENTS_WIDTH +
+    ACTIONS_WIDTH +
+    ADD_COLUMN_WIDTH;
 
   const onCellChange = async (task, column, value) => {
     try {
@@ -59,6 +137,36 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
     }
     return task.columnValues[columnId.toString()];
   };
+
+  const toggleExpand = (taskId) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+        if (!subitemsByParent[taskId]) {
+          fetchSubitems(taskId).catch((err) => console.error('Failed to load subitems:', err));
+        }
+      }
+      return next;
+    });
+  };
+
+  // Drop expanded state for tasks that no longer exist.
+  useEffect(() => {
+    setExpanded((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(tasks.map((t) => t._id));
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (live.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [tasks]);
 
   const handleRenameCommit = async (columnId) => {
     const next = renameDraft.trim();
@@ -96,46 +204,37 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
     );
   }
 
+  const sharedRowStyle = {
+    display: 'grid',
+    gridTemplateColumns: gridTemplate,
+    width: '100%',
+    minWidth: minRowWidth,
+  };
+
   return (
     <div
       className="macan-thin-scrollbar"
-      style={{
-        width: '100%',
-        overflowX: 'auto',
-        // Grow to fill the flex-column card so the horizontal scrollbar rides
-        // along the card's bottom edge instead of sitting under the (short)
-        // grid content. minHeight:0 lets the flex item actually shrink/grow.
-        flex: '1 1 auto',
-        minHeight: 0,
-      }}
+      style={{ width: '100%', overflowX: 'auto' }}
     >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: gridTemplate,
-          minWidth: 'fit-content',
-        }}
-      >
-        {/* Header row */}
+      {/* Header row */}
+      <div style={sharedRowStyle}>
+        <HeaderShell pad="0 0 0 8px" />
+        <HeaderShell pad="0 0 0 16px" divider>
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={(e) =>
+                onToggleSelectAll?.(tasks.map((t) => t._id), e.target.checked)
+              }
+              aria-label="Select all tasks"
+              style={{ width: 16, height: 16, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+            />
+          )}
+        </HeaderShell>
+
         {columns.map((col) => (
-          <div
-            key={col._id}
-            style={{
-              padding: '8px 10px',
-              borderBottom: '1px solid var(--color-border)',
-              background: 'var(--color-bg-subtle)',
-              fontSize: 11,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              color: 'var(--color-text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 4,
-              position: 'relative',
-            }}
-          >
+          <HeaderShell key={col._id} align="space-between" className="group/col-header" divider>
             {renamingId === col._id ? (
               <input
                 value={renameDraft}
@@ -176,6 +275,10 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
                       : { columnId: col._id, anchor: e.currentTarget }
                   )
                 }
+                className={[
+                  'opacity-0 group-hover/col-header:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
+                  headerMenu?.columnId === col._id ? '!opacity-100' : '',
+                ].join(' ')}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -188,44 +291,249 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
                 <MoreHorizontal size={12} />
               </button>
             )}
-          </div>
+          </HeaderShell>
         ))}
-        {/* Add-column anchor at the end of the header row */}
-        <div
-          style={{
-            padding: '4px 6px',
-            borderBottom: '1px solid var(--color-border)',
-            background: 'var(--color-bg-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
-        </div>
 
-        {/* Body rows */}
-        {tasks.map((task, ri) => (
-          <Row key={task._id} columns={columns} task={task} ri={ri} onChange={onCellChange} valueFor={valueFor} readOnly={readOnly} />
-        ))}
-        {tasks.length === 0 && (
-          <div
-            style={{
-              gridColumn: `1 / span ${columns.length + 1}`,
-              padding: '24px 12px',
-              color: 'var(--color-text-muted)',
-              fontSize: 13,
-              textAlign: 'center',
-            }}
-          >
-            No tasks yet.
-          </div>
-        )}
+        {/* Comments + actions headers (empty, like the classic table) */}
+        <HeaderShell pad="0 8px" />
+        <HeaderShell pad="0 8px 0 0" />
+        <HeaderShell pad="0 4px" align="center">
+          {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
+        </HeaderShell>
       </div>
 
-      {/* Column actions menu — rendered in a portal so it is never clipped by
-          this grid's horizontal scroll container or the group card's
-          overflow:hidden. Positioned against the trigger button's rect. */}
+      {/* Body rows */}
+      <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+        {tasks.map((task) => {
+          const isExpanded = expanded.has(task._id);
+          const highlighted = highlightedTaskId === task._id;
+          const commentCount =
+            typeof task.commentCount === 'number' ? task.commentCount : 0;
+          return (
+            <SortableItem
+              key={task._id}
+              id={task._id}
+              data={{ type: 'task', groupId }}
+              disabled={!draggable}
+            >
+              {({ ref, setActivatorNodeRef, style, attributes, listeners, isDragging }) => (
+                <Fragment>
+                  <div
+                    ref={ref}
+                    {...attributes}
+                    className={[
+                      'group/datagrid-row transition-colors duration-100',
+                      'hover:bg-[color:var(--color-bg-subtle)]',
+                      highlighted ? 'macan-task-highlight' : '',
+                    ].join(' ')}
+                    style={{
+                      ...style,
+                      ...sharedRowStyle,
+                      minHeight: ROW_HEIGHT,
+                      alignItems: 'stretch',
+                      borderBottom: '1px solid var(--color-border)',
+                      background: highlighted ? 'var(--color-accent-light)' : undefined,
+                      opacity: isDragging ? 0.4 : style?.opacity,
+                    }}
+                  >
+                    {/* Drag handle — revealed on row hover, like the normal table */}
+                    <Cellish pad="0 0 0 8px">
+                      {draggable && (
+                        <button
+                          ref={setActivatorNodeRef}
+                          type="button"
+                          aria-label="Drag to reorder task"
+                          {...listeners}
+                          className="flex items-center justify-center opacity-0 group-hover/datagrid-row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+                          style={{
+                            width: 16,
+                            height: 24,
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'grab',
+                            touchAction: 'none',
+                            color: 'var(--color-text-muted)',
+                          }}
+                        >
+                          <GripVertical size={14} aria-hidden="true" />
+                        </button>
+                      )}
+                    </Cellish>
+
+                    {/* Selection checkbox */}
+                    <Cellish pad="0 0 0 16px" divider>
+                      {selectable && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds?.has(task._id) || false}
+                          onChange={(e) => onToggleSelect?.(task._id, e.target.checked)}
+                          aria-label={`Select ${task.name}`}
+                          style={{
+                            width: 16,
+                            height: 16,
+                            accentColor: 'var(--color-accent)',
+                            cursor: 'pointer',
+                          }}
+                        />
+                      )}
+                    </Cellish>
+
+                    {/* Data cells */}
+                    {columns.map((col) => {
+                      const Cell = cellComponentFor(col.type);
+                      const value = col.isPrimary
+                        ? task.name || valueFor(task, col._id)
+                        : valueFor(task, col._id);
+                      return (
+                        <div
+                          key={col._id}
+                          style={{
+                            minHeight: ROW_HEIGHT,
+                            display: 'flex',
+                            alignItems: 'center',
+                            // 8px here + the cell renderer's own 8px inner pad
+                            // lands content at 16px, matching the classic table.
+                            padding: '0 8px',
+                            borderRight: '1px solid var(--color-border)',
+                          }}
+                        >
+                          {col.isPrimary && task.hasSubitems && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(task._id)}
+                              aria-label={isExpanded ? 'Collapse subitems' : 'Expand subitems'}
+                              aria-expanded={isExpanded}
+                              className="flex items-center justify-center rounded hover:bg-[color:var(--color-bg-subtle)]"
+                              style={{
+                                width: 18,
+                                height: 18,
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: 'var(--color-text-secondary)',
+                                flexShrink: 0,
+                                padding: 0,
+                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transition: 'transform 150ms ease',
+                              }}
+                            >
+                              <ChevronRight size={14} aria-hidden="true" />
+                            </button>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                            <Cell
+                              value={value}
+                              column={col}
+                              task={task}
+                              readOnly={readOnly || col.type === 'formula'}
+                              onChange={(v) => onCellChange(task, col, v)}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Comments — message icon + unread badge, like the classic table */}
+                    <Cellish center pad="0 8px">
+                      {typeof onOpenTask === 'function' && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenTask(task)}
+                          aria-label={
+                            commentCount > 0
+                              ? `Open comments (${commentCount})`
+                              : 'Open comments'
+                          }
+                          className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+                          style={{ ...actionBtnStyle, position: 'relative', margin: '0 auto' }}
+                        >
+                          <MessageSquare size={15} color="var(--color-text-secondary)" aria-hidden="true" />
+                          {commentCount > 0 && (
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                position: 'absolute',
+                                top: -3,
+                                right: -3,
+                                minWidth: 15,
+                                height: 15,
+                                padding: '0 3px',
+                                boxSizing: 'border-box',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: 9999,
+                                background: 'var(--color-accent)',
+                                color: '#FFFFFF',
+                                fontSize: 9,
+                                fontWeight: 700,
+                                lineHeight: 1,
+                                border: '1.5px solid var(--color-bg-surface, #FFFFFF)',
+                              }}
+                            >
+                              {commentCount > 9 ? '9+' : commentCount}
+                            </span>
+                          )}
+                        </button>
+                      )}
+                    </Cellish>
+
+                    {/* Actions ⋯ */}
+                    <Cellish center pad="0 8px 0 0">
+                      {!readOnly && typeof onActionsClick === 'function' && (
+                        <button
+                          type="button"
+                          onClick={(e) => onActionsClick(task, e)}
+                          aria-label="Task actions"
+                          title="Actions"
+                          className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+                          style={{ ...actionBtnStyle, marginLeft: 'auto' }}
+                        >
+                          <MoreHorizontal size={16} color="var(--color-text-secondary)" aria-hidden="true" />
+                        </button>
+                      )}
+                    </Cellish>
+
+                    {/* Add-column trailing cell (empty in body) */}
+                    <div />
+                  </div>
+
+                  {isExpanded && (
+                    <SubitemsBlock
+                      parent={task}
+                      board={board}
+                      minWidth={minRowWidth}
+                      onOpenTask={onOpenTask}
+                      isAdmin={!readOnly}
+                    />
+                  )}
+                </Fragment>
+              )}
+            </SortableItem>
+          );
+        })}
+      </SortableContext>
+
+      {tasks.length === 0 && !(onSaveNew && !readOnly) && (
+        <div
+          style={{
+            minWidth: minRowWidth,
+            padding: '20px 16px',
+            color: 'var(--color-text-muted)',
+            fontSize: 13,
+            textAlign: 'center',
+          }}
+        >
+          No tasks in this group yet
+        </div>
+      )}
+
+      {/* Inline "+ Add task" row */}
+      {!readOnly && onSaveNew && <AddTaskRow minWidth={minRowWidth} onSaveNew={onSaveNew} />}
+
+      {/* Column actions menu (rename / delete) — portaled so it escapes the
+          grid's scroll/overflow clipping. */}
       {headerMenu &&
         (() => {
           const col = columns.find((c) => c._id === headerMenu.columnId);
@@ -242,29 +550,6 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
                 }}
               >
                 Rename
-              </button>
-              <button
-                type="button"
-                style={menuItemStyle}
-                onClick={() => {
-                  const w = Number(window.prompt('Column width in px', String(col.width || 160)));
-                  if (Number.isFinite(w) && w >= 40 && w <= 1000) {
-                    updateColumn(board._id, col._id, { width: w }).catch((err) =>
-                      toastError(err?.response?.data?.error || 'Width update failed')
-                    );
-                  }
-                  setHeaderMenu(null);
-                }}
-              >
-                Change width
-              </button>
-              <button
-                type="button"
-                style={{ ...menuItemStyle, opacity: 0.4, cursor: 'not-allowed' }}
-                disabled
-                title="Coming in a later release"
-              >
-                Freeze (later)
               </button>
               <button
                 type="button"
@@ -285,11 +570,274 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
   );
 };
 
+/** Header cell shell with the shared header styling (matches TaskTable). */
+const HeaderShell = ({ children, align = 'flex-start', pad = '0 16px', className, divider = false }) => (
+  <div
+    className={className}
+    style={{
+      height: 40,
+      padding: pad,
+      borderBottom: '1px solid var(--color-border)',
+      borderRight: divider ? '1px solid var(--color-border)' : undefined,
+      background: 'var(--color-bg-subtle)',
+      fontSize: 11,
+      fontWeight: 600,
+      textTransform: 'uppercase',
+      letterSpacing: '0.07em',
+      color: 'var(--color-text-secondary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: align,
+      gap: 4,
+      position: 'relative',
+    }}
+  >
+    {children}
+  </div>
+);
+
+/** Body control cell (drag / checkbox / comments / actions). The row owns the border. */
+const Cellish = ({ children, center = false, pad = '0 4px', divider = false }) => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: center ? 'center' : 'flex-start',
+      padding: pad,
+      borderRight: divider ? '1px solid var(--color-border)' : undefined,
+    }}
+  >
+    {children}
+  </div>
+);
+
+const iconBtnStyle = {
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  padding: 3,
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--color-text-muted)',
+  display: 'inline-flex',
+  alignItems: 'center',
+};
+
+// Row action buttons (open / ⋯) — 28×28, matching TaskRow.
+const actionBtnStyle = {
+  width: 28,
+  height: 28,
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  padding: 0,
+};
+
+/**
+ * SubitemsBlock — full-width block beneath an expanded row. Lists the parent's
+ * subitems with a clickable status dot + name, and an admin "+ Add subitem"
+ * affordance. Mirrors TaskTable's SubitemsRow behavior.
+ */
+const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
+  const subitems = useTaskStore((s) => s.subitemsByParent[parent._id] || null);
+  const addSubitem = useTaskStore((s) => s.addSubitem);
+  const updateSubitem = useTaskStore((s) => s.updateSubitem);
+  const [adding, setAdding] = useState(false);
+  const [newText, setNewText] = useState('');
+  const [error, setError] = useState('');
+
+  const boardStatuses = useMemo(() => {
+    if (!board || !Array.isArray(board.statuses)) return [];
+    return [...board.statuses].sort((a, b) => (a.order || 0) - (b.order || 0));
+  }, [board]);
+
+  const handleCycleStatus = async (sub) => {
+    if (boardStatuses.length === 0) return;
+    const currentId = sub.status ? sub.status.toString() : null;
+    const idx = boardStatuses.findIndex((s) => s._id.toString() === currentId);
+    const next = boardStatuses[(idx + 1) % boardStatuses.length];
+    try {
+      const updated = await taskService.updateTask(sub._id, { status: next._id });
+      updateSubitem(updated);
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Failed to update status. Please try again.');
+    }
+  };
+
+  const handleAdd = async (e) => {
+    e?.preventDefault?.();
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    try {
+      await addSubitem(parent._id, { name: trimmed });
+      setNewText('');
+      setAdding(true);
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Failed to add subitem. Please try again.');
+    }
+  };
+
+  const items = Array.isArray(subitems) ? subitems : [];
+  const loading = subitems == null;
+
+  return (
+    <div
+      style={{
+        minWidth,
+        background: 'var(--color-bg-subtle)',
+        borderBottom: '1px solid var(--color-border)',
+        padding: '8px 16px 12px 56px',
+      }}
+    >
+      {error && (
+        <p role="alert" style={{ fontSize: 12, color: 'var(--color-status-stuck)', marginBottom: 6 }}>
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Loading subitems…</p>
+      ) : items.length === 0 ? (
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No subitems yet.</p>
+      ) : (
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {items.map((sub) => {
+            const palette = getStatusPalette(board, sub.status);
+            return (
+              <li key={sub._id} className="flex items-center gap-2" style={{ padding: '3px 0' }}>
+                <button
+                  type="button"
+                  onClick={() => handleCycleStatus(sub)}
+                  aria-label={`Status: ${palette.label}. Click to change.`}
+                  title={palette.label}
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    background: palette.solid || palette.text,
+                    border: '1.5px solid #FFFFFF',
+                    boxShadow: '0 0 0 1px var(--color-border-strong)',
+                    flexShrink: 0,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => onOpenTask?.(sub)}
+                  className="text-left truncate hover:underline"
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: 'var(--color-text-primary)',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {sub.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenTask?.(sub)}
+                  aria-label={`Open ${sub.name}`}
+                  title="Open subitem"
+                  style={{ ...iconBtnStyle, flexShrink: 0 }}
+                >
+                  <ArrowRight size={12} aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {isAdmin &&
+        (adding ? (
+          <form onSubmit={handleAdd} className="flex items-center gap-2" style={{ marginTop: 6 }}>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                border: '1.5px solid var(--color-border-strong)',
+                flexShrink: 0,
+              }}
+            />
+            <input
+              type="text"
+              value={newText}
+              onChange={(e) => setNewText(e.target.value)}
+              onBlur={() => {
+                if (!newText.trim()) setAdding(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setNewText('');
+                  setAdding(false);
+                }
+              }}
+              placeholder="New subitem"
+              autoFocus
+              className="flex-1 focus:outline-none"
+              style={{
+                fontSize: 13,
+                padding: '4px 6px',
+                background: 'var(--color-bg-surface)',
+                border: '1px solid var(--color-border-strong)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--color-text-primary)',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={!newText.trim()}
+              style={{
+                height: 26,
+                padding: '0 10px',
+                fontSize: 12,
+                fontWeight: 600,
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: newText.trim() ? 'pointer' : 'not-allowed',
+                opacity: newText.trim() ? 1 : 0.4,
+              }}
+            >
+              Add
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1 hover:text-[color:var(--color-accent)]"
+            style={{
+              marginTop: 6,
+              padding: '4px 0',
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--color-text-muted)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={12} aria-hidden="true" />
+            Add subitem
+          </button>
+        ))}
+    </div>
+  );
+};
+
 /**
  * PortalMenu — a small floating menu rendered to document.body via a portal so
- * it escapes any `overflow:hidden`/`overflow:auto` ancestor. Positions itself
- * just below and right-aligned to the trigger button, clamped to the viewport.
- * Closes on outside click, scroll, resize, or Escape.
+ * it escapes any `overflow:hidden`/`overflow:auto` ancestor.
  */
 const PortalMenu = ({ anchor, onClose, children, width = 160 }) => {
   const [pos, setPos] = useState(null);
@@ -310,8 +858,6 @@ const PortalMenu = ({ anchor, onClose, children, width = 160 }) => {
       if (e.key === 'Escape') onClose();
     };
     const onDocClick = (e) => {
-      // Keep open for clicks on the trigger or inside the menu itself; a menu
-      // item's own onClick handles closing after its action runs.
       if (anchor.contains(e.target)) return;
       if (menuRef.current && menuRef.current.contains(e.target)) return;
       onClose();
@@ -352,41 +898,66 @@ const PortalMenu = ({ anchor, onClose, children, width = 160 }) => {
   );
 };
 
-const Row = ({ columns, task, ri, onChange, valueFor, readOnly }) => {
-  const stripe = ri % 2 === 1 ? 'var(--color-bg-subtle)' : 'transparent';
+/**
+ * AddTaskRow — full-width input that creates a new task in the group. Commits
+ * on Enter or blur (when non-empty), then clears for the next entry.
+ */
+const AddTaskRow = ({ minWidth, onSaveNew }) => {
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const commit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || saving) {
+      setName('');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSaveNew({ name: trimmed });
+      setName('');
+    } catch {
+      // onSaveNew surfaces its own error toast; keep the text so the user
+      // can retry without retyping.
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <>
-      {columns.map((col) => {
-        const Cell = cellComponentFor(col.type);
-        const value = col.key === 'lead_name' ? (task.name || valueFor(task, col._id)) : valueFor(task, col._id);
-        return (
-          <div
-            key={col._id}
-            style={{
-              borderBottom: '1px solid var(--color-border)',
-              background: stripe,
-              minHeight: 36,
-              display: 'flex',
-              alignItems: 'stretch',
-            }}
-          >
-            <Cell
-              value={value}
-              column={col}
-              task={task}
-              readOnly={readOnly || col.type === 'formula'}
-              onChange={(v) => onChange(task, col, v)}
-            />
-          </div>
-        );
-      })}
-      <div
+    <div
+      className="hover:bg-[color:var(--color-bg-subtle)] transition-colors duration-100"
+      style={{
+        minWidth,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: `0 16px 0 ${DRAG_WIDTH + CHECK_WIDTH}px`,
+        minHeight: ROW_HEIGHT,
+      }}
+    >
+      <span style={{ color: 'var(--color-text-muted)', fontSize: 16, lineHeight: 1 }}>+</span>
+      <input
+        value={name}
+        disabled={saving}
+        placeholder="Add task"
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setName('');
+        }}
         style={{
-          borderBottom: '1px solid var(--color-border)',
-          background: stripe,
+          flex: 1,
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          fontSize: 13,
+          color: 'var(--color-text-primary)',
+          padding: '8px 0',
         }}
       />
-    </>
+    </div>
   );
 };
 

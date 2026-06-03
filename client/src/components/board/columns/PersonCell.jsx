@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
 import { cellWrapperStyle } from './cellShared';
 import useOrgStore from '../../../store/orgStore';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * PersonCell — multi-select picker over the current org's members. Shows
@@ -80,7 +81,7 @@ const PersonCell = ({ value, readOnly, onChange }) => {
         onClick={() => !readOnly && setOpen((v) => !v)}
       >
         {selected.length === 0 ? (
-          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+          !readOnly ? <CellPlaceholder text="Assign" /> : null
         ) : (
           selected.slice(0, 4).map((id) => {
             const member = members.find((m) => (m._id || m.id || '').toString() === id);

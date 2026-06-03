@@ -159,6 +159,20 @@ const useBoardStore = create((set, get) => ({
   // --- Columns (flexible-columns engine, F1) -------------------------------
 
   /**
+   * Convert a legacy board to the flexible-columns engine. Replaces the whole
+   * board in the cache with the server's response (which carries the seeded
+   * `columns` + `useFlexibleColumns: true`) so the board view re-renders as a
+   * DataGrid immediately.
+   */
+  enableFlexibleColumns: async (boardId) => {
+    const board = await columnService.enableFlexibleColumns(boardId);
+    set((s) => ({
+      boards: s.boards.map((b) => (b._id === boardId ? board : b)),
+    }));
+    return board;
+  },
+
+  /**
    * Refresh `board.columns` from the server. Use after a column CRUD action
    * if the optimistic update + API response shape doesn't match what the
    * server returned (e.g. order normalisation).

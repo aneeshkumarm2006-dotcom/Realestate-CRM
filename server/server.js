@@ -3,6 +3,9 @@ require('./src/models'); // register all Mongoose models
 const app = require('./src/app');
 const connectDB = require('./src/config/db');
 const { startAutomationRunner } = require('./src/services/automationRunner');
+const {
+  startDateAutomationRunner,
+} = require('./src/services/dateAutomationRunner');
 const eventBus = require('./src/services/eventBus');
 const {
   mountAutomationEventDispatcher,
@@ -17,6 +20,7 @@ const start = async () => {
   mountAutomationEventDispatcher();
   mountMirrorRefresh();
   startAutomationRunner();
+  startDateAutomationRunner();
   app.listen(PORT, () => {
     console.log(`Macan API listening on port ${PORT}`);
   });

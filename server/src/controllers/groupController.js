@@ -160,6 +160,32 @@ const updateGroup = async (req, res) => {
     }
 
     await group.save();
+
+    // F4.4 — synthetic "Group" column event. When the F1 migration introduces
+    // a Group-typed column (a column whose `type === 'group'` projecting a
+    // task's group membership), a change to a task's group ref should emit
+    // `task.column_changed` so COLUMN_VALUE_CHANGED automations can fire on it.
+    //
+    // This gate is dormant today: (1) no `group` column type exists in the
+    // columnTypes registry yet, and (2) renaming/reordering a group here does
+    // not change any task's group ref. The block resolves to a no-op until both
+    // land — it stays so the emit site is documented and ready to wire up.
+    try {
+      const board = await Board.findById(group.board)
+        .select('columns useFlexibleColumns')
+        .lean();
+      const groupColumn =
+        board && Array.isArray(board.columns)
+          ? board.columns.find((c) => c.type === 'group')
+          : null;
+      if (groupColumn) {
+        // Intentionally empty until task↔group ref changes are routed here.
+        // (Reordering/renaming a group is not a per-task group-ref change.)
+      }
+    } catch (err) {
+      console.error('[group] group-column emit gate failed:', err);
+    }
+
     return res.json({ group });
   } catch (err) {
     console.error('updateGroup error:', err);

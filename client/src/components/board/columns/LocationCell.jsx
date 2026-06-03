@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { focusedInputStyle, cellWrapperStyle } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * LocationCell — value: { lat, lng, label }. Label is the user-typed name;
@@ -55,9 +56,9 @@ const LocationCell = ({ value, readOnly, onChange }) => {
               {value.label || `${value.lat?.toFixed(3)}, ${value.lng?.toFixed(3)}`}
             </span>
           </>
-        ) : (
-          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-        )}
+        ) : !readOnly ? (
+          <CellPlaceholder text="Add location" />
+        ) : null}
       </div>
     );
   }

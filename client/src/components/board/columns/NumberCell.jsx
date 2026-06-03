@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { focusedInputStyle, cellWrapperStyle } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 const NumberCell = ({ value, column, readOnly, onChange }) => {
   const [editing, setEditing] = useState(false);
@@ -30,7 +31,11 @@ const NumberCell = ({ value, column, readOnly, onChange }) => {
         style={{ ...cellWrapperStyle, justifyContent: 'flex-end', cursor: readOnly ? 'default' : 'text' }}
         onClick={() => !readOnly && setEditing(true)}
       >
-        <span>{value == null ? '' : Number(value).toLocaleString()}</span>
+        {value == null ? (
+          !readOnly ? <CellPlaceholder text="Add number" /> : null
+        ) : (
+          <span>{Number(value).toLocaleString()}</span>
+        )}
       </div>
     );
   }

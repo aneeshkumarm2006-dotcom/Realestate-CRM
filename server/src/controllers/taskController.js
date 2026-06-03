@@ -333,12 +333,41 @@ const applyColumnValuePatch = (task, board, patch) => {
 };
 
 /**
+ * Compute the net-added user ids for a person-column change: ids present in
+ * `toValue` but not in `fromValue`, de-duplicated.
+ *
+ * This is the single source of truth for the AC#5 edge case — adding/removing
+ * the same user multiple times in one save must yield a single entry per
+ * net-added user. The diff is taken once per save (from → to), so an add+remove
+ * that nets to no change produces no id, and a duplicated add produces one id.
+ * Pinned by a unit test (taskController.test.js) so a refactor can't regress it.
+ */
+const diffAddedUserIds = (fromValue, toValue) => {
+  const fromIds = new Set(
+    (Array.isArray(fromValue) ? fromValue : []).map((v) =>
+      v == null ? '' : v.toString()
+    )
+  );
+  const toIds = Array.isArray(toValue) ? toValue : [];
+  const seen = new Set();
+  const added = [];
+  for (const v of toIds) {
+    const id = v == null ? '' : v.toString();
+    if (!id || fromIds.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    added.push(id);
+  }
+  return added;
+};
+
+/**
  * Emit the three F1 column events on eventBus for every successful column
- * change. Dormant in Phase 1 (no subscriber); F4 wires up triggers in Phase 2.
+ * change. Wired up by the F4 dispatcher in Phase 2.
  *
  * - task.column_changed : fired for every change
  * - task.status_became  : fired when the column type is `status`
- * - task.person_assigned: fired when a `person` column gains user ids
+ * - task.person_assigned: fired when a `person` column gains user ids (one
+ *   event per change, carrying the net-added ids — see `diffAddedUserIds`)
  */
 const emitColumnChangeEvents = (task, boardId, changes, actorId) => {
   for (const change of changes) {
@@ -357,13 +386,7 @@ const emitColumnChangeEvents = (task, boardId, changes, actorId) => {
       eventBus.emit('task.status_became', payload);
     }
     if (column.type === 'person') {
-      const fromIds = new Set(
-        (Array.isArray(fromValue) ? fromValue : []).map((v) => (v == null ? '' : v.toString()))
-      );
-      const toIds = Array.isArray(toValue) ? toValue : [];
-      const addedUserIds = toIds
-        .map((v) => (v == null ? '' : v.toString()))
-        .filter((id) => id && !fromIds.has(id));
+      const addedUserIds = diffAddedUserIds(fromValue, toValue);
       if (addedUserIds.length > 0) {
         eventBus.emit('task.person_assigned', {
           taskId: task._id,
@@ -1552,4 +1575,6 @@ module.exports = {
   getTaskAttachments,
   uploadTaskAttachment,
   deleteTaskAttachment,
+  // Exported for unit tests (F4.4 AC#5 person-assigned dedupe).
+  diffAddedUserIds,
 };

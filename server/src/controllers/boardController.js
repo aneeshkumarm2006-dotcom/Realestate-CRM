@@ -9,6 +9,7 @@ const {
   boardTemplates,
   getBoardTemplate,
   materializeTemplateColumns,
+  buildDefaultColumns,
 } = require('../utils/boardTemplates');
 const { grantedBoardAccessForUser } = require('../middleware/roleCheck');
 
@@ -248,6 +249,16 @@ const createBoard = async (req, res) => {
       useFlexibleColumns,
     });
 
+    // Non-template boards default to the flexible-columns engine too. The
+    // board now has real status `_id`s, so seed default columns that mirror
+    // the legacy fields (Name/Status/Priority/Owner/Due) and flip the flag.
+    // A fresh board has no tasks, so no value backfill is needed.
+    if (!templateId) {
+      board.columns = buildDefaultColumns(board);
+      board.useFlexibleColumns = true;
+      await board.save();
+    }
+
     return res.status(201).json({ board });
   } catch (err) {
     console.error('createBoard error:', err);
@@ -332,6 +343,87 @@ const deleteBoard = async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('deleteBoard error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * POST /api/boards/:id/enable-columns
+ *
+ * Admin-only. Converts a legacy (fixed-column) board to the flexible-columns
+ * engine: seeds default columns mirroring the legacy fields and backfills
+ * every existing task's `columnValues` from those fields so the DataGrid
+ * shows the current data. Idempotent — a no-op if the board is already on
+ * the flexible engine.
+ */
+const enableFlexibleColumns = async (req, res) => {
+  try {
+    const ctx = await loadBoardContext(req.params.id, req.user.userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    if (!ctx.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+
+    const { board } = ctx;
+
+    // Idempotency: already converted → return unchanged.
+    if (board.useFlexibleColumns || (board.columns && board.columns.length > 0)) {
+      return res.json({ board });
+    }
+
+    board.columns = buildDefaultColumns(board);
+    board.useFlexibleColumns = true;
+    await board.save();
+
+    // Map legacy column keys → their freshly-assigned column `_id`s.
+    const colIdByKey = {};
+    for (const col of board.columns) colIdByKey[col.key] = col._id.toString();
+    const statusOptionIds = new Set(
+      (board.statuses || []).map((s) => s._id.toString())
+    );
+
+    // Backfill every board task (top-level AND subitems share the board ref).
+    // bulkWrite bypasses the per-doc pre-save sync, which is correct here —
+    // we write values derived *from* the legacy fields, so no re-projection
+    // is needed. Personal tasks have no board, so they're excluded.
+    const tasks = await Task.find({ board: board._id })
+      .select('status priority assignedTo dueDate labels')
+      .lean();
+
+    const ops = [];
+    for (const task of tasks) {
+      const set = {};
+      if (colIdByKey.status && task.status != null) {
+        const sid = task.status.toString();
+        if (statusOptionIds.has(sid)) {
+          set[`columnValues.${colIdByKey.status}`] = sid;
+        }
+      }
+      if (colIdByKey.priority && task.priority) {
+        set[`columnValues.${colIdByKey.priority}`] = task.priority;
+      }
+      if (colIdByKey.assignees) {
+        set[`columnValues.${colIdByKey.assignees}`] = (task.assignedTo || []).map((u) =>
+          u.toString()
+        );
+      }
+      if (colIdByKey.due_date) {
+        set[`columnValues.${colIdByKey.due_date}`] = task.dueDate
+          ? new Date(task.dueDate).toISOString()
+          : null;
+      }
+      if (colIdByKey.tags) {
+        set[`columnValues.${colIdByKey.tags}`] = (task.labels || []).map((l) =>
+          l.toString()
+        );
+      }
+      if (Object.keys(set).length > 0) {
+        ops.push({ updateOne: { filter: { _id: task._id }, update: { $set: set } } });
+      }
+    }
+    if (ops.length > 0) await Task.bulkWrite(ops);
+
+    return res.json({ board });
+  } catch (err) {
+    console.error('enableFlexibleColumns error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 };
@@ -741,6 +833,7 @@ module.exports = {
   createBoard,
   updateBoard,
   deleteBoard,
+  enableFlexibleColumns,
   reorderBoards,
   listBoardTemplates,
   getConnectableBoards,

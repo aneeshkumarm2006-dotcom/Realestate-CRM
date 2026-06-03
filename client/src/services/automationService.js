@@ -40,3 +40,12 @@ export const runAutomationNow = async (id) => {
   const { data } = await api.post(`/api/automations/${id}/run-now`);
   return data;
 };
+
+/**
+ * GET /api/automations/:id/run-log — last 20 firings (most-recent-first) from
+ * the automation's triggerHistory. Member-level access. (F4.6)
+ */
+export const getRunLog = async (id) => {
+  const { data } = await api.get(`/api/automations/${id}/run-log`);
+  return data.runLog || [];
+};

@@ -69,16 +69,190 @@ const populateAutomation = (query) =>
     .populate('groupCreatedTaskTemplates.assignedTo', 'name profilePic email')
     .populate('createdBy', 'name profilePic email');
 
-const VALID_TRIGGER_TYPES = ['SCHEDULE', 'ITEM_CREATED', 'GROUP_CREATED'];
+const VALID_TRIGGER_TYPES = [
+  'SCHEDULE',
+  'ITEM_CREATED',
+  'GROUP_CREATED',
+  'COLUMN_VALUE_CHANGED',
+  'STATUS_BECAME',
+  'DATE_ARRIVED',
+  'PERSON_ASSIGNED',
+  'FORM_SUBMITTED',
+  'WEBHOOK_RECEIVED',
+];
 const VALID_CONDITION_TYPES = ['ITEM_IN_GROUP', 'ITEM_IN_STATUS', 'GROUP_NAME_MATCHES'];
 const VALID_ACTION_TYPES = ['CREATE_TASK', 'CREATE_SUBITEM'];
 
+// The six F4 event-driven triggers. They share the same persisted shape as
+// ITEM_CREATED — a `triggerConfig` block plus `actions[]` (and optional
+// task-scoped conditions) — so create/update route them through one branch.
+//   - task-based   : fire off a task event, support task conditions
+//   - dormant      : persistable now, no emitter until Phase 3/4 (F7/F13)
+const TASK_EVENT_TRIGGERS = [
+  'COLUMN_VALUE_CHANGED',
+  'STATUS_BECAME',
+  'DATE_ARRIVED',
+  'PERSON_ASSIGNED',
+];
+const DORMANT_TRIGGERS = ['FORM_SUBMITTED', 'WEBHOOK_RECEIVED'];
+const F4_EVENT_TRIGGERS = [...TASK_EVENT_TRIGGERS, ...DORMANT_TRIGGERS];
+
+const DATE_COMPARISONS = ['before', 'on', 'after'];
+
 // Map each triggerType to the condition types that are legal for it. Used by
 // sanitizeConditions so a GROUP_CREATED automation can't carry an
-// ITEM_IN_STATUS condition (and vice versa).
+// ITEM_IN_STATUS condition (and vice versa). The F4 task-event triggers reuse
+// the item-scoped conditions; the dormant triggers accept them too (the task a
+// form/webhook creates can be filtered by group/status).
 const CONDITION_TYPES_BY_TRIGGER = {
   ITEM_CREATED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
   GROUP_CREATED: ['GROUP_NAME_MATCHES'],
+  COLUMN_VALUE_CHANGED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  STATUS_BECAME: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  DATE_ARRIVED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  PERSON_ASSIGNED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  FORM_SUBMITTED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  WEBHOOK_RECEIVED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+};
+
+/**
+ * Find a column subdoc on a (flexible-columns) board by id. Returns null when
+ * the board has no `columns` (legacy boards) or the id is unknown.
+ */
+const findBoardColumn = (board, columnId) => {
+  if (!board || !Array.isArray(board.columns)) return null;
+  const target = columnId == null ? '' : columnId.toString();
+  if (!target) return null;
+  return board.columns.find((c) => c._id.toString() === target) || null;
+};
+
+const optionIdsForColumn = (col) => {
+  const opts =
+    col && col.settings && Array.isArray(col.settings.options)
+      ? col.settings.options
+      : [];
+  return new Set(
+    opts.map((o) => (o && o.id != null ? o.id.toString() : '')).filter(Boolean)
+  );
+};
+
+/**
+ * Validate + normalise a trigger's `triggerConfig` against the per-type shape
+ * from the phase doc §F4 Target State table. Mirrors `sanitizeActionConfig`:
+ * returns `{ config }` on success or `{ error }` on failure. Column refs are
+ * resolved against `board.columns` and type-mismatches are rejected (e.g.
+ * STATUS_BECAME must point at a `status` column).
+ *
+ * SCHEDULE / ITEM_CREATED / GROUP_CREATED carry no triggerConfig — they return
+ * an empty object.
+ */
+const sanitizeTriggerConfig = (triggerType, rawConfig, board) => {
+  const cfg = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+
+  switch (triggerType) {
+    case 'COLUMN_VALUE_CHANGED': {
+      // { columnId? } — empty means "any column changed".
+      if (cfg.columnId == null || cfg.columnId === '') return { config: {} };
+      const col = findBoardColumn(board, cfg.columnId);
+      if (!col) {
+        return { error: 'triggerConfig.columnId is not a column on this board' };
+      }
+      return { config: { columnId: col._id.toString() } };
+    }
+
+    case 'STATUS_BECAME': {
+      // { columnId, fromValue?, toValue } — compares against option ids.
+      const col = findBoardColumn(board, cfg.columnId);
+      if (!col) return { error: 'STATUS_BECAME requires a valid columnId' };
+      if (col.type !== 'status') {
+        return { error: 'STATUS_BECAME columnId must point at a status column' };
+      }
+      const optionIds = optionIdsForColumn(col);
+      const toValue = cfg.toValue == null ? '' : cfg.toValue.toString();
+      if (!toValue) return { error: 'STATUS_BECAME requires a toValue' };
+      if (optionIds.size > 0 && !optionIds.has(toValue)) {
+        return { error: 'STATUS_BECAME toValue is not an option on that status column' };
+      }
+      const out = { columnId: col._id.toString(), toValue };
+      if (cfg.fromValue != null && cfg.fromValue !== '') {
+        const fromValue = cfg.fromValue.toString();
+        if (optionIds.size > 0 && !optionIds.has(fromValue)) {
+          return { error: 'STATUS_BECAME fromValue is not an option on that status column' };
+        }
+        out.fromValue = fromValue;
+      }
+      return { config: out };
+    }
+
+    case 'DATE_ARRIVED': {
+      // { columnId, offsetDays, comparison }
+      const col = findBoardColumn(board, cfg.columnId);
+      if (!col) return { error: 'DATE_ARRIVED requires a valid columnId' };
+      if (col.type !== 'date') {
+        return { error: 'DATE_ARRIVED columnId must point at a date column' };
+      }
+      const rawOffset = Number(cfg.offsetDays);
+      if (!Number.isInteger(rawOffset)) {
+        return { error: 'DATE_ARRIVED offsetDays must be an integer' };
+      }
+      const comparison = cfg.comparison || 'on';
+      if (!DATE_COMPARISONS.includes(comparison)) {
+        return { error: "DATE_ARRIVED comparison must be 'before', 'on', or 'after'" };
+      }
+      // Fold `comparison` into the sign of the persisted offset so the choice is
+      // actually honored (the date runner reads only the signed offset):
+      //   'before' → N days before the date (negative)
+      //   'after'  → N days after  the date (positive)
+      //   'on'     → the offset as given (signed; usually 0)
+      // This keeps any client honest: even a payload like { offsetDays: 7,
+      // comparison: 'before' } resolves to firing a week *before* the date.
+      const offsetDays =
+        comparison === 'before'
+          ? -Math.abs(rawOffset)
+          : comparison === 'after'
+            ? Math.abs(rawOffset)
+            : rawOffset;
+      return { config: { columnId: col._id.toString(), offsetDays, comparison } };
+    }
+
+    case 'PERSON_ASSIGNED': {
+      // { columnId, userId? }
+      const col = findBoardColumn(board, cfg.columnId);
+      if (!col) return { error: 'PERSON_ASSIGNED requires a valid columnId' };
+      if (col.type !== 'person') {
+        return { error: 'PERSON_ASSIGNED columnId must point at a person column' };
+      }
+      const out = { columnId: col._id.toString() };
+      if (cfg.userId != null && cfg.userId !== '') {
+        if (!mongoose.Types.ObjectId.isValid(cfg.userId)) {
+          return { error: 'PERSON_ASSIGNED userId is invalid' };
+        }
+        out.userId = cfg.userId.toString();
+      }
+      return { config: out };
+    }
+
+    // Dormant triggers — persistable now even though F7/F13 haven't shipped
+    // the emitters (webhook.received / form.submitted). They simply never fire
+    // until those features land, exactly like the F1 events were dormant in
+    // Phase 1. The optional id is stored opaquely (no endpoint/form table yet).
+    case 'FORM_SUBMITTED': {
+      const out = {};
+      if (cfg.formId != null && cfg.formId !== '') out.formId = cfg.formId.toString();
+      return { config: out };
+    }
+    case 'WEBHOOK_RECEIVED': {
+      const out = {};
+      if (cfg.endpointId != null && cfg.endpointId !== '') {
+        out.endpointId = cfg.endpointId.toString();
+      }
+      return { config: out };
+    }
+
+    default:
+      // SCHEDULE / ITEM_CREATED / GROUP_CREATED — no triggerConfig.
+      return { config: {} };
+  }
 };
 
 /**
@@ -680,6 +854,25 @@ const createAutomation = async (req, res) => {
       doc.conditions = cv.conditions;
       doc.groupCreatedTaskTemplates = tv.templates;
       doc.nextRunAt = null;
+    } else if (F4_EVENT_TRIGGERS.includes(triggerType)) {
+      // F4 event-driven triggers: validate triggerConfig + task conditions +
+      // actions[]. FORM_SUBMITTED / WEBHOOK_RECEIVED save fine even though
+      // their emitters ship in Phase 3/4 — they simply won't fire yet.
+      const tc = sanitizeTriggerConfig(triggerType, body.triggerConfig, ctx.board);
+      if (tc.error) return res.status(400).json({ error: tc.error });
+      const cv = await sanitizeConditions(
+        body.conditions,
+        ctx.board,
+        boardId,
+        CONDITION_TYPES_BY_TRIGGER[triggerType]
+      );
+      if (cv.error) return res.status(400).json({ error: cv.error });
+      const av = await sanitizeActions(body.actions, ctx.board, boardId, ctx.org);
+      if (av.error) return res.status(400).json({ error: av.error });
+      doc.triggerConfig = tc.config;
+      doc.conditions = cv.conditions;
+      doc.actions = av.actions;
+      doc.nextRunAt = null;
     } else {
       const schedule = sanitizeSchedule(body.schedule);
       const sv = validateSchedule(schedule);
@@ -776,6 +969,27 @@ const updateAutomation = async (req, res) => {
       }
       if (body.triggerType !== automation.triggerType) triggerTypeChanged = true;
       automation.triggerType = body.triggerType;
+      // Switching to a trigger that carries no config clears any stale config
+      // left over from the previous trigger type.
+      if (!F4_EVENT_TRIGGERS.includes(automation.triggerType)) {
+        automation.triggerConfig = {};
+      }
+    }
+
+    if (body.triggerConfig !== undefined) {
+      if (!F4_EVENT_TRIGGERS.includes(automation.triggerType)) {
+        return res.status(400).json({
+          error: 'triggerConfig is only valid for event-driven triggers',
+        });
+      }
+      const tc = sanitizeTriggerConfig(
+        automation.triggerType,
+        body.triggerConfig,
+        ctx.board
+      );
+      if (tc.error) return res.status(400).json({ error: tc.error });
+      automation.triggerConfig = tc.config;
+      automation.markModified('triggerConfig');
     }
 
     if (body.conditions !== undefined) {
@@ -854,15 +1068,18 @@ const updateAutomation = async (req, res) => {
       };
     }
 
-    // Recompute nextRunAt only when relevant. Event-driven automations
-    // (ITEM_CREATED, GROUP_CREATED) don't use it — clear to null so the
-    // cron runner doesn't pick them up.
+    // Recompute nextRunAt only when relevant. Only SCHEDULE automations use the
+    // cron runner's nextRunAt; every other trigger (ITEM_CREATED, GROUP_CREATED,
+    // and the six F4 event triggers) is event/date-driven, so clear it to null
+    // — matching the create path, which nulls nextRunAt for all of them. Without
+    // this, switching a former SCHEDULE automation to an event trigger would
+    // leave a stale nextRunAt computed from the leftover `schedule` subdoc.
     if (triggerTypeChanged || scheduleChanged || enabledChanged) {
-      if (
-        automation.triggerType === 'ITEM_CREATED' ||
-        automation.triggerType === 'GROUP_CREATED'
-      ) {
+      if (automation.triggerType !== 'SCHEDULE') {
         automation.nextRunAt = null;
+        // Drop the now-irrelevant schedule when converting away from SCHEDULE so
+        // it can't be revived by a later recompute.
+        if (triggerTypeChanged) automation.schedule = undefined;
       } else if (!automation.enabled) {
         automation.nextRunAt = null;
       } else if (automation.schedule) {
@@ -936,6 +1153,38 @@ const runAutomationNow = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/automations/:id/run-log
+ *
+ * Member-level read of the capped `triggerHistory[]`, most-recent-first. Powers
+ * the F4 run-log drawer. Access is gated by board membership (loadBoardContext),
+ * not admin — any member can inspect why an automation fired.
+ */
+const getRunLog = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    const automation = await Automation.findById(id)
+      .select('board triggerHistory')
+      .lean();
+    if (!automation) return res.status(404).json({ error: 'Automation not found' });
+
+    const ctx = await loadBoardContext(automation.board, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const history = Array.isArray(automation.triggerHistory)
+      ? automation.triggerHistory
+      : [];
+    // Stored oldest-first (FIFO append); return newest-first for the drawer.
+    const runLog = history.slice().reverse();
+    return res.json({ runLog });
+  } catch (err) {
+    console.error('getRunLog error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   listAutomations,
   createAutomation,
@@ -943,4 +1192,8 @@ module.exports = {
   deleteAutomation,
   runAutomationNow,
   runAutomationOnce,
+  getRunLog,
+  // Exported for the dispatcher / date runner / unit tests.
+  sanitizeTriggerConfig,
+  findBoardColumn,
 };

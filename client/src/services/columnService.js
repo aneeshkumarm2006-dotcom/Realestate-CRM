@@ -61,6 +61,16 @@ export const deleteColumn = async (boardId, columnId) => {
 };
 
 /**
+ * POST /api/boards/:id/enable-columns — admin auth.
+ * Converts a legacy board to the flexible-columns engine and returns the
+ * updated board (with seeded `columns` + `useFlexibleColumns: true`).
+ */
+export const enableFlexibleColumns = async (boardId) => {
+  const { data } = await api.post(`/api/boards/${boardId}/enable-columns`);
+  return data.board;
+};
+
+/**
  * GET /api/boards/templates — list available board templates.
  */
 export const listBoardTemplates = async () => {

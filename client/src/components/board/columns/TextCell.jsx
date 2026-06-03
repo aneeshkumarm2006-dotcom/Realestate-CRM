@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { cellInputStyle, focusedInputStyle, cellWrapperStyle } from './cellShared';
+import { focusedInputStyle, cellWrapperStyle } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * TextCell — single-line text input. Commits on blur or Enter.
@@ -26,9 +27,13 @@ const TextCell = ({ value, readOnly, onChange }) => {
         style={{ ...cellWrapperStyle, cursor: readOnly ? 'default' : 'text' }}
         onClick={() => !readOnly && setEditing(true)}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {value || ''}
-        </span>
+        {value ? (
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {value}
+          </span>
+        ) : !readOnly ? (
+          <CellPlaceholder text="Add text" />
+        ) : null}
       </div>
     );
   }

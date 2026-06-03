@@ -172,4 +172,9 @@ const computeNextRunAt = (schedule, fromDate = new Date()) => {
 module.exports = {
   computeNextRunAt,
   validateSchedule,
+  isValidTimezone,
+  // Timezone primitives shared with dateAutomationRunner.js (F4.5) so the
+  // wall-clock → UTC conversion lives in exactly one place.
+  getTzParts,
+  localToUtcMs,
 };

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { cellInputStyle, cellWrapperStyle, formatDateInput } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * TimelineCell — a span between two dates. Renders both inputs inline.
@@ -40,7 +41,11 @@ const TimelineCell = ({ value, readOnly, onChange }) => {
         style={{ ...cellWrapperStyle, cursor: readOnly ? 'default' : 'text' }}
         onClick={() => !readOnly && setEditing(true)}
       >
-        <span>{label}</span>
+        {label ? (
+          <span>{label}</span>
+        ) : !readOnly ? (
+          <CellPlaceholder text="Set timeline" />
+        ) : null}
       </div>
     );
   }

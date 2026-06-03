@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cellWrapperStyle, optionSorted, findOption } from './cellShared';
 import { getColorPair } from '../../../utils/priorityColors';
+import CellPlaceholder from './CellPlaceholder';
 
 /**
  * StatusCell — renders the selected option as a coloured chip. Clicking
@@ -83,7 +84,9 @@ const StatusCell = ({ value, column, readOnly, onChange }) => {
         onClick={() => !readOnly && setOpen((v) => !v)}
       >
         {selected ? chip(selected.label, selected.color) : (
-          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+          !readOnly && (
+            <CellPlaceholder text={column?.type === 'dropdown' ? 'Select' : 'Set status'} />
+          )
         )}
       </div>
       {open && !readOnly && createPortal(

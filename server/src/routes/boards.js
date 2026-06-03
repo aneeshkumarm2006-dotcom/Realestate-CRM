@@ -5,6 +5,7 @@ const {
   createBoard,
   updateBoard,
   deleteBoard,
+  enableFlexibleColumns,
   reorderBoards,
   listLabels,
   addLabel,
@@ -51,6 +52,10 @@ router.put('/:id', updateBoard);
 
 // DELETE /api/boards/:id — delete a board + cascade (admin-only)
 router.delete('/:id', deleteBoard);
+
+// POST /api/boards/:id/enable-columns — convert a legacy board to the
+// flexible-columns engine (admin-only, seeds default columns + backfills).
+router.post('/:id/enable-columns', enableFlexibleColumns);
 
 // --- Labels (per board) ---------------------------------------------------
 // reorder must come BEFORE the /:lid routes so it isn't matched as a label id

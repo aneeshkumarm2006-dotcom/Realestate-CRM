@@ -8,18 +8,65 @@ import {
   Zap,
   X,
   ArrowDown,
+  History,
 } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
 import AssigneePicker from './AssigneePicker';
+import AutomationRunLog from './AutomationRunLog';
 import * as automationService from '../../services/automationService';
 
 const TRIGGER_OPTIONS = [
   { value: 'SCHEDULE', label: 'On a schedule' },
   { value: 'ITEM_CREATED', label: 'When an item is created' },
   { value: 'GROUP_CREATED', label: 'When a group is created' },
+  { value: 'COLUMN_VALUE_CHANGED', label: 'When a column changes' },
+  { value: 'STATUS_BECAME', label: 'When status becomes…' },
+  { value: 'DATE_ARRIVED', label: 'When a date arrives' },
+  { value: 'PERSON_ASSIGNED', label: 'When a person is assigned' },
+  { value: 'FORM_SUBMITTED', label: 'When a form is submitted' },
+  { value: 'WEBHOOK_RECEIVED', label: 'When a webhook is received' },
 ];
+
+// F4 event-driven triggers carrying a `triggerConfig`. Task-event triggers fire
+// off live column events; dormant triggers persist now but only fire once their
+// emitters ship (FORM_SUBMITTED → F13, WEBHOOK_RECEIVED → F7).
+const TASK_EVENT_TRIGGERS = [
+  'COLUMN_VALUE_CHANGED',
+  'STATUS_BECAME',
+  'DATE_ARRIVED',
+  'PERSON_ASSIGNED',
+];
+const DORMANT_TRIGGERS = ['FORM_SUBMITTED', 'WEBHOOK_RECEIVED'];
+const NEW_EVENT_TRIGGERS = [...TASK_EVENT_TRIGGERS, ...DORMANT_TRIGGERS];
+
+const DORMANT_TRIGGER_NOTE = {
+  FORM_SUBMITTED: 'Available after Phase 4 (public forms)',
+  WEBHOOK_RECEIVED: 'Available after Phase 3 (inbound webhooks)',
+};
+
+const DATE_COMPARISONS = [
+  { value: 'before', label: 'before' },
+  { value: 'on', label: 'on' },
+  { value: 'after', label: 'after' },
+];
+
+// ----- Flexible-column helpers (F1 board.columns) --------------------------
+const boardColumns = (board) =>
+  board && Array.isArray(board.columns) ? board.columns : [];
+
+const columnsOfType = (board, type) =>
+  boardColumns(board).filter((c) => c.type === type);
+
+const optionsForColumn = (col) =>
+  (col?.settings?.options || [])
+    .filter((o) => o && o.id != null)
+    .map((o) => ({ value: o.id.toString(), label: o.label || o.id.toString() }));
+
+const findColumn = (board, columnId) =>
+  boardColumns(board).find((c) => c._id?.toString() === (columnId || '').toString()) ||
+  null;
 
 const CONDITION_TYPES = [
   { value: 'ITEM_IN_GROUP', label: 'item is in group' },
@@ -172,16 +219,74 @@ const describeGroupCreated = (automation) => {
 };
 
 /**
+ * Count the actions of an automation as a short phrase ("create 2 subitems").
+ */
+const describeActionCount = (automation) => {
+  const actions = Array.isArray(automation.actions) ? automation.actions : [];
+  if (actions.length === 0) return '(no actions)';
+  const subitems = actions.filter((a) => a.type === 'CREATE_SUBITEM').length;
+  const tasks = actions.filter((a) => a.type === 'CREATE_TASK').length;
+  const parts = [];
+  if (subitems) parts.push(`create ${subitems} subitem${subitems === 1 ? '' : 's'}`);
+  if (tasks) parts.push(`create ${tasks} task${tasks === 1 ? '' : 's'}`);
+  return parts.length ? parts.join(' & ') : `${actions.length} action(s)`;
+};
+
+/**
+ * One-line summary for the six F4 event-driven triggers, e.g.
+ * "When status becomes \"Viewing Scheduled\" → create 1 task".
+ */
+const describeNewTrigger = (automation, board) => {
+  const cfg = automation.triggerConfig || {};
+  const col = findColumn(board, cfg.columnId);
+  const colName = col?.name || 'a column';
+  let when = '';
+  switch (automation.triggerType) {
+    case 'COLUMN_VALUE_CHANGED':
+      when = cfg.columnId ? `When ${colName} changes` : 'When any column changes';
+      break;
+    case 'STATUS_BECAME': {
+      const opt = optionsForColumn(col).find((o) => o.value === (cfg.toValue || '').toString());
+      when = `When ${colName} becomes "${opt?.label || cfg.toValue || '—'}"`;
+      break;
+    }
+    case 'DATE_ARRIVED': {
+      const n = Number(cfg.offsetDays || 0);
+      const rel =
+        n === 0 ? 'on the day' : `${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'} ${n < 0 ? 'before' : 'after'}`;
+      when = `When ${colName} arrives (${rel})`;
+      break;
+    }
+    case 'PERSON_ASSIGNED':
+      when = `When a person is assigned to ${colName}`;
+      break;
+    case 'FORM_SUBMITTED':
+      when = 'When a form is submitted';
+      break;
+    case 'WEBHOOK_RECEIVED':
+      when = 'When a webhook is received';
+      break;
+    default:
+      when = 'When triggered';
+  }
+  return `${when} → ${describeActionCount(automation)}`;
+};
+
+/**
  * Top-level describe — branches on triggerType. Returns the schedule string
  * for SCHEDULE automations (preserves existing UI), the event-driven
- * summary for ITEM_CREATED, or the group-created summary for GROUP_CREATED.
+ * summary for ITEM_CREATED, the group-created summary for GROUP_CREATED, or the
+ * F4 trigger summary for the six new event triggers.
  */
-const describeAutomation = (automation, groups = [], statuses = []) => {
+const describeAutomation = (automation, groups = [], statuses = [], board = null) => {
   if (automation.triggerType === 'ITEM_CREATED') {
     return describeEventDriven(automation, groups, statuses);
   }
   if (automation.triggerType === 'GROUP_CREATED') {
     return describeGroupCreated(automation);
+  }
+  if (NEW_EVENT_TRIGGERS.includes(automation.triggerType)) {
+    return describeNewTrigger(automation, board);
   }
   return describeSchedule(automation.schedule);
 };
@@ -243,6 +348,9 @@ const buildInitialForm = (groups) => ({
   // GROUP_CREATED fields
   groupNamePattern: '',
   groupCreatedTemplates: [buildEmptyGroupCreatedTemplate()],
+  // F4 event-trigger config (COLUMN_VALUE_CHANGED / STATUS_BECAME /
+  // DATE_ARRIVED / PERSON_ASSIGNED / FORM_SUBMITTED / WEBHOOK_RECEIVED)
+  triggerConfig: { offsetDays: -7, comparison: 'before' },
   enabled: true,
 });
 
@@ -316,6 +424,13 @@ const formFromAutomation = (a, groups) => {
       groupCreatedTemplates.length > 0
         ? groupCreatedTemplates
         : [buildEmptyGroupCreatedTemplate()],
+    triggerConfig: {
+      offsetDays: -7,
+      comparison: 'before',
+      ...(a.triggerConfig && typeof a.triggerConfig === 'object'
+        ? a.triggerConfig
+        : {}),
+    },
     enabled: a.enabled !== false,
   };
 };
@@ -859,6 +974,343 @@ const EventDrivenBuilder = ({
 };
 
 /**
+ * Reusable "Then …" actions list (CREATE_TASK / CREATE_SUBITEM) shared by the
+ * F4 event-trigger builder. Mirrors the actions block inside EventDrivenBuilder.
+ */
+const ActionsSection = ({ form, setForm, groups, groupOptions, saving }) => {
+  const actions = form.actions || [];
+  const updateAction = (idx, next) =>
+    setForm((f) => ({
+      ...f,
+      actions: f.actions.map((a, i) => (i === idx ? next : a)),
+    }));
+  const removeAction = (idx) =>
+    setForm((f) => ({ ...f, actions: f.actions.filter((_, i) => i !== idx) }));
+  const addAction = () =>
+    setForm((f) => ({ ...f, actions: [...(f.actions || []), buildEmptyAction(groups)] }));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex justify-center">
+        <ArrowDown size={18} color="var(--color-text-muted)" aria-hidden="true" />
+      </div>
+      {actions.map((a, i) => (
+        <ActionRow
+          key={i}
+          action={a}
+          index={i}
+          onChange={(next) => updateAction(i, next)}
+          onRemove={() => removeAction(i)}
+          groupOptions={groupOptions}
+          disabled={saving}
+        />
+      ))}
+      <button
+        type="button"
+        onClick={addAction}
+        disabled={saving}
+        className="font-body inline-flex items-center gap-1 self-start"
+        style={{
+          fontSize: 13,
+          color: 'var(--color-accent)',
+          background: 'transparent',
+          border: 'none',
+          padding: '4px 0',
+          cursor: saving ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <Plus size={14} aria-hidden="true" />
+        Add action
+      </button>
+    </div>
+  );
+};
+
+const selectStyle = (disabled) => ({
+  height: 34,
+  padding: '0 8px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1.5px solid var(--color-border)',
+  background: 'var(--color-bg-input)',
+  color: 'var(--color-text-primary)',
+  fontSize: 13,
+  width: '100%',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.6 : 1,
+});
+
+const FieldLabel = ({ children }) => (
+  <label
+    className="block mb-1 font-body font-medium text-xs uppercase tracking-wide"
+    style={{ color: 'var(--color-text-secondary)' }}
+  >
+    {children}
+  </label>
+);
+
+/**
+ * Per-type config form for the six F4 event triggers. Reads/writes
+ * `form.triggerConfig`. Column-bound triggers pull from `board.columns` (F1
+ * flexible columns); dormant triggers render a greyed "Available after Phase …"
+ * notice but still save (so the automation is ready when the emitter ships).
+ */
+const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
+  const tc = form.triggerConfig || {};
+  const setTc = (patch) =>
+    setForm((f) => ({ ...f, triggerConfig: { ...(f.triggerConfig || {}), ...patch } }));
+  const type = form.triggerType;
+
+  const wrap = (children) => (
+    <div
+      style={{
+        padding: '12px 14px',
+        border: '1.5px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--color-bg-surface)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      {children}
+    </div>
+  );
+
+  if (type === 'COLUMN_VALUE_CHANGED') {
+    const cols = boardColumns(board);
+    return wrap(
+      <div>
+        <FieldLabel>Column to watch</FieldLabel>
+        <select
+          value={tc.columnId || ''}
+          disabled={saving}
+          onChange={(e) => setTc({ columnId: e.target.value })}
+          style={selectStyle(saving)}
+        >
+          <option value="">Any column</option>
+          {cols.map((c) => (
+            <option key={c._id} value={c._id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          Leave as "Any column" to fire on every column change.
+        </p>
+      </div>
+    );
+  }
+
+  if (type === 'STATUS_BECAME') {
+    const statusCols = columnsOfType(board, 'status');
+    const selectedCol = findColumn(board, tc.columnId);
+    const valueOptions = optionsForColumn(selectedCol);
+    return wrap(
+      <>
+        <div>
+          <FieldLabel>Status column</FieldLabel>
+          <select
+            value={tc.columnId || ''}
+            disabled={saving || statusCols.length === 0}
+            onChange={(e) => setTc({ columnId: e.target.value, toValue: '', fromValue: '' })}
+            style={selectStyle(saving || statusCols.length === 0)}
+          >
+            <option value="">{statusCols.length === 0 ? '— no status columns —' : 'Select column…'}</option>
+            {statusCols.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <FieldLabel>From (optional)</FieldLabel>
+            <select
+              value={tc.fromValue || ''}
+              disabled={saving || !tc.columnId}
+              onChange={(e) => setTc({ fromValue: e.target.value })}
+              style={selectStyle(saving || !tc.columnId)}
+            >
+              <option value="">Any value</option>
+              {valueOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Becomes</FieldLabel>
+            <select
+              value={tc.toValue || ''}
+              disabled={saving || !tc.columnId}
+              onChange={(e) => setTc({ toValue: e.target.value })}
+              style={selectStyle(saving || !tc.columnId)}
+            >
+              <option value="">Select value…</option>
+              {valueOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (type === 'DATE_ARRIVED') {
+    const dateCols = columnsOfType(board, 'date');
+    const offset = Number.isFinite(Number(tc.offsetDays)) ? Number(tc.offsetDays) : 0;
+    return wrap(
+      <>
+        <div>
+          <FieldLabel>Date column</FieldLabel>
+          <select
+            value={tc.columnId || ''}
+            disabled={saving || dateCols.length === 0}
+            onChange={(e) => setTc({ columnId: e.target.value })}
+            style={selectStyle(saving || dateCols.length === 0)}
+          >
+            <option value="">{dateCols.length === 0 ? '— no date columns —' : 'Select column…'}</option>
+            {dateCols.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <FieldLabel>Days offset</FieldLabel>
+            <input
+              type="number"
+              value={Number.isFinite(offset) ? offset : ''}
+              disabled={saving}
+              onChange={(e) =>
+                setTc({ offsetDays: e.target.value === '' ? 0 : parseInt(e.target.value, 10) })
+              }
+              style={{ ...selectStyle(saving), cursor: 'text' }}
+            />
+          </div>
+          <div>
+            <FieldLabel>Relative to date</FieldLabel>
+            <SegmentedControl
+              options={DATE_COMPARISONS}
+              value={tc.comparison || 'on'}
+              onChange={(v) => setTc({ comparison: v })}
+              disabled={saving}
+            />
+          </div>
+        </div>
+        <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          The before / on / after selector sets the direction; the number is how many days
+          (e.g. 7 days before the date). Runs hourly in the workspace timezone.
+        </p>
+      </>
+    );
+  }
+
+  if (type === 'PERSON_ASSIGNED') {
+    const personCols = columnsOfType(board, 'person');
+    return wrap(
+      <>
+        <div>
+          <FieldLabel>Person column</FieldLabel>
+          <select
+            value={tc.columnId || ''}
+            disabled={saving || personCols.length === 0}
+            onChange={(e) => setTc({ columnId: e.target.value })}
+            style={selectStyle(saving || personCols.length === 0)}
+          >
+            <option value="">{personCols.length === 0 ? '— no person columns —' : 'Select column…'}</option>
+            {personCols.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <FieldLabel>Specific user (optional)</FieldLabel>
+          <select
+            value={tc.userId || ''}
+            disabled={saving}
+            onChange={(e) => setTc({ userId: e.target.value })}
+            style={selectStyle(saving)}
+          >
+            <option value="">Any user</option>
+            {(members || []).map((m) => (
+              <option key={m._id} value={m._id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </>
+    );
+  }
+
+  // Dormant triggers — FORM_SUBMITTED / WEBHOOK_RECEIVED.
+  const idKey = type === 'FORM_SUBMITTED' ? 'formId' : 'endpointId';
+  const idLabel = type === 'FORM_SUBMITTED' ? 'Form' : 'Endpoint';
+  return wrap(
+    <>
+      <div
+        className="flex items-center gap-2"
+        style={{
+          padding: '8px 10px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-bg-subtle)',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        <Zap size={14} aria-hidden="true" />
+        <span className="font-body" style={{ fontSize: 12 }}>
+          {DORMANT_TRIGGER_NOTE[type]}. You can save this automation now — it will start firing
+          once the feature ships.
+        </span>
+      </div>
+      <div>
+        <FieldLabel>{idLabel} (optional)</FieldLabel>
+        <input
+          type="text"
+          value={tc[idKey] || ''}
+          disabled
+          placeholder={`Specific ${idLabel.toLowerCase()} id — available later`}
+          style={{ ...selectStyle(true), cursor: 'not-allowed' }}
+        />
+      </div>
+    </>
+  );
+};
+
+/**
+ * Builder shown for the six F4 event triggers: a per-type trigger-config form
+ * followed by the shared "Then …" actions list.
+ */
+const EventTriggerBuilder = ({ form, setForm, board, members, groups, groupOptions, saving }) => (
+  <div className="flex flex-col gap-3">
+    <TriggerConfigForm
+      form={form}
+      setForm={setForm}
+      board={board}
+      members={members}
+      saving={saving}
+    />
+    <ActionsSection
+      form={form}
+      setForm={setForm}
+      groups={groups}
+      groupOptions={groupOptions}
+      saving={saving}
+    />
+  </div>
+);
+
+/**
  * One task-template row in the GROUP_CREATED builder. Unlike ITEM_CREATED
  * actions, there's no group selector — the spawned task always lands in the
  * newly-created triggering group.
@@ -1153,6 +1605,7 @@ const AutomationsModal = ({
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [runLogFor, setRunLogFor] = useState(null);
 
   const tzList = useMemo(() => getTimezoneList(), []);
 
@@ -1215,7 +1668,61 @@ const AutomationsModal = ({
     onClose?.();
   };
 
+  // Strip a triggerConfig down to the fields the chosen trigger persists.
+  const buildTriggerConfig = () => {
+    const tc = form.triggerConfig || {};
+    switch (form.triggerType) {
+      case 'COLUMN_VALUE_CHANGED':
+        return tc.columnId ? { columnId: tc.columnId } : {};
+      case 'STATUS_BECAME': {
+        const out = { columnId: tc.columnId, toValue: tc.toValue };
+        if (tc.fromValue) out.fromValue = tc.fromValue;
+        return out;
+      }
+      case 'DATE_ARRIVED':
+        return {
+          columnId: tc.columnId,
+          offsetDays: Number.isFinite(Number(tc.offsetDays)) ? Number(tc.offsetDays) : 0,
+          comparison: tc.comparison || 'on',
+        };
+      case 'PERSON_ASSIGNED': {
+        const out = { columnId: tc.columnId };
+        if (tc.userId) out.userId = tc.userId;
+        return out;
+      }
+      case 'FORM_SUBMITTED':
+        return tc.formId ? { formId: tc.formId } : {};
+      case 'WEBHOOK_RECEIVED':
+        return tc.endpointId ? { endpointId: tc.endpointId } : {};
+      default:
+        return {};
+    }
+  };
+
+  const buildEventActions = () =>
+    (form.actions || []).map((a) => {
+      const config = {
+        name: a.name.trim(),
+        priority: a.priority || 'medium',
+        assignedTo: a.assignedTo || [],
+        note: a.note?.trim() || undefined,
+      };
+      if (a.type === 'CREATE_TASK') config.group = a.group;
+      return { type: a.type, config };
+    });
+
   const buildPayload = () => {
+    if (NEW_EVENT_TRIGGERS.includes(form.triggerType)) {
+      return {
+        name: form.name.trim(),
+        enabled: form.enabled,
+        triggerType: form.triggerType,
+        triggerConfig: buildTriggerConfig(),
+        conditions: [],
+        actions: buildEventActions(),
+      };
+    }
+
     if (form.triggerType === 'GROUP_CREATED') {
       const pattern = (form.groupNamePattern || '').trim();
       const conditions = pattern
@@ -1302,8 +1809,39 @@ const AutomationsModal = ({
     };
   };
 
+  const validateActions = () => {
+    const acts = form.actions || [];
+    if (acts.length === 0) return 'Add at least one action';
+    for (let i = 0; i < acts.length; i++) {
+      const a = acts[i];
+      if (!a.name?.trim()) return `Action ${i + 1}: task name is required`;
+      if (a.type === 'CREATE_TASK' && !a.group) {
+        return `Action ${i + 1}: choose a group for the new task`;
+      }
+    }
+    return null;
+  };
+
   const validateLocal = () => {
     if (!form.name.trim()) return 'Automation name is required';
+
+    if (NEW_EVENT_TRIGGERS.includes(form.triggerType)) {
+      const tc = form.triggerConfig || {};
+      if (form.triggerType === 'STATUS_BECAME') {
+        if (!tc.columnId) return 'Choose a status column';
+        if (!tc.toValue) return 'Choose the value the status should become';
+      }
+      if (form.triggerType === 'DATE_ARRIVED') {
+        if (!tc.columnId) return 'Choose a date column';
+        const n = Number(tc.offsetDays);
+        if (!Number.isInteger(n)) return 'Days offset must be a whole number';
+      }
+      if (form.triggerType === 'PERSON_ASSIGNED' && !tc.columnId) {
+        return 'Choose a person column';
+      }
+      // COLUMN_VALUE_CHANGED: columnId optional. FORM/WEBHOOK: no config needed.
+      return validateActions();
+    }
 
     if (form.triggerType === 'GROUP_CREATED') {
       const templates = form.groupCreatedTemplates || [];
@@ -1564,7 +2102,7 @@ const AutomationsModal = ({
                         color: 'var(--color-text-secondary)',
                       }}
                     >
-                      {describeAutomation(a, groups, boardStatuses)}
+                      {describeAutomation(a, groups, boardStatuses, board)}
                     </p>
                     {a.triggerType === 'SCHEDULE' && (
                       <p
@@ -1586,7 +2124,13 @@ const AutomationsModal = ({
                           ? a.enabled
                             ? 'Runs on group creation'
                             : 'paused'
-                          : `Next run: ${a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}`}
+                          : NEW_EVENT_TRIGGERS.includes(a.triggerType)
+                            ? a.enabled
+                              ? DORMANT_TRIGGERS.includes(a.triggerType)
+                                ? 'Ready (fires once feature ships)'
+                                : 'Runs on trigger'
+                              : 'paused'
+                            : `Next run: ${a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}`}
                       {a.lastRunAt && ` · Last: ${formatNextRun(a.lastRunAt)}`}
                     </p>
                   </div>
@@ -1613,6 +2157,23 @@ const AutomationsModal = ({
                       }}
                     >
                       <Play size={14} color="var(--color-text-secondary)" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRunLogFor(a)}
+                      disabled={isBusy}
+                      aria-label="Run log"
+                      title="Run log"
+                      className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
+                      style={{
+                        width: 30,
+                        height: 30,
+                        border: '1.5px solid var(--color-border)',
+                        cursor: isBusy ? 'not-allowed' : 'pointer',
+                        opacity: isBusy ? 0.6 : 1,
+                      }}
+                    >
+                      <History size={14} color="var(--color-text-secondary)" />
                     </button>
                     <button
                       type="button"
@@ -1944,6 +2505,18 @@ const AutomationsModal = ({
         />
       )}
 
+      {NEW_EVENT_TRIGGERS.includes(form.triggerType) && (
+        <EventTriggerBuilder
+          form={form}
+          setForm={setForm}
+          board={board}
+          members={members}
+          groups={groups}
+          groupOptions={groupOptions}
+          saving={saving}
+        />
+      )}
+
       <Toggle
         checked={form.enabled}
         onChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
@@ -1987,15 +2560,23 @@ const AutomationsModal = ({
   );
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={handleClose}
-      title={view === 'list' ? 'Automations' : editingId ? 'Edit Automation' : 'New Automation'}
-      maxWidth={620}
-      footer={footer}
-    >
-      {view === 'list' ? renderListView() : renderFormView()}
-    </Modal>
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={handleClose}
+        title={view === 'list' ? 'Automations' : editingId ? 'Edit Automation' : 'New Automation'}
+        maxWidth={620}
+        footer={footer}
+      >
+        {view === 'list' ? renderListView() : renderFormView()}
+      </Modal>
+      <AutomationRunLog
+        isOpen={!!runLogFor}
+        onClose={() => setRunLogFor(null)}
+        automationId={runLogFor?._id}
+        automationName={runLogFor?.name}
+      />
+    </>
   );
 };
 

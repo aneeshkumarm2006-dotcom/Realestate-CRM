@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { focusedInputStyle, cellWrapperStyle } from './cellShared';
+import CellPlaceholder from './CellPlaceholder';
 
 const EmailCell = ({ value, readOnly, onChange }) => {
   const [editing, setEditing] = useState(false);
@@ -31,9 +32,9 @@ const EmailCell = ({ value, readOnly, onChange }) => {
           >
             {value}
           </a>
-        ) : (
-          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-        )}
+        ) : !readOnly ? (
+          <CellPlaceholder text="Add email" />
+        ) : null}
       </div>
     );
   }

@@ -12,6 +12,7 @@
   /* Backgrounds */
   --color-bg-base:      #F5F4F0;   /* Page background — warm off-white */
   --color-bg-surface:   #FFFFFF;   /* Cards, panels, nav */
+  --color-bg-elevated:  #FFFFFF;   /* Popovers, dropdown menus, floating panels */
   --color-bg-subtle:    #EEECEA;   /* Hover rows, muted sections */
   --color-bg-input:     #F9F8F6;   /* Input fields */
 
