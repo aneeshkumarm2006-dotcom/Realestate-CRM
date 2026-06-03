@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus } from 'lucide-react';
 import useBoardStore from '../../store/boardStore';
 import useToastStore from '../../store/toastStore';
@@ -120,7 +121,9 @@ const AddColumnButton = ({ boardId, board }) => {
   const [aggregation, setAggregation] = useState('first');
 
   const ref = useRef(null);
+  const panelRef = useRef(null);
   const nameRef = useRef(null);
+  const [panelPos, setPanelPos] = useState(null);
   const addColumn = useBoardStore((s) => s.addColumn);
   const fetchConnectable = useBoardStore((s) => s.fetchConnectable);
   const toastError = useToastStore((s) => s.error);
@@ -145,11 +148,39 @@ const AddColumnButton = ({ boardId, board }) => {
     if (!open) return undefined;
     const onClickOutside = (e) => {
       if (ref.current && ref.current.contains(e.target)) return;
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
       setOpen(false);
       resetAll();
     };
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  // Position the portaled panel against the button. Recompute on scroll/resize
+  // so it tracks the trigger. The panel lives in document.body (a portal) so it
+  // is never clipped by the board's horizontal scroll container or the group
+  // card's overflow:hidden.
+  useEffect(() => {
+    if (!open) {
+      setPanelPos(null);
+      return undefined;
+    }
+    const PANEL_WIDTH = 260;
+    const place = () => {
+      const btn = ref.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const left = Math.max(8, Math.min(r.right - PANEL_WIDTH, window.innerWidth - PANEL_WIDTH - 8));
+      const top = r.bottom + 6;
+      setPanelPos({ left, top });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -279,14 +310,14 @@ const AddColumnButton = ({ boardId, board }) => {
       >
         <Plus size={14} />
       </button>
-      {open && (
+      {open && panelPos && createPortal(
         <div
+          ref={panelRef}
           style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: 6,
-            zIndex: 50,
+            position: 'fixed',
+            top: panelPos.top,
+            left: panelPos.left,
+            zIndex: 1000,
             minWidth: 260,
             maxHeight: 380,
             overflowY: 'auto',
@@ -483,7 +514,8 @@ const AddColumnButton = ({ boardId, board }) => {
               />
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

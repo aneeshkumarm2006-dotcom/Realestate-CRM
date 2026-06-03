@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { Plus, MoreHorizontal } from 'lucide-react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { MoreHorizontal } from 'lucide-react';
 import { cellComponentFor } from './columns';
 import AddColumnButton from './AddColumnButton';
 import useBoardStore from '../../store/boardStore';
@@ -176,70 +177,6 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
                 <MoreHorizontal size={12} />
               </button>
             )}
-            {headerMenu?.columnId === col._id && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  zIndex: 30,
-                  background: 'var(--color-bg-elevated)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  boxShadow: 'var(--shadow-md)',
-                  padding: 4,
-                  minWidth: 140,
-                }}
-                onMouseLeave={() => setHeaderMenu(null)}
-              >
-                <button
-                  type="button"
-                  style={menuItemStyle}
-                  onClick={() => {
-                    setRenamingId(col._id);
-                    setRenameDraft(col.name);
-                    setHeaderMenu(null);
-                  }}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  style={menuItemStyle}
-                  onClick={() => {
-                    const w = Number(window.prompt('Column width in px', String(col.width || 160)));
-                    if (Number.isFinite(w) && w >= 40 && w <= 1000) {
-                      updateColumn(board._id, col._id, { width: w }).catch((err) =>
-                        toastError(err?.response?.data?.error || 'Width update failed')
-                      );
-                    }
-                    setHeaderMenu(null);
-                  }}
-                >
-                  Change width
-                </button>
-                <button
-                  type="button"
-                  style={{ ...menuItemStyle, opacity: 0.4, cursor: 'not-allowed' }}
-                  disabled
-                  title="Coming in a later release"
-                >
-                  Freeze (later)
-                </button>
-                <button
-                  type="button"
-                  disabled={col.isPrimary}
-                  style={{
-                    ...menuItemStyle,
-                    color: col.isPrimary ? 'var(--color-text-muted)' : '#DC2626',
-                    cursor: col.isPrimary ? 'not-allowed' : 'pointer',
-                  }}
-                  onClick={() => handleDelete(col)}
-                >
-                  Delete
-                </button>
-              </div>
-            )}
           </div>
         ))}
         {/* Add-column anchor at the end of the header row */}
@@ -274,7 +211,133 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
           </div>
         )}
       </div>
+
+      {/* Column actions menu — rendered in a portal so it is never clipped by
+          this grid's horizontal scroll container or the group card's
+          overflow:hidden. Positioned against the trigger button's rect. */}
+      {headerMenu &&
+        (() => {
+          const col = columns.find((c) => c._id === headerMenu.columnId);
+          if (!col) return null;
+          return (
+            <PortalMenu anchor={headerMenu.anchor} onClose={() => setHeaderMenu(null)}>
+              <button
+                type="button"
+                style={menuItemStyle}
+                onClick={() => {
+                  setRenamingId(col._id);
+                  setRenameDraft(col.name);
+                  setHeaderMenu(null);
+                }}
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                style={menuItemStyle}
+                onClick={() => {
+                  const w = Number(window.prompt('Column width in px', String(col.width || 160)));
+                  if (Number.isFinite(w) && w >= 40 && w <= 1000) {
+                    updateColumn(board._id, col._id, { width: w }).catch((err) =>
+                      toastError(err?.response?.data?.error || 'Width update failed')
+                    );
+                  }
+                  setHeaderMenu(null);
+                }}
+              >
+                Change width
+              </button>
+              <button
+                type="button"
+                style={{ ...menuItemStyle, opacity: 0.4, cursor: 'not-allowed' }}
+                disabled
+                title="Coming in a later release"
+              >
+                Freeze (later)
+              </button>
+              <button
+                type="button"
+                disabled={col.isPrimary}
+                style={{
+                  ...menuItemStyle,
+                  color: col.isPrimary ? 'var(--color-text-muted)' : '#DC2626',
+                  cursor: col.isPrimary ? 'not-allowed' : 'pointer',
+                }}
+                onClick={() => handleDelete(col)}
+              >
+                Delete
+              </button>
+            </PortalMenu>
+          );
+        })()}
     </div>
+  );
+};
+
+/**
+ * PortalMenu — a small floating menu rendered to document.body via a portal so
+ * it escapes any `overflow:hidden`/`overflow:auto` ancestor. Positions itself
+ * just below and right-aligned to the trigger button, clamped to the viewport.
+ * Closes on outside click, scroll, resize, or Escape.
+ */
+const PortalMenu = ({ anchor, onClose, children, width = 160 }) => {
+  const [pos, setPos] = useState(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!anchor) return undefined;
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
+      const top = r.bottom + 4;
+      setPos({ left, top });
+    };
+    place();
+
+    const onScroll = () => onClose();
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    const onDocClick = (e) => {
+      // Keep open for clicks on the trigger or inside the menu itself; a menu
+      // item's own onClick handles closing after its action runs.
+      if (anchor.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      onClose();
+    };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDocClick);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDocClick);
+    };
+  }, [anchor, onClose, width]);
+
+  if (!pos) return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={{
+        position: 'fixed',
+        top: pos.top,
+        left: pos.left,
+        zIndex: 1000,
+        background: 'var(--color-bg-elevated)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md)',
+        padding: 4,
+        minWidth: width,
+      }}
+    >
+      {children}
+    </div>,
+    document.body
   );
 };
 
