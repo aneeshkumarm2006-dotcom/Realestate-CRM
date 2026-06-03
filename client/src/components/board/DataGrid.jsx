@@ -90,7 +90,7 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
   if (columns.length === 0) {
     return (
       <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-        No columns yet. {!readOnly && <AddColumnButton boardId={board._id} />}
+        No columns yet. {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
       </div>
     );
   }
@@ -253,7 +253,7 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
             justifyContent: 'center',
           }}
         >
-          {!readOnly && <AddColumnButton boardId={board._id} />}
+          {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
         </div>
 
         {/* Body rows */}

@@ -2,6 +2,7 @@
 require('./User');
 require('./Organisation');
 require('./Board');
+require('./BoardConnection');
 require('./TaskGroup');
 require('./Task');
 require('./Comment');

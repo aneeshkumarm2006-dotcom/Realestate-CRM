@@ -7,6 +7,7 @@ const eventBus = require('./src/services/eventBus');
 const {
   mountAutomationEventDispatcher,
 } = require('./src/services/automationEventDispatcher');
+const { mountMirrorRefresh } = require('./src/services/mirrorRefresh');
 
 const PORT = process.env.PORT || 5000;
 
@@ -14,6 +15,7 @@ const start = async () => {
   await connectDB();
   eventBus.mount();
   mountAutomationEventDispatcher();
+  mountMirrorRefresh();
   startAutomationRunner();
   app.listen(PORT, () => {
     console.log(`Macan API listening on port ${PORT}`);

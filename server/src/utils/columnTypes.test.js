@@ -178,15 +178,78 @@ test('formula: validate always throws (read-only)', () => {
   badValidate('formula', 1);
 });
 
-test('connect_boards: stub throws NOT_IMPLEMENTED', () => {
-  assert.throws(
-    () => columnTypes.connect_boards.validate({ links: [] }, {}),
-    /not implemented/i
+// ---------------------------------------------------------------------------
+// connect_boards (F2)
+// ---------------------------------------------------------------------------
+test('connect_boards: accepts null + empty links', () => {
+  okValidate('connect_boards', null);
+  okValidate('connect_boards', { links: [] });
+});
+
+test('connect_boards: accepts a link to a target board', () => {
+  const board = new mongoose.Types.ObjectId().toString();
+  const taskId = new mongoose.Types.ObjectId().toString();
+  okValidate(
+    'connect_boards',
+    { links: [{ boardId: board, taskId }] },
+    { targetBoardIds: [board], allowMultiple: true }
   );
 });
 
-test('mirror: stub throws NOT_IMPLEMENTED', () => {
-  assert.throws(() => columnTypes.mirror.validate('anything', {}), /not implemented/i);
+test('connect_boards: rejects a link outside targetBoardIds', () => {
+  const allowed = new mongoose.Types.ObjectId().toString();
+  const other = new mongoose.Types.ObjectId().toString();
+  const taskId = new mongoose.Types.ObjectId().toString();
+  badValidate(
+    'connect_boards',
+    { links: [{ boardId: other, taskId }] },
+    { targetBoardIds: [allowed] }
+  );
+});
+
+test('connect_boards: rejects multiple links when allowMultiple is false', () => {
+  const board = new mongoose.Types.ObjectId().toString();
+  const t1 = new mongoose.Types.ObjectId().toString();
+  const t2 = new mongoose.Types.ObjectId().toString();
+  badValidate(
+    'connect_boards',
+    { links: [{ boardId: board, taskId: t1 }, { boardId: board, taskId: t2 }] },
+    { targetBoardIds: [board], allowMultiple: false }
+  );
+});
+
+test('connect_boards: rejects invalid task ids', () => {
+  const board = new mongoose.Types.ObjectId().toString();
+  badValidate('connect_boards', { links: [{ boardId: board, taskId: 'not-an-id' }] }, { targetBoardIds: [board] });
+});
+
+test('connect_boards: serialize dedupes by taskId and normalises ids', () => {
+  const board = new mongoose.Types.ObjectId().toString();
+  const taskId = new mongoose.Types.ObjectId().toString();
+  const out = columnTypes.connect_boards.serialize({
+    links: [{ boardId: board, taskId }, { boardId: board, taskId }],
+  });
+  assert.equal(out.links.length, 1);
+  assert.equal(out.links[0].taskId, taskId);
+});
+
+// ---------------------------------------------------------------------------
+// mirror (F2) — read-only
+// ---------------------------------------------------------------------------
+test('mirror: allows a null probe so column creation passes', () => {
+  okValidate('mirror', null);
+});
+
+test('mirror: rejects a direct value write with READ_ONLY', () => {
+  let code = null;
+  assert.throws(
+    () => columnTypes.mirror.validate('anything', {}),
+    (err) => {
+      code = err.code;
+      return /read-only/i.test(err.message);
+    }
+  );
+  assert.equal(code, 'READ_ONLY');
 });
 
 // ---------------------------------------------------------------------------

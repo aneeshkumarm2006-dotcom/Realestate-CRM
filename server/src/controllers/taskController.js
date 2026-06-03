@@ -13,6 +13,7 @@ const Notification = require('../models/Notification');
 const eventBus = require('../services/eventBus');
 const { logActivity } = require('../services/activityService');
 const { getColumnType } = require('../utils/columnTypes');
+const { embedMirrorValues } = require('../services/mirrorRefresh');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 // Legacy enum keys — accepted for personal tasks (which don't have a board).
@@ -379,6 +380,10 @@ const getTasks = async (req, res) => {
       .lean();
     await annotateHasSubitems(tasks);
     await annotateCommentCounts(tasks);
+    // F2: replace any mirror column cache wrappers with their bare computed
+    // value so the DataGrid renders a plain value (no-op when the board has no
+    // mirror columns).
+    await embedMirrorValues(tasks, ctx.board);
 
     return res.json({ tasks });
   } catch (err) {
@@ -838,6 +843,10 @@ const updateTask = async (req, res) => {
       task.status = match._id;
       await task.save();
 
+      // F2: a board task changed — mirrors on boards that link to it may now
+      // be stale. Dormant unless a BoardConnection targets this board.
+      eventBus.emit('task.updated', { taskId: task._id, boardId: task.board });
+
       if (prevStatus !== match._id.toString()) {
         await createNotificationsForUsers({
           userIds: task.assignedTo,
@@ -994,6 +1003,9 @@ const updateTask = async (req, res) => {
     if (columnChanges.length > 0) {
       emitColumnChangeEvents(task, task.board, columnChanges, userId);
     }
+    // F2: signal that a board task changed so mirrorRefresh can invalidate any
+    // mirrors on boards that link to it.
+    eventBus.emit('task.updated', { taskId: task._id, boardId: task.board });
     await Board.updateOne(
       { _id: task.board },
       { $set: { updatedAt: new Date() } }
@@ -1359,6 +1371,14 @@ const deleteTask = async (req, res) => {
       await Task.deleteMany({ _id: { $in: subitemIds } });
     }
     await Task.deleteOne({ _id: id });
+
+    // F2: a deleted board task may be a connect-link target. Signal each
+    // removed id so mirrorRefresh pulls the dead link and recomputes mirrors.
+    if (!task.isPersonal && task.board) {
+      for (const deletedId of idsToDelete) {
+        eventBus.emit('task.deleted', { taskId: deletedId, boardId: task.board });
+      }
+    }
 
     return res.json({ success: true, deletedSubitems: subitemIds.length });
   } catch (err) {

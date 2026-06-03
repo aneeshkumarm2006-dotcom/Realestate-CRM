@@ -18,6 +18,11 @@ const {
   uploadTaskAttachment,
   deleteTaskAttachment,
 } = require('../controllers/taskController');
+const {
+  linkTask,
+  unlinkTask,
+  getMirror,
+} = require('../controllers/linkController');
 
 const router = express.Router();
 
@@ -48,6 +53,12 @@ router.delete('/:id', deleteTask);
 
 // GET /api/tasks/:id/subitems — fetch direct children of a task
 router.get('/:id/subitems', getSubitems);
+
+// --- Cross-board links + mirrors (F2) -------------------------------------
+// Link / unlink rows on a connect_boards column; read a computed mirror value.
+router.post('/:id/links/:columnId', linkTask);
+router.delete('/:id/links/:columnId/:targetTaskId', unlinkTask);
+router.get('/:id/mirror/:columnId', getMirror);
 
 // Checklist routes — any task member can mutate
 router.post('/:id/checklist', addChecklistItem);

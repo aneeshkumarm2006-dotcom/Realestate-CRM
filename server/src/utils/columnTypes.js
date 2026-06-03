@@ -395,27 +395,97 @@ const columnTypes = {
     defaultValue: () => null,
   }),
 
-  // ----- F2 stubs (filled in by F2) ----------------------------------------
+  // ----- Cross-board connectivity (F2) -------------------------------------
+  // connect_boards: a multi-pointer to rows on another board.
+  //   settings: { targetBoardIds: [ObjectId], allowMultiple: bool,
+  //               restrictTo?: { columnId, value } }
+  //   value:    { links: [{ boardId, taskId }] }
+  //
+  // The registry validate is SYNCHRONOUS, so it only checks shape +
+  // settings-level invariants (valid ObjectIds, target-board membership,
+  // allowMultiple). Deep checks that need the DB — that a `taskId` actually
+  // resolves to a row on a target board, and the `restrictTo` filter — run in
+  // the link endpoint (controllers/linkController.js), which is async.
   connect_boards: baseEntry({
-    validate: () => {
-      throw ValidationError(
-        'connect_boards columns are not implemented yet (F2)',
-        'NOT_IMPLEMENTED'
-      );
+    validate: (value, settings) => {
+      if (value == null) return;
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        throw ValidationError('connect_boards value must be an object { links: [] }');
+      }
+      const links = value.links;
+      if (links == null) return;
+      if (!Array.isArray(links)) {
+        throw ValidationError('connect_boards.links must be an array');
+      }
+      const allowMultiple = !!(settings && settings.allowMultiple);
+      if (!allowMultiple && links.length > 1) {
+        throw ValidationError('this connect column allows only a single linked row');
+      }
+      const targetIds =
+        settings && Array.isArray(settings.targetBoardIds)
+          ? new Set(settings.targetBoardIds.map((id) => toIdString(id)))
+          : null;
+      for (const link of links) {
+        if (!link || typeof link !== 'object') {
+          throw ValidationError('each connect_boards link must be an object');
+        }
+        const boardId = toIdString(link.boardId);
+        const taskId = toIdString(link.taskId);
+        if (!boardId || !mongoose.Types.ObjectId.isValid(boardId)) {
+          throw ValidationError('connect_boards link has an invalid boardId');
+        }
+        if (!taskId || !mongoose.Types.ObjectId.isValid(taskId)) {
+          throw ValidationError('connect_boards link has an invalid taskId');
+        }
+        if (targetIds && targetIds.size > 0 && !targetIds.has(boardId)) {
+          throw ValidationError('connect_boards link points at a board outside targetBoardIds');
+        }
+      }
+    },
+    serialize: (value) => {
+      if (!value || typeof value !== 'object') return { links: [] };
+      const links = Array.isArray(value.links) ? value.links : [];
+      const seen = new Set();
+      const out = [];
+      for (const link of links) {
+        if (!link || typeof link !== 'object') continue;
+        const boardId = toIdString(link.boardId);
+        const taskId = toIdString(link.taskId);
+        if (!boardId || !taskId || seen.has(taskId)) continue;
+        seen.add(taskId);
+        out.push({ boardId, taskId });
+      }
+      return { links: out };
     },
     defaultValue: () => ({ links: [] }),
   }),
 
+  // mirror: a read-only projection of a column on the rows a sibling
+  // connect_boards column points at.
+  //   settings: { sourceConnectColumnId, sourceColumnId,
+  //               aggregation: 'first'|'concat'|'sum'|'min'|'max'|'count' }
+  //   value:    computed at read time (services/mirrorRefresh.js), cached on
+  //             Task.columnValues with a freshness marker.
+  //
+  // Direct writes are rejected (like `formula`). A `null`/empty probe is
+  // allowed so column creation — which validates the default value against
+  // the new settings — doesn't trip the read-only guard.
   mirror: baseEntry({
-    validate: () => {
+    validate: (value) => {
+      if (value == null) return;
       throw ValidationError(
-        'mirror columns are not implemented yet (F2)',
-        'NOT_IMPLEMENTED'
+        'mirror is read-only — it is computed from the source column, not written directly',
+        'READ_ONLY'
       );
     },
+    serialize: () => null,
     defaultValue: () => null,
   }),
 };
+
+// Valid aggregation modes for a `mirror` column. Shared with mirrorRefresh.js
+// and the column-settings validation in columnController.js.
+const MIRROR_AGGREGATIONS = ['first', 'concat', 'sum', 'min', 'max', 'count'];
 
 /**
  * Evaluate a formula column's expression over a task's column values.
@@ -491,4 +561,5 @@ module.exports = {
   validateColumnValue,
   evaluateFormula,
   ValidationError,
+  MIRROR_AGGREGATIONS,
 };

@@ -633,6 +633,41 @@ const reorderBoards = async (req, res) => {
 };
 
 /**
+ * GET /api/boards/:id/connectable
+ *
+ * Boards a `connect_boards` column on this board may target. Pre-F3 that's
+ * every OTHER board in the same workspace; F3 adds boards reachable through an
+ * active WorkspaceGrant. Member-gated. The column list is included so the
+ * client can offer source-column choices when building a mirror.
+ *
+ * Returns: { connectable: [{ board, workspace }] }
+ */
+const getConnectableBoards = async (req, res) => {
+  try {
+    const ctx = await loadBoardContext(req.params.id, req.user.userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const boards = await Board.find({
+      organisation: ctx.board.organisation,
+      _id: { $ne: ctx.board._id },
+    })
+      .select('name visibility columns organisation')
+      .sort({ order: 1, updatedAt: -1 })
+      .lean();
+
+    const workspace = {
+      _id: ctx.org._id,
+      name: ctx.org.displayName || ctx.org.name || 'Workspace',
+    };
+    const connectable = boards.map((board) => ({ board, workspace }));
+    return res.json({ connectable });
+  } catch (err) {
+    console.error('getConnectableBoards error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
  * GET /api/boards/templates
  *
  * Returns the built-in template list. Authenticated route — any logged-in
@@ -663,6 +698,7 @@ module.exports = {
   deleteBoard,
   reorderBoards,
   listBoardTemplates,
+  getConnectableBoards,
   // labels
   listLabels,
   addLabel,

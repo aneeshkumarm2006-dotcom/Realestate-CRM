@@ -17,6 +17,7 @@ const {
   deleteStatus,
   reorderStatuses,
   listBoardTemplates,
+  getConnectableBoards,
 } = require('../controllers/boardController');
 const {
   listColumns,
@@ -73,5 +74,9 @@ router.post('/:id/columns',           addColumn);
 router.patch('/:id/columns/reorder',  reorderColumns);
 router.patch('/:id/columns/:cid',     updateColumn);
 router.delete('/:id/columns/:cid',    deleteColumn);
+
+// --- Cross-board connectivity (F2) ----------------------------------------
+// Boards a connect_boards column on this board may target.
+router.get('/:id/connectable',        getConnectableBoards);
 
 module.exports = router;

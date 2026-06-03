@@ -23,6 +23,8 @@ import LocationCell from './LocationCell';
 import FileCell from './FileCell';
 import RatingCell from './RatingCell';
 import FormulaCell from './FormulaCell';
+import ConnectBoardsCell from './ConnectBoardsCell';
+import MirrorCell from './MirrorCell';
 
 const CELL_BY_TYPE = {
   text: TextCell,
@@ -42,6 +44,8 @@ const CELL_BY_TYPE = {
   file: FileCell,
   rating: RatingCell,
   formula: FormulaCell,
+  connect_boards: ConnectBoardsCell,
+  mirror: MirrorCell,
 };
 
 export const cellComponentFor = (type) => CELL_BY_TYPE[type] || TextCell;
@@ -64,4 +68,6 @@ export {
   FileCell,
   RatingCell,
   FormulaCell,
+  ConnectBoardsCell,
+  MirrorCell,
 };

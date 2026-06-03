@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as boardService from '../services/boardService';
 import * as columnService from '../services/columnService';
 import * as taskService from '../services/taskService';
+import * as linkService from '../services/linkService';
 
 /**
  * Merge new `labels` / `statuses` / `columns` into the board record
@@ -203,6 +204,43 @@ const useBoardStore = create((set, get) => ({
       columnValues: { [columnId]: value },
     });
     return task;
+  },
+
+  // --- Cross-board connectivity (F2) ---------------------------------------
+
+  /**
+   * Boards a connect_boards column on `boardId` may target. Returns
+   * `[{ board, workspace }]` (board.columns included for source pickers).
+   */
+  fetchConnectable: async (boardId) => {
+    const connectable = await linkService.getConnectableBoards(boardId);
+    return connectable;
+  },
+
+  /**
+   * linkTask — add a link on a task's connect_boards column. Returns the
+   * server's `{ value, links }`; the caller updates its local task cache.
+   */
+  linkTask: async (taskId, columnId, target) => {
+    const result = await linkService.linkTask(taskId, columnId, target);
+    return result;
+  },
+
+  /**
+   * unlinkTask — remove a link by target task id. Returns `{ value, links }`.
+   */
+  unlinkTask: async (taskId, columnId, targetTaskId) => {
+    const result = await linkService.unlinkTask(taskId, columnId, targetTaskId);
+    return result;
+  },
+
+  /**
+   * mirrorValue — fetch a task's computed mirror value for a column. Async
+   * (the value is computed server-side from the linked rows).
+   */
+  mirrorValue: async (taskId, columnId) => {
+    const value = await linkService.getMirror(taskId, columnId);
+    return value;
   },
 
   // Helpers

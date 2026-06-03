@@ -16,7 +16,9 @@ const mongoose = require('mongoose');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
 const Organisation = require('../models/Organisation');
-const { getColumnType } = require('../utils/columnTypes');
+const BoardConnection = require('../models/BoardConnection');
+const { getColumnType, MIRROR_AGGREGATIONS } = require('../utils/columnTypes');
+const { wouldCreateMirrorCycle } = require('../services/mirrorRefresh');
 
 const isOrgAdmin = (org, userId) =>
   !!org &&
@@ -82,6 +84,103 @@ const nextOrder = (board) => {
   return Math.max(...cols.map((c) => c.order || 0)) + 1;
 };
 
+// ---------------------------------------------------------------------------
+// F2 — cross-board column settings validation + BoardConnection sync
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate `connect_boards` settings. `targetBoardIds` must be a non-empty
+ * list of board ids in the SAME organisation as the source board (a board
+ * can't connect to itself; cross-workspace targets arrive with F3 grants).
+ * The synchronous registry validator only checks value shape, so the
+ * DB-aware checks live here.
+ */
+const validateConnectSettings = async (board, settings) => {
+  const targetBoardIds = Array.isArray(settings && settings.targetBoardIds)
+    ? settings.targetBoardIds
+    : [];
+  if (targetBoardIds.length === 0) {
+    return { error: 'connect_boards requires at least one target board' };
+  }
+  const ids = [];
+  for (const raw of targetBoardIds) {
+    const id = raw == null ? '' : raw.toString();
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return { error: 'targetBoardIds contains an invalid board id' };
+    }
+    if (id === board._id.toString()) {
+      return { error: 'A board cannot connect to itself' };
+    }
+    ids.push(id);
+  }
+  const uniqueIds = [...new Set(ids)];
+  const targets = await Board.find({ _id: { $in: uniqueIds } }).select('organisation');
+  if (targets.length !== uniqueIds.length) {
+    return { error: 'One or more target boards do not exist' };
+  }
+  for (const tb of targets) {
+    if (!tb.organisation || tb.organisation.toString() !== board.organisation.toString()) {
+      return {
+        error:
+          'Target boards must be in the same workspace (cross-workspace links require a grant — F3)',
+      };
+    }
+  }
+  return { ok: true };
+};
+
+/**
+ * Validate `mirror` settings. The source connect column must be a
+ * `connect_boards` column on THIS board; `sourceColumnId` is required; the
+ * aggregation must be a supported mode.
+ */
+const validateMirrorSettings = (board, settings) => {
+  const connectId =
+    settings && settings.sourceConnectColumnId ? settings.sourceConnectColumnId.toString() : '';
+  if (!connectId) return { error: 'mirror requires a sourceConnectColumnId' };
+  const connectCol = (board.columns || []).find((c) => c._id.toString() === connectId);
+  if (!connectCol || connectCol.type !== 'connect_boards') {
+    return {
+      error: 'sourceConnectColumnId must reference a connect_boards column on this board',
+    };
+  }
+  if (!settings.sourceColumnId) {
+    return { error: 'mirror requires a sourceColumnId' };
+  }
+  if (settings.aggregation && !MIRROR_AGGREGATIONS.includes(settings.aggregation)) {
+    return { error: `aggregation must be one of: ${MIRROR_AGGREGATIONS.join(', ')}` };
+  }
+  return { ok: true };
+};
+
+/**
+ * Upsert the BoardConnection edge for a connect_boards column. The primary
+ * (first) target board is recorded as `toBoardId` — see BoardConnection.js.
+ * Idempotent against the `{ fromBoardId, fromColumnId }` unique index.
+ */
+const syncBoardConnection = async (board, column) => {
+  const targetBoardIds = Array.isArray(column.settings && column.settings.targetBoardIds)
+    ? column.settings.targetBoardIds
+    : [];
+  if (targetBoardIds.length === 0) return;
+  await BoardConnection.findOneAndUpdate(
+    { fromBoardId: board._id, fromColumnId: column._id },
+    {
+      $set: { toBoardId: targetBoardIds[0] },
+      $setOnInsert: {
+        fromBoardId: board._id,
+        fromColumnId: column._id,
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+};
+
+const removeBoardConnection = async (boardId, columnId) => {
+  await BoardConnection.deleteOne({ fromBoardId: boardId, fromColumnId: columnId });
+};
+
 /**
  * GET /api/boards/:id/columns
  */
@@ -131,6 +230,22 @@ const addColumn = async (req, res) => {
       entry.validate(probe, settings);
     } catch (err) {
       return res.status(400).json({ error: `Invalid settings: ${err.message}` });
+    }
+
+    // F2: cross-board column types carry DB-aware invariants the synchronous
+    // registry validator can't check (target-board membership, cycle-free
+    // mirror graph). Reject bad settings before the column lands.
+    if (type === 'connect_boards') {
+      const r = await validateConnectSettings(board, settings);
+      if (r.error) return res.status(400).json({ error: r.error });
+    } else if (type === 'mirror') {
+      const r = validateMirrorSettings(board, settings);
+      if (r.error) return res.status(400).json({ error: r.error });
+      if (await wouldCreateMirrorCycle(board, settings, null)) {
+        return res.status(400).json({
+          error: 'This mirror would create a circular reference. Pick a different source column.',
+        });
+      }
     }
 
     // Build the column subdoc. `key` is optional in the request; if absent,
@@ -183,6 +298,12 @@ const addColumn = async (req, res) => {
     await board.save();
 
     const created = board.columns.find((c) => c.key === finalKey);
+
+    // F2: register the connect edge so mirror invalidation can find it.
+    if (type === 'connect_boards' && created) {
+      await syncBoardConnection(board, created);
+    }
+
     return res.status(201).json({ column: created, columns: serializeColumns(board) });
   } catch (err) {
     console.error('addColumn error:', err);
@@ -224,6 +345,20 @@ const updateColumn = async (req, res) => {
       } catch (err) {
         return res.status(400).json({ error: `Invalid settings: ${err.message}` });
       }
+      // F2: re-validate cross-board invariants before persisting the new
+      // settings (re-targeting a connect column, or re-pointing a mirror).
+      if (column.type === 'connect_boards') {
+        const r = await validateConnectSettings(board, settings);
+        if (r.error) return res.status(400).json({ error: r.error });
+      } else if (column.type === 'mirror') {
+        const r = validateMirrorSettings(board, settings);
+        if (r.error) return res.status(400).json({ error: r.error });
+        if (await wouldCreateMirrorCycle(board, settings, column._id)) {
+          return res.status(400).json({
+            error: 'This mirror would create a circular reference. Pick a different source column.',
+          });
+        }
+      }
       column.settings = settings;
       // mongoose doesn't track Mixed mutations — flag manually.
       column.markModified('settings');
@@ -236,6 +371,12 @@ const updateColumn = async (req, res) => {
     }
 
     await board.save();
+
+    // F2: keep the connect edge in sync when its target board(s) change.
+    if (column.type === 'connect_boards' && req.body && req.body.settings !== undefined) {
+      await syncBoardConnection(board, column);
+    }
+
     return res.json({ column, columns: serializeColumns(board) });
   } catch (err) {
     console.error('updateColumn error:', err);
@@ -302,6 +443,8 @@ const deleteColumn = async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete the primary column' });
     }
 
+    const wasConnect = column.type === 'connect_boards';
+
     board.columns.pull({ _id: cid });
     await board.save();
 
@@ -309,6 +452,13 @@ const deleteColumn = async (req, res) => {
       { board: board._id },
       { $unset: { [`columnValues.${cid}`]: '' } }
     );
+
+    // F2: drop the connect edge so mirror invalidation no longer fans out to a
+    // column that no longer exists. Mirror columns that read this connect
+    // column are left in place — they compute to their aggregation default.
+    if (wasConnect) {
+      await removeBoardConnection(board._id, cid);
+    }
 
     return res.json({ columns: serializeColumns(board) });
   } catch (err) {
