@@ -61,8 +61,9 @@ const Chip = forwardRef(function Chip(
   }
 
   const isClickable = typeof onClick === 'function';
-  const radius =
-    type === 'priority' ? 'var(--radius-sm)' : 'var(--radius-full)';
+  let radius = 'var(--radius-full)';
+  if (type === 'priority') radius = 'var(--radius-sm)';
+  else if (type === 'status') radius = '0';
 
   const Tag = isClickable ? 'button' : 'span';
 
