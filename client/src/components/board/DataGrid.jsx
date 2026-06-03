@@ -97,7 +97,18 @@ const DataGrid = ({ board, tasks = [], readOnly = false }) => {
   }
 
   return (
-    <div className="macan-thin-scrollbar" style={{ width: '100%', overflowX: 'auto' }}>
+    <div
+      className="macan-thin-scrollbar"
+      style={{
+        width: '100%',
+        overflowX: 'auto',
+        // Grow to fill the flex-column card so the horizontal scrollbar rides
+        // along the card's bottom edge instead of sitting under the (short)
+        // grid content. minHeight:0 lets the flex item actually shrink/grow.
+        flex: '1 1 auto',
+        minHeight: 0,
+      }}
+    >
       <div
         style={{
           display: 'grid',

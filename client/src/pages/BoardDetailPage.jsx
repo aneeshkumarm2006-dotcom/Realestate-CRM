@@ -1118,7 +1118,12 @@ const BoardDetailPage = () => {
                           // board (e.g. a freshly created template with only a
                           // row or two) still reads as a proper, full-bodied
                           // card instead of a thin strip. Collapsed groups stay
-                          // header-only.
+                          // header-only. Lay the card out as a flex column so the
+                          // grid body can grow to fill the card and its
+                          // horizontal scrollbar sits at the card's bottom edge
+                          // rather than floating just under a short content area.
+                          display: isCollapsed ? undefined : 'flex',
+                          flexDirection: isCollapsed ? undefined : 'column',
                           minHeight: isCollapsed ? undefined : 360,
                         }}
                       >
