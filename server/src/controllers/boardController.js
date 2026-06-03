@@ -51,7 +51,11 @@ const loadBoardContext = async (boardId, userId) => {
   if (!isMember) {
     return { status: 403, error: 'Not a member of this organisation' };
   }
-  return { board, org, isAdmin: isOrgAdmin(org, userId) };
+  const adminAccess = isOrgAdmin(org, userId);
+  if (board.visibility === 'private' && !adminAccess) {
+    return { status: 403, error: 'Access denied' };
+  }
+  return { board, org, isAdmin: adminAccess };
 };
 
 const DEFAULT_STATUSES = [
@@ -80,7 +84,9 @@ const getBoards = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    const boards = await Board.find({ organisation: orgId })
+    const admin = isOrgAdmin(org, userId);
+    const visibilityFilter = admin ? {} : { visibility: 'public' };
+    const boards = await Board.find({ organisation: orgId, ...visibilityFilter })
       .sort({ order: 1, updatedAt: -1 });
 
     // Lazy heal: pre-migration boards may have an empty `statuses` array,
@@ -604,7 +610,9 @@ const reorderBoards = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
 
-    const currentIds = await Board.distinct('_id', { organisation });
+    const admin = isOrgAdmin(org, userId);
+    const visibilityFilter = admin ? {} : { visibility: 'public' };
+    const currentIds = await Board.distinct('_id', { organisation, ...visibilityFilter });
     const currentSet = new Set(currentIds.map((id) => id.toString()));
     const orderedSet = new Set(orderedIds.map((id) => String(id)));
     if (
@@ -613,7 +621,7 @@ const reorderBoards = async (req, res) => {
     ) {
       return res
         .status(400)
-        .json({ error: 'orderedIds must list every board in the organisation exactly once' });
+        .json({ error: 'orderedIds must list every visible board in the organisation exactly once' });
     }
 
     const ops = orderedIds.map((id, idx) => ({
@@ -647,9 +655,11 @@ const getConnectableBoards = async (req, res) => {
     const ctx = await loadBoardContext(req.params.id, req.user.userId);
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
+    const visibilityFilter = ctx.isAdmin ? {} : { visibility: 'public' };
     const boards = await Board.find({
       organisation: ctx.board.organisation,
       _id: { $ne: ctx.board._id },
+      ...visibilityFilter,
     })
       .select('name visibility columns organisation')
       .sort({ order: 1, updatedAt: -1 })

@@ -32,13 +32,17 @@ const search = async (req, res) => {
     const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const queryRegex = new RegExp(escaped, 'i');
 
-    // All org members can search all boards and tasks
-    const boards = await Board.find({ organisation: orgId, name: queryRegex })
+    const isAdmin =
+      (org.admin && org.admin.toString() === userId) ||
+      (Array.isArray(org.admins) && org.admins.some((a) => a.toString() === userId));
+    const visibilityFilter = isAdmin ? {} : { visibility: 'public' };
+
+    const boards = await Board.find({ organisation: orgId, name: queryRegex, ...visibilityFilter })
       .select('name visibility')
       .limit(10)
       .lean();
 
-    const orgBoardIds = await Board.distinct('_id', { organisation: orgId });
+    const orgBoardIds = await Board.distinct('_id', { organisation: orgId, ...visibilityFilter });
     const tasks = await Task.find({
       board: { $in: orgBoardIds },
       name: queryRegex,
