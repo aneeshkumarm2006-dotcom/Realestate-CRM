@@ -824,7 +824,7 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
 
       {createOpen && (
         <Modal
-          open
+          isOpen
           onClose={() => {
             setCreateOpen(null);
             setName('');
