@@ -3,7 +3,7 @@ const Automation = require('../models/Automation');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
 const Organisation = require('../models/Organisation');
-const { runAutomationOnce } = require('../controllers/automationController');
+const { runActions } = require('./automationActionRunner');
 
 let started = false;
 
@@ -115,17 +115,19 @@ const readTaskColumnValue = (task, columnId) => {
 };
 
 const summarizeRun = async (automation, ctx) => {
-  const actions = Array.isArray(automation.actions) ? automation.actions : [];
   try {
-    await runAutomationOnce(automation, ctx);
-    return actions.map((a) => ({ actionType: a.type, status: 'ok' }));
+    // F5.4: actions execute through the registry runner, which writes the
+    // per-action AutomationRunLog audit rows and returns the outcomes we fold
+    // into this firing's triggerHistory entry.
+    const { outcomes } = await runActions(automation, ctx);
+    return outcomes;
   } catch (err) {
     console.error(
       '[dateAutomation] action run failed for',
       automation?._id?.toString(),
       err
     );
-    return actions.map((a) => ({
+    return (Array.isArray(automation.actions) ? automation.actions : []).map((a) => ({
       actionType: a.type,
       status: 'failed',
       error: err.message,

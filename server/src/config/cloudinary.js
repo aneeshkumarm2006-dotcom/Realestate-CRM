@@ -93,9 +93,59 @@ const taskAttachmentUpload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB per file
 });
 
+/**
+ * Cloudinary storage for email attachments (F8 — compose modal). Lands under
+ * macan/emails/ with resource_type derived from the MIME type.
+ */
+const emailAttachmentStorage = new CloudinaryStorage({
+  cloudinary,
+  params: (req, file) => {
+    const nameWithoutExt = (file.originalname || 'file')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    return {
+      folder: 'macan/emails',
+      resource_type: resolveResourceType(file),
+      public_id: `${Date.now()}-${nameWithoutExt}`,
+    };
+  },
+});
+
+const emailAttachmentUpload = multer({
+  storage: emailAttachmentStorage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB per file
+});
+
+/**
+ * Cloudinary storage for WhatsApp media (F11 — compose modal). WhatsApp sends
+ * media by public URL, so an attachment is uploaded here first and its
+ * Cloudinary URL passed to Twilio as `MediaUrl`. Lands under macan/whatsapp/
+ * with resource_type derived from the MIME type.
+ */
+const whatsappMediaStorage = new CloudinaryStorage({
+  cloudinary,
+  params: (req, file) => {
+    const nameWithoutExt = (file.originalname || 'file')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    return {
+      folder: 'macan/whatsapp',
+      resource_type: resolveResourceType(file),
+      public_id: `${Date.now()}-${nameWithoutExt}`,
+    };
+  },
+});
+
+const whatsappMediaUpload = multer({
+  storage: whatsappMediaStorage,
+  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB — WhatsApp media ceiling
+});
+
 module.exports = {
   cloudinary,
   avatarUpload,
   updateUpload,
   taskAttachmentUpload,
+  emailAttachmentUpload,
+  whatsappMediaUpload,
 };

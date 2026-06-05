@@ -21,6 +21,9 @@ import ChecklistEditor from './ChecklistEditor';
 import UpdatesTab from './UpdatesTab';
 import FilesTab from './FilesTab';
 import ActivityLogTab from './ActivityLogTab';
+import EmailsTab from './EmailsTab';
+import SmsTab from './SmsTab';
+import WhatsAppTab from './WhatsAppTab';
 import SubitemsList from './SubitemsList';
 import AssigneePicker from './AssigneePicker';
 
@@ -97,6 +100,9 @@ const CommentPanel = ({
   const [activeTab, setActiveTab] = useState('updates');
   const [updatesCount, setUpdatesCount] = useState(0);
   const [filesCount, setFilesCount] = useState(0);
+  const [emailsCount, setEmailsCount] = useState(0);
+  const [smsCount, setSmsCount] = useState(0);
+  const [whatsappCount, setWhatsappCount] = useState(0);
 
   // Org members for @mention
   const currentOrg = useOrgStore((s) => s.currentOrg);
@@ -135,6 +141,9 @@ const CommentPanel = ({
       setActiveTab('updates');
       setUpdatesCount(0);
       setFilesCount(0);
+      setEmailsCount(0);
+      setSmsCount(0);
+      setWhatsappCount(0);
       loadedTaskIdRef.current = null;
       return;
     }
@@ -771,6 +780,14 @@ const CommentPanel = ({
                 { key: 'updates', label: 'Updates', count: updatesCount },
                 { key: 'comments', label: 'Comments', count: comments.length },
                 { key: 'files', label: 'Files', count: filesCount },
+                // Emails / SMS / WhatsApp are board-task (lead) scoped — hidden on personal tasks.
+                ...(board
+                  ? [
+                      { key: 'emails', label: 'Emails', count: emailsCount },
+                      { key: 'sms', label: 'SMS', count: smsCount },
+                      { key: 'whatsapp', label: 'WhatsApp', count: whatsappCount },
+                    ]
+                  : []),
                 { key: 'activity', label: 'Activity Log' },
               ]}
             />
@@ -798,6 +815,45 @@ const CommentPanel = ({
                 }}
               >
                 <FilesTab task={task} onCountChange={setFilesCount} />
+              </div>
+            )}
+
+            {activeTab === 'emails' && board && (
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <EmailsTab task={task} onCountChange={setEmailsCount} />
+              </div>
+            )}
+
+            {activeTab === 'sms' && board && (
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <SmsTab task={task} onCountChange={setSmsCount} />
+              </div>
+            )}
+
+            {activeTab === 'whatsapp' && board && (
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <WhatsAppTab task={task} onCountChange={setWhatsappCount} />
               </div>
             )}
 

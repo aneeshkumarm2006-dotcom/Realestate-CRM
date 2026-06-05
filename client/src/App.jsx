@@ -16,9 +16,14 @@ import OnboardingPage from './pages/OnboardingPage';
 import DashboardPage from './pages/DashboardPage';
 import MyBoardsPage from './pages/MyBoardsPage';
 import BoardDetailPage from './pages/BoardDetailPage';
+import FormBuilderPage from './pages/FormBuilderPage';
+import PublicFormPage from './pages/PublicFormPage';
 import CalendarPage from './pages/CalendarPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ProductivityPage from './pages/ProductivityPage';
+import AutomationsPage from './pages/AutomationsPage';
+import IntegrationsPage from './pages/IntegrationsPage';
+import LeadIntakePage from './pages/LeadIntakePage';
 import MyTasksPage from './pages/MyTasksPage';
 import SettingsPage from './pages/SettingsPage';
 import MembersPage from './pages/MembersPage';
@@ -148,6 +153,9 @@ function App() {
           }
         />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        {/* F13 — public, brandable intake form. No auth shell, no navbar. A
+            logged-in admin can still open it to preview their own form. */}
+        <Route path="/f/:slug" element={<PublicFormPage />} />
 
         {/* Protected */}
         <Route element={<ProtectedRoute />}>
@@ -161,6 +169,15 @@ function App() {
             <Route element={<RequireAdmin />}>
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/productivity" element={<ProductivityPage />} />
+              {/* F6 — Recipe library & automation builder (admin-only) */}
+              <Route path="/automations" element={<AutomationsPage />} />
+              <Route path="/boards/:id/automations" element={<AutomationsPage />} />
+              <Route path="/boards/:id/integrations" element={<IntegrationsPage />} />
+              {/* F9 — Automated Lead Agent: per-board intake policy (admin-only) */}
+              <Route path="/boards/:id/intake" element={<LeadIntakePage />} />
+              {/* F13 — public form builder (admin-only) */}
+              <Route path="/forms/new" element={<FormBuilderPage />} />
+              <Route path="/forms/:id/edit" element={<FormBuilderPage />} />
             </Route>
             <Route path="/members" element={<MembersPage />} />
             <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />

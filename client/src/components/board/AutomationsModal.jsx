@@ -15,6 +15,8 @@ import Input from '../ui/Input';
 import Button from '../ui/Button';
 import AssigneePicker from './AssigneePicker';
 import AutomationRunLog from './AutomationRunLog';
+import TemplateVariableMenu from './TemplateVariableMenu';
+import { WhatsAppTemplateField } from './automationFields';
 import * as automationService from '../../services/automationService';
 
 const TRIGGER_OPTIONS = [
@@ -73,10 +75,103 @@ const CONDITION_TYPES = [
   { value: 'ITEM_IN_STATUS', label: 'item is in status' },
 ];
 
-const ACTION_TYPES = [
-  { value: 'CREATE_SUBITEM', label: 'Create a subitem' },
-  { value: 'CREATE_TASK', label: 'Create a task' },
+// Human labels for every F5 action type (the catalog returns only `type`).
+const ACTION_LABELS = {
+  CREATE_TASK: 'Create a task',
+  CREATE_SUBITEM: 'Create a subitem',
+  SET_COLUMN_VALUE: 'Set a column value',
+  MOVE_TO_GROUP: 'Move item to group',
+  NOTIFY_PERSON: 'Notify a person',
+  SEND_EMAIL: 'Send email',
+  SEND_SMS: 'Send SMS',
+  SEND_WHATSAPP: 'Send WhatsApp',
+  CREATE_CALENDAR_EVENT: 'Create calendar event',
+  POST_WEBHOOK: 'Post webhook',
+  ASSIGN_LEAD_AGENT: 'Assign lead agent',
+};
+
+const PHASE3_NOTE = 'Available after Phase 3';
+
+// Fallback catalog so the action picker still offers the two always-available
+// actions before `GET /api/automations/action-catalog` resolves.
+const FALLBACK_CATALOG = [
+  {
+    type: 'CREATE_SUBITEM',
+    disabled: false,
+    requires: null,
+    configSchema: {
+      fields: [
+        { key: 'name', label: 'Subitem name', type: 'text', required: true, template: true },
+        { key: 'priority', label: 'Priority', type: 'priority' },
+        { key: 'assignedTo', label: 'Assignees', type: 'users' },
+        { key: 'note', label: 'Note', type: 'textarea' },
+      ],
+    },
+  },
+  {
+    type: 'CREATE_TASK',
+    disabled: false,
+    requires: null,
+    configSchema: {
+      fields: [
+        { key: 'name', label: 'Task name', type: 'text', required: true, template: true },
+        { key: 'group', label: 'Group', type: 'group', required: true },
+        { key: 'priority', label: 'Priority', type: 'priority' },
+        { key: 'assignedTo', label: 'Assignees', type: 'users' },
+        { key: 'note', label: 'Note', type: 'textarea' },
+      ],
+    },
+  },
 ];
+
+const catalogEntry = (catalog, type) =>
+  (catalog && catalog.length ? catalog : FALLBACK_CATALOG).find((c) => c.type === type) ||
+  FALLBACK_CATALOG.find((c) => c.type === type) ||
+  null;
+
+const fieldsForType = (catalog, type) => catalogEntry(catalog, type)?.configSchema?.fields || [];
+
+/**
+ * Seed a fresh `config` object for a newly-chosen action type from its schema
+ * defaults (priority → medium, group → first group, booleans → false, …).
+ */
+const defaultConfigForType = (catalog, type, groups) => {
+  const cfg = {};
+  for (const f of fieldsForType(catalog, type)) {
+    if (f.type === 'priority') cfg[f.key] = 'medium';
+    else if (f.type === 'users') cfg[f.key] = [];
+    else if (f.type === 'boolean') cfg[f.key] = false;
+    else if (f.type === 'group') cfg[f.key] = groups?.[0]?._id || '';
+    else if (f.type === 'select') cfg[f.key] = f.options?.[0]?.value || '';
+    else if (f.type === 'keyValue') cfg[f.key] = {};
+    else cfg[f.key] = '';
+  }
+  return cfg;
+};
+
+/**
+ * Schema-driven required-field validation for an actions[] list. Returns an
+ * error string or null. Falls back to the legacy name/group checks for the two
+ * core actions when the catalog hasn't loaded.
+ */
+const validateActionList = (actions, catalog) => {
+  if (!actions || actions.length === 0) return 'Add at least one action';
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i];
+    const cfg = a.config || {};
+    const entry = catalogEntry(catalog, a.type);
+    const fields = entry?.configSchema?.fields || [];
+    for (const f of fields) {
+      if (!f.required) continue;
+      const v = cfg[f.key];
+      const empty =
+        v == null || v === '' || (Array.isArray(v) && v.length === 0) ||
+        (typeof v === 'string' && !v.trim());
+      if (empty) return `Action ${i + 1}: ${f.label} is required`;
+    }
+  }
+  return null;
+};
 
 const PRIORITIES = [
   { value: 'low', label: 'Low' },
@@ -187,17 +282,7 @@ const describeEventDriven = (automation, groups = [], statuses = []) => {
   }
 
   if (actions.length === 0) return `${when} → (no actions)`;
-
-  const subitemCount = actions.filter((a) => a.type === 'CREATE_SUBITEM').length;
-  const taskCount = actions.filter((a) => a.type === 'CREATE_TASK').length;
-  const phrases = [];
-  if (subitemCount > 0) {
-    phrases.push(`create ${subitemCount} subitem${subitemCount === 1 ? '' : 's'}`);
-  }
-  if (taskCount > 0) {
-    phrases.push(`create ${taskCount} task${taskCount === 1 ? '' : 's'}`);
-  }
-  return `${when} → ${phrases.join(' & ')}`;
+  return `${when} → ${describeActionCount(automation)}`;
 };
 
 /**
@@ -219,17 +304,17 @@ const describeGroupCreated = (automation) => {
 };
 
 /**
- * Count the actions of an automation as a short phrase ("create 2 subitems").
+ * Count the actions of an automation as a short phrase, e.g.
+ * "create a subitem ×2 & set a column value".
  */
 const describeActionCount = (automation) => {
   const actions = Array.isArray(automation.actions) ? automation.actions : [];
   if (actions.length === 0) return '(no actions)';
-  const subitems = actions.filter((a) => a.type === 'CREATE_SUBITEM').length;
-  const tasks = actions.filter((a) => a.type === 'CREATE_TASK').length;
-  const parts = [];
-  if (subitems) parts.push(`create ${subitems} subitem${subitems === 1 ? '' : 's'}`);
-  if (tasks) parts.push(`create ${tasks} task${tasks === 1 ? '' : 's'}`);
-  return parts.length ? parts.join(' & ') : `${actions.length} action(s)`;
+  const counts = {};
+  for (const a of actions) counts[a.type] = (counts[a.type] || 0) + 1;
+  return Object.entries(counts)
+    .map(([t, n]) => `${(ACTION_LABELS[t] || t).toLowerCase()}${n > 1 ? ` ×${n}` : ''}`)
+    .join(' & ');
 };
 
 /**
@@ -304,14 +389,22 @@ const formatNextRun = (iso) => {
   });
 };
 
+// Stable client-only key for an action row. ActionRow wraps a stateful
+// TemplateVariableMenu, so list renders must key on a stable id (not the array
+// index) — otherwise deleting/reordering a row carries the menu's open/query
+// state onto the wrong row. Stripped from the payload (buildActionsPayload sends
+// only { type, config }).
+const newActionKey = () => `act_${Math.random().toString(36).slice(2, 10)}`;
+
 /**
- * Blank action row for the ITEM_CREATED builder. CREATE_SUBITEM is the
- * default since that matches the screenshot flow ("create N subitems").
+ * Blank action row. CREATE_SUBITEM is the default (matches the original
+ * "create N subitems" flow). The action is stored in `{ id, type, config }`
+ * shape — `config` holds the per-type fields the F5 registry validates.
  */
-const buildEmptyAction = (groups) => ({
+const buildEmptyAction = () => ({
+  id: newActionKey(),
   type: 'CREATE_SUBITEM',
-  name: '',
-  group: groups?.[0]?._id || '',
+  config: { name: '', priority: 'medium', assignedTo: [], note: '' },
 });
 
 /**
@@ -374,14 +467,15 @@ const formFromAutomation = (a, groups) => {
         : idOf(c.value) || '',
   }));
 
-  const actions = (a.actions || []).map((act) => ({
-    type: act.type,
-    name: act.config?.name || '',
-    group: idOf(act.config?.group) || '',
-    priority: act.config?.priority || 'medium',
-    assignedTo: (act.config?.assignedTo || []).map((u) => idOf(u)),
-    note: act.config?.note || '',
-  }));
+  // Actions load in `{ type, config }` shape — config is the raw per-type object
+  // the F5 registry validated. Normalise any id refs (group / assignedTo) that
+  // might arrive as objects so the form selects bind to ids.
+  const actions = (a.actions || []).map((act) => {
+    const c = { ...(act.config || {}) };
+    if (c.group) c.group = idOf(c.group);
+    if (Array.isArray(c.assignedTo)) c.assignedTo = c.assignedTo.map((u) => idOf(u));
+    return { id: newActionKey(), type: act.type, config: c };
+  });
 
   const groupCreatedTemplates = (a.groupCreatedTaskTemplates || []).map((tpl) => ({
     name: tpl.name || '',
@@ -697,20 +791,323 @@ const ConditionRow = ({
   );
 };
 
+const smallInputStyle = (disabled) => ({
+  height: 32,
+  padding: '0 8px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1.5px solid var(--color-border)',
+  background: 'var(--color-bg-surface)',
+  color: 'var(--color-text-primary)',
+  fontSize: 13,
+  width: '100%',
+  cursor: disabled ? 'not-allowed' : 'text',
+  opacity: disabled ? 0.6 : 1,
+});
+
 /**
- * One action row in the ITEM_CREATED builder. CREATE_SUBITEM hides the
- * group selector (subitems inherit their parent's group); CREATE_TASK
- * requires a group.
+ * SET_COLUMN_VALUE value editor — adapts to the chosen column's type (status →
+ * option select, checkbox → toggle, date → date input, person → assignee
+ * picker, …).
+ */
+const ColumnValueField = ({ board, columnId, value, onChange, members, disabled }) => {
+  const col = findColumn(board, columnId);
+  if (!col) {
+    return (
+      <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+        Choose a column first.
+      </p>
+    );
+  }
+  if (col.type === 'status' || col.type === 'dropdown') {
+    const opts = optionsForColumn(col);
+    return (
+      <select
+        value={value || ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        style={selectStyle(disabled)}
+        className="font-body"
+      >
+        <option value="">Select value…</option>
+        {opts.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    );
+  }
+  if (col.type === 'checkbox') {
+    return <Toggle checked={!!value} onChange={onChange} disabled={disabled} label={value ? 'Checked' : 'Unchecked'} />;
+  }
+  if (col.type === 'person') {
+    return (
+      <AssigneePicker
+        members={members}
+        value={Array.isArray(value) ? value : []}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    );
+  }
+  if (col.type === 'number' || col.type === 'rating') {
+    return (
+      <input
+        type="number"
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        style={smallInputStyle(disabled)}
+        className="font-body"
+      />
+    );
+  }
+  if (col.type === 'date') {
+    const dateVal = typeof value === 'string' ? value.slice(0, 10) : '';
+    return (
+      <input
+        type="date"
+        value={dateVal}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        style={smallInputStyle(disabled)}
+        className="font-body"
+      />
+    );
+  }
+  return (
+    <input
+      type="text"
+      value={value ?? ''}
+      placeholder="Value"
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      style={smallInputStyle(disabled)}
+      className="font-body"
+    />
+  );
+};
+
+/**
+ * Minimal key/value editor (one `key=value` per line) for the SEND_WHATSAPP
+ * `variables` contract field. Parses into an object on every change.
+ */
+const KeyValueField = ({ value, onChange, disabled }) => {
+  const [text, setText] = useState(() =>
+    Object.entries(value || {}).map(([k, v]) => `${k}=${v}`).join('\n')
+  );
+  const handle = (t) => {
+    setText(t);
+    const obj = {};
+    t.split('\n').forEach((line) => {
+      const i = line.indexOf('=');
+      if (i > 0) obj[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    });
+    onChange(obj);
+  };
+  return (
+    <textarea
+      rows={2}
+      value={text}
+      placeholder="key=value (one per line)"
+      disabled={disabled}
+      onChange={(e) => handle(e.target.value)}
+      style={{ ...smallInputStyle(disabled), height: 'auto', padding: 8, resize: 'vertical' }}
+      className="font-body"
+    />
+  );
+};
+
+/**
+ * Render a single action-config field from the registry's `configSchema`. The
+ * field `type` drives the control; `template: true` fields use the
+ * TemplateVariableMenu so `{{Column Name}}` variables can be inserted.
+ */
+const ActionConfigField = ({ field, config, onPatch, board, groups, members, disabled }) => {
+  const value = config[field.key];
+  const set = (v) => onPatch(field.key, v);
+
+  let control;
+  switch (field.type) {
+    case 'text':
+      control = field.template ? (
+        <TemplateVariableMenu
+          value={value || ''}
+          onChange={set}
+          board={board}
+          placeholder={field.label}
+          multiline={false}
+          disabled={disabled}
+          style={{ height: 32, padding: '0 8px' }}
+        />
+      ) : (
+        <input
+          type="text"
+          value={value || ''}
+          placeholder={field.label}
+          disabled={disabled}
+          onChange={(e) => set(e.target.value)}
+          style={smallInputStyle(disabled)}
+          className="font-body"
+        />
+      );
+      break;
+    case 'textarea':
+      control = field.template ? (
+        <TemplateVariableMenu value={value || ''} onChange={set} board={board} placeholder={field.label} rows={3} disabled={disabled} />
+      ) : (
+        <textarea
+          rows={3}
+          value={value || ''}
+          placeholder={field.label}
+          disabled={disabled}
+          onChange={(e) => set(e.target.value)}
+          style={{ ...smallInputStyle(disabled), height: 'auto', padding: 8, resize: 'vertical' }}
+          className="font-body"
+        />
+      );
+      break;
+    case 'group':
+      control = (
+        <select value={value || ''} disabled={disabled} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
+          <option value="">Select group…</option>
+          {groups.map((g) => (
+            <option key={g._id} value={g._id}>{g.name}</option>
+          ))}
+        </select>
+      );
+      break;
+    case 'priority':
+      control = (
+        <select value={value || 'medium'} disabled={disabled} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
+          {PRIORITIES.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+      );
+      break;
+    case 'users':
+      control = (
+        <AssigneePicker members={members} value={Array.isArray(value) ? value : []} onChange={set} disabled={disabled} />
+      );
+      break;
+    case 'column': {
+      const cols = field.columnType ? columnsOfType(board, field.columnType) : boardColumns(board);
+      control = (
+        <select value={value || ''} disabled={disabled || cols.length === 0} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
+          <option value="">{cols.length === 0 ? '— no matching columns —' : 'Select column…'}</option>
+          {cols.map((c) => (
+            <option key={c._id} value={c._id}>{c.name}</option>
+          ))}
+        </select>
+      );
+      break;
+    }
+    case 'columnValue':
+      control = (
+        <ColumnValueField board={board} columnId={config.columnId} value={value} onChange={set} members={members} disabled={disabled} />
+      );
+      break;
+    case 'userOrColumn': {
+      const personCols = columnsOfType(board, 'person');
+      control = (
+        <select value={value || ''} disabled={disabled} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
+          <option value="">Select recipient…</option>
+          {(members || []).length > 0 && (
+            <optgroup label="People">
+              {(members || []).map((m) => (
+                <option key={m._id} value={m._id}>{m.name}</option>
+              ))}
+            </optgroup>
+          )}
+          {personCols.length > 0 && (
+            <optgroup label="From a person column">
+              {personCols.map((c) => (
+                <option key={c._id} value={c._id}>{c.name}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      );
+      break;
+    }
+    case 'boolean':
+      control = <Toggle checked={!!value} onChange={set} disabled={disabled} label={field.label} />;
+      break;
+    case 'number':
+      control = (
+        <input type="number" value={value ?? ''} placeholder={field.label} disabled={disabled} onChange={(e) => set(e.target.value)} style={smallInputStyle(disabled)} className="font-body" />
+      );
+      break;
+    case 'select':
+      control = (
+        <select value={value || ''} disabled={disabled} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
+          {(field.options || []).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      );
+      break;
+    case 'keyValue':
+      control = <KeyValueField value={value || {}} onChange={set} disabled={disabled} />;
+      break;
+    case 'whatsappTemplate':
+      control = <WhatsAppTemplateField board={board} value={value} onChange={set} disabled={disabled} />;
+      break;
+    case 'endpoint':
+    default:
+      control = (
+        <input type="text" value={value || ''} placeholder={field.label} disabled={disabled} onChange={(e) => set(e.target.value)} style={smallInputStyle(disabled)} className="font-body" />
+      );
+  }
+
+  // Boolean fields carry their own inline label.
+  if (field.type === 'boolean') return <div>{control}</div>;
+  return (
+    <div>
+      <FieldLabel>
+        {field.label}
+        {field.required ? ' *' : ''}
+      </FieldLabel>
+      {control}
+    </div>
+  );
+};
+
+/**
+ * One action row — a type picker plus the per-type config form rendered from the
+ * F5 action catalog's `configSchema`. Disabled (un-shipped-channel) actions are
+ * selectable so an automation can be authored ahead of time, but show an
+ * "Available after Phase 3" banner.
  */
 const ActionRow = ({
   action,
   index,
   onChange,
   onRemove,
-  groupOptions,
+  catalog,
+  board,
+  groups,
+  members,
   disabled,
 }) => {
-  const isSubitem = action.type === 'CREATE_SUBITEM';
+  const types = (catalog && catalog.length ? catalog : FALLBACK_CATALOG);
+  const entry = catalogEntry(catalog, action.type);
+  const fields = entry?.configSchema?.fields || [];
+  const isDisabledAction = !!entry?.disabled;
+
+  const patch = (key, value) => {
+    const nextConfig = { ...(action.config || {}), [key]: value };
+    // Changing the target column invalidates a previously-picked value (the new
+    // column type may be incompatible) — clear it so the value editor re-binds
+    // cleanly instead of saving a stale, mismatched value.
+    if (action.type === 'SET_COLUMN_VALUE' && key === 'columnId') {
+      nextConfig.value = '';
+    }
+    onChange({ ...action, config: nextConfig });
+  };
+
+  const changeType = (newType) =>
+    onChange({ ...action, type: newType, config: defaultConfigForType(catalog, newType, groups) });
+
   return (
     <div
       className="flex flex-col gap-2"
@@ -724,19 +1121,14 @@ const ActionRow = ({
       <div className="flex items-center gap-2">
         <span
           className="font-body"
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: 'var(--color-text-muted)',
-            minWidth: 60,
-          }}
+          style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', minWidth: 60 }}
         >
           {index === 0 ? 'Then' : 'and then'}
         </span>
         <select
           value={action.type}
           disabled={disabled}
-          onChange={(e) => onChange({ ...action, type: e.target.value })}
+          onChange={(e) => changeType(e.target.value)}
           className="font-body"
           style={{
             height: 32,
@@ -750,9 +1142,9 @@ const ActionRow = ({
             minWidth: 0,
           }}
         >
-          {ACTION_TYPES.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
+          {types.map((c) => (
+            <option key={c.type} value={c.type}>
+              {(c.describe || ACTION_LABELS[c.type] || c.type) + (c.disabled ? ' · Phase 3' : '')}
             </option>
           ))}
         </select>
@@ -773,49 +1165,40 @@ const ActionRow = ({
           <X size={12} color="var(--color-text-secondary)" />
         </button>
       </div>
-      <div className={isSubitem ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-2 gap-2'}>
-        <input
-          type="text"
-          placeholder={isSubitem ? 'Subitem name' : 'Task name'}
-          value={action.name}
-          disabled={disabled}
-          onChange={(e) => onChange({ ...action, name: e.target.value })}
-          className="font-body"
+
+      {isDisabledAction && (
+        <div
+          className="flex items-center gap-2"
           style={{
-            height: 32,
-            padding: '0 8px',
+            padding: '6px 10px',
             borderRadius: 'var(--radius-sm)',
-            border: '1.5px solid var(--color-border)',
-            background: 'var(--color-bg-surface)',
-            color: 'var(--color-text-primary)',
-            fontSize: 13,
+            background: 'var(--color-bg-subtle)',
+            color: 'var(--color-text-muted)',
           }}
-        />
-        {!isSubitem && (
-          <select
-            value={action.group || ''}
-            disabled={disabled || groupOptions.length === 0}
-            onChange={(e) => onChange({ ...action, group: e.target.value })}
-            className="font-body"
-            style={{
-              height: 32,
-              padding: '0 8px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1.5px solid var(--color-border)',
-              background: 'var(--color-bg-surface)',
-              color: 'var(--color-text-primary)',
-              fontSize: 13,
-            }}
-          >
-            <option value="">Select group…</option>
-            {groupOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+        >
+          <Zap size={13} aria-hidden="true" />
+          <span className="font-body" style={{ fontSize: 11 }}>
+            {PHASE3_NOTE}. You can configure it now — it runs once the channel is connected.
+          </span>
+        </div>
+      )}
+
+      {fields.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {fields.map((f) => (
+            <ActionConfigField
+              key={f.key}
+              field={f}
+              config={action.config || {}}
+              onPatch={patch}
+              board={board}
+              groups={groups}
+              members={members}
+              disabled={disabled}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -830,8 +1213,10 @@ const EventDrivenBuilder = ({
   setForm,
   saving,
   groups,
-  groupOptions,
+  members,
   statuses,
+  board,
+  catalog,
 }) => {
   const conditions = form.conditions || [];
   const actions = form.actions || [];
@@ -942,12 +1327,15 @@ const EventDrivenBuilder = ({
       <div className="flex flex-col gap-2">
         {actions.map((a, i) => (
           <ActionRow
-            key={i}
+            key={a.id || i}
             action={a}
             index={i}
             onChange={(next) => updateAction(i, next)}
             onRemove={() => removeAction(i)}
-            groupOptions={groupOptions}
+            catalog={catalog}
+            board={board}
+            groups={groups}
+            members={members}
             disabled={saving}
           />
         ))}
@@ -974,10 +1362,11 @@ const EventDrivenBuilder = ({
 };
 
 /**
- * Reusable "Then …" actions list (CREATE_TASK / CREATE_SUBITEM) shared by the
- * F4 event-trigger builder. Mirrors the actions block inside EventDrivenBuilder.
+ * Reusable "Then …" actions list shared by the F4 event-trigger builder. Renders
+ * the full F5 action catalog (CREATE_TASK / SET_COLUMN_VALUE / NOTIFY_PERSON /
+ * channel contracts / …). Mirrors the actions block inside EventDrivenBuilder.
  */
-const ActionsSection = ({ form, setForm, groups, groupOptions, saving }) => {
+const ActionsSection = ({ form, setForm, groups, board, members, catalog, saving }) => {
   const actions = form.actions || [];
   const updateAction = (idx, next) =>
     setForm((f) => ({
@@ -987,7 +1376,7 @@ const ActionsSection = ({ form, setForm, groups, groupOptions, saving }) => {
   const removeAction = (idx) =>
     setForm((f) => ({ ...f, actions: f.actions.filter((_, i) => i !== idx) }));
   const addAction = () =>
-    setForm((f) => ({ ...f, actions: [...(f.actions || []), buildEmptyAction(groups)] }));
+    setForm((f) => ({ ...f, actions: [...(f.actions || []), buildEmptyAction()] }));
 
   return (
     <div className="flex flex-col gap-2">
@@ -996,12 +1385,15 @@ const ActionsSection = ({ form, setForm, groups, groupOptions, saving }) => {
       </div>
       {actions.map((a, i) => (
         <ActionRow
-          key={i}
+          key={a.id || i}
           action={a}
           index={i}
           onChange={(next) => updateAction(i, next)}
           onRemove={() => removeAction(i)}
-          groupOptions={groupOptions}
+          catalog={catalog}
+          board={board}
+          groups={groups}
+          members={members}
           disabled={saving}
         />
       ))}
@@ -1291,7 +1683,7 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
  * Builder shown for the six F4 event triggers: a per-type trigger-config form
  * followed by the shared "Then …" actions list.
  */
-const EventTriggerBuilder = ({ form, setForm, board, members, groups, groupOptions, saving }) => (
+const EventTriggerBuilder = ({ form, setForm, board, members, groups, catalog, saving }) => (
   <div className="flex flex-col gap-3">
     <TriggerConfigForm
       form={form}
@@ -1304,7 +1696,9 @@ const EventTriggerBuilder = ({ form, setForm, board, members, groups, groupOptio
       form={form}
       setForm={setForm}
       groups={groups}
-      groupOptions={groupOptions}
+      board={board}
+      members={members}
+      catalog={catalog}
       saving={saving}
     />
   </div>
@@ -1591,6 +1985,13 @@ const AutomationsModal = ({
   groups = [],
   members = [],
   isAdmin = false,
+  // When true the builder renders inline inside the page (no modal overlay) and
+  // opens straight into the form — used by AutomationsPage so "New automation"
+  // (and editing a classic automation) stays on the same screen instead of
+  // popping a dialog.
+  embedded = false,
+  // In embedded mode, the automation to edit (null → create a new one).
+  editAutomation = null,
 }) => {
   const boardStatuses = useMemo(
     () => (board && Array.isArray(board.statuses) ? board.statuses : []),
@@ -1606,13 +2007,28 @@ const AutomationsModal = ({
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [runLogFor, setRunLogFor] = useState(null);
+  // F5 action catalog (the dynamic action picker reads configSchema from here).
+  const [actionCatalog, setActionCatalog] = useState([]);
 
   const tzList = useMemo(() => getTimezoneList(), []);
 
   useEffect(() => {
     if (!isOpen || !boardId) return;
-    setView('list');
-    setEditingId(null);
+    if (embedded) {
+      // Embedded mode skips the inner list and opens directly in the form.
+      if (editAutomation) {
+        setEditingId(editAutomation._id);
+        setForm(formFromAutomation(editAutomation, groups));
+      } else {
+        setEditingId(null);
+        setForm(buildInitialForm(groups));
+      }
+      setFormError(null);
+      setView('form');
+    } else {
+      setView('list');
+      setEditingId(null);
+    }
     setListError(null);
     setLoading(true);
     automationService
@@ -1627,6 +2043,14 @@ const AutomationsModal = ({
       })
       .finally(() => setLoading(false));
   }, [isOpen, boardId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    automationService
+      .getActionCatalog()
+      .then((catalog) => setActionCatalog(Array.isArray(catalog) ? catalog : []))
+      .catch((err) => console.error('Failed to load action catalog:', err));
+  }, [isOpen]);
 
   const groupOptions = useMemo(
     () => groups.map((g) => ({ value: g._id, label: g.name })),
@@ -1658,6 +2082,11 @@ const AutomationsModal = ({
 
   const backToList = () => {
     if (saving) return;
+    // Embedded mode has no inner list — leaving the form returns to the page.
+    if (embedded) {
+      onClose?.();
+      return;
+    }
     setView('list');
     setEditingId(null);
     setFormError(null);
@@ -1699,17 +2128,11 @@ const AutomationsModal = ({
     }
   };
 
-  const buildEventActions = () =>
-    (form.actions || []).map((a) => {
-      const config = {
-        name: a.name.trim(),
-        priority: a.priority || 'medium',
-        assignedTo: a.assignedTo || [],
-        note: a.note?.trim() || undefined,
-      };
-      if (a.type === 'CREATE_TASK') config.group = a.group;
-      return { type: a.type, config };
-    });
+  // Actions are stored in the form already as `{ type, config }` (config carries
+  // the per-type fields the registry validates), so the payload passes config
+  // through verbatim — the backend registry normalises (trims, Number()s, …).
+  const buildActionsPayload = () =>
+    (form.actions || []).map((a) => ({ type: a.type, config: a.config || {} }));
 
   const buildPayload = () => {
     if (NEW_EVENT_TRIGGERS.includes(form.triggerType)) {
@@ -1719,7 +2142,7 @@ const AutomationsModal = ({
         triggerType: form.triggerType,
         triggerConfig: buildTriggerConfig(),
         conditions: [],
-        actions: buildEventActions(),
+        actions: buildActionsPayload(),
       };
     }
 
@@ -1759,18 +2182,7 @@ const AutomationsModal = ({
           type: c.type,
           value: c.value,
         })),
-        actions: (form.actions || []).map((a) => {
-          const config = {
-            name: a.name.trim(),
-            priority: a.priority || 'medium',
-            assignedTo: a.assignedTo || [],
-            note: a.note?.trim() || undefined,
-          };
-          if (a.type === 'CREATE_TASK') {
-            config.group = a.group;
-          }
-          return { type: a.type, config };
-        }),
+        actions: buildActionsPayload(),
       };
     }
 
@@ -1809,18 +2221,7 @@ const AutomationsModal = ({
     };
   };
 
-  const validateActions = () => {
-    const acts = form.actions || [];
-    if (acts.length === 0) return 'Add at least one action';
-    for (let i = 0; i < acts.length; i++) {
-      const a = acts[i];
-      if (!a.name?.trim()) return `Action ${i + 1}: task name is required`;
-      if (a.type === 'CREATE_TASK' && !a.group) {
-        return `Action ${i + 1}: choose a group for the new task`;
-      }
-    }
-    return null;
-  };
+  const validateActions = () => validateActionList(form.actions, actionCatalog);
 
   const validateLocal = () => {
     if (!form.name.trim()) return 'Automation name is required';
@@ -1868,15 +2269,8 @@ const AutomationsModal = ({
     }
 
     if (form.triggerType === 'ITEM_CREATED') {
-      const acts = form.actions || [];
-      if (acts.length === 0) return 'Add at least one action';
-      for (let i = 0; i < acts.length; i++) {
-        const a = acts[i];
-        if (!a.name?.trim()) return `Action ${i + 1}: task name is required`;
-        if (a.type === 'CREATE_TASK' && !a.group) {
-          return `Action ${i + 1}: choose a group for the new task`;
-        }
-      }
+      const actionsError = validateActionList(form.actions, actionCatalog);
+      if (actionsError) return actionsError;
       const conds = form.conditions || [];
       for (let i = 0; i < conds.length; i++) {
         if (!conds[i].type) return `Condition ${i + 1}: choose a type`;
@@ -1923,6 +2317,11 @@ const AutomationsModal = ({
       } else {
         const created = await automationService.createAutomation(boardId, payload);
         setAutomations((list) => [created, ...list]);
+      }
+      // Embedded mode closes back to the page (which reloads its own list).
+      if (embedded) {
+        onClose?.();
+        return;
       }
       setView('list');
       setEditingId(null);
@@ -2226,22 +2625,24 @@ const AutomationsModal = ({
 
   const renderFormView = () => (
     <div className="flex flex-col gap-4">
-      <button
-        type="button"
-        onClick={backToList}
-        disabled={saving}
-        className="inline-flex items-center gap-1 self-start font-body"
-        style={{
-          fontSize: 13,
-          color: 'var(--color-text-muted)',
-          background: 'transparent',
-          border: 'none',
-          cursor: saving ? 'not-allowed' : 'pointer',
-        }}
-      >
-        <ChevronLeft size={14} aria-hidden="true" />
-        Back to list
-      </button>
+      {!embedded && (
+        <button
+          type="button"
+          onClick={backToList}
+          disabled={saving}
+          className="inline-flex items-center gap-1 self-start font-body"
+          style={{
+            fontSize: 13,
+            color: 'var(--color-text-muted)',
+            background: 'transparent',
+            border: 'none',
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <ChevronLeft size={14} aria-hidden="true" />
+          Back to list
+        </button>
+      )}
 
       <Input
         label="Automation Name"
@@ -2490,9 +2891,10 @@ const AutomationsModal = ({
           setForm={setForm}
           saving={saving}
           groups={groups}
-          groupOptions={groupOptions}
           members={members}
           statuses={boardStatuses}
+          board={board}
+          catalog={actionCatalog}
         />
       )}
 
@@ -2512,7 +2914,7 @@ const AutomationsModal = ({
           board={board}
           members={members}
           groups={groups}
-          groupOptions={groupOptions}
+          catalog={actionCatalog}
           saving={saving}
         />
       )}
@@ -2558,6 +2960,54 @@ const AutomationsModal = ({
       </Button>
     </>
   );
+
+  // Embedded mode: render the create form inline inside the page (no overlay),
+  // wrapped in a card with its own header + footer instead of a modal chrome.
+  if (embedded) {
+    if (!isOpen) return null;
+    return (
+      <>
+        <div
+          style={{
+            border: '1.5px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            background: 'var(--color-bg-surface)',
+          }}
+        >
+          <div
+            className="flex items-center justify-between"
+            style={{
+              padding: '14px 18px',
+              borderBottom: '1.5px solid var(--color-border)',
+            }}
+          >
+            <h2
+              className="font-display font-semibold"
+              style={{ fontSize: 16, color: 'var(--color-text-primary)' }}
+            >
+              {editingId ? 'Edit Automation' : 'New Automation'}
+            </h2>
+          </div>
+          <div style={{ padding: '18px' }}>{renderFormView()}</div>
+          <div
+            className="flex items-center justify-end gap-2"
+            style={{
+              padding: '14px 18px',
+              borderTop: '1.5px solid var(--color-border)',
+            }}
+          >
+            {footer}
+          </div>
+        </div>
+        <AutomationRunLog
+          isOpen={!!runLogFor}
+          onClose={() => setRunLogFor(null)}
+          automationId={runLogFor?._id}
+          automationName={runLogFor?.name}
+        />
+      </>
+    );
+  }
 
   return (
     <>

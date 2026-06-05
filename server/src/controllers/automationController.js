@@ -3,16 +3,23 @@ const Board = require('../models/Board');
 const Task = require('../models/Task');
 const TaskGroup = require('../models/TaskGroup');
 const Organisation = require('../models/Organisation');
-const User = require('../models/User');
 const Automation = require('../models/Automation');
-const {
-  createNotificationsForUsers,
-} = require('../services/notificationService');
-const { sendTaskAssignmentEmail } = require('../services/emailService');
+const AutomationRunLog = require('../models/AutomationRunLog');
 const {
   computeNextRunAt,
   validateSchedule,
 } = require('../services/automationSchedule');
+// F5: per-type action validation + the shared spawn helpers live in the
+// actionTypes registry; the dispatcher/date-runner/run-now all execute actions
+// through `runActions`.
+const {
+  validateActionConfig,
+  buildActionCatalog,
+  notifyAssignees,
+  resolveDefaultStatusId,
+  getActionType,
+} = require('../utils/actionTypes');
+const { runActions } = require('../services/automationActionRunner');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -60,12 +67,14 @@ const validateAssignees = (assignedTo, org) => {
   return { ids };
 };
 
+// NOTE: `actions.config` is now Mixed (the F5 registry owns per-type validation),
+// so Mongoose can't populate inside it. The FE reads raw ids out of action config
+// (its `idOf` helper handles both populated docs and raw ids), so we no longer
+// populate `actions.config.group` / `actions.config.assignedTo`.
 const populateAutomation = (query) =>
   query
     .populate('taskTemplate.group', 'name')
     .populate('taskTemplate.assignedTo', 'name profilePic email')
-    .populate('actions.config.group', 'name')
-    .populate('actions.config.assignedTo', 'name profilePic email')
     .populate('groupCreatedTaskTemplates.assignedTo', 'name profilePic email')
     .populate('createdBy', 'name profilePic email');
 
@@ -81,7 +90,6 @@ const VALID_TRIGGER_TYPES = [
   'WEBHOOK_RECEIVED',
 ];
 const VALID_CONDITION_TYPES = ['ITEM_IN_GROUP', 'ITEM_IN_STATUS', 'GROUP_NAME_MATCHES'];
-const VALID_ACTION_TYPES = ['CREATE_TASK', 'CREATE_SUBITEM'];
 
 // The six F4 event-driven triggers. They share the same persisted shape as
 // ITEM_CREATED — a `triggerConfig` block plus `actions[]` (and optional
@@ -372,97 +380,51 @@ const sanitizeGroupCreatedTemplates = (rawTemplates, org) => {
 };
 
 /**
- * Validate + normalise a single action's `config` block. CREATE_TASK
- * requires `group`; CREATE_SUBITEM does not (it inherits from the
- * triggering task). All other fields are optional.
- */
-const sanitizeActionConfig = async (actionType, rawConfig, board, boardId, org) => {
-  const cfg = rawConfig || {};
-  if (!cfg.name || !String(cfg.name).trim()) {
-    return { error: 'Action task name is required' };
-  }
-
-  const out = { name: String(cfg.name).trim() };
-
-  if (actionType === 'CREATE_TASK') {
-    if (!cfg.group || !mongoose.Types.ObjectId.isValid(cfg.group)) {
-      return { error: 'CREATE_TASK action requires a group' };
-    }
-    const group = await TaskGroup.findById(cfg.group);
-    if (!group || group.board.toString() !== boardId.toString()) {
-      return { error: 'Action group does not belong to board' };
-    }
-    out.group = cfg.group;
-  } else if (actionType === 'CREATE_SUBITEM') {
-    // group is inherited from the triggering task at run time, but if the
-    // caller sent one we silently drop it rather than failing.
-    if (cfg.group) out.group = undefined;
-  }
-
-  if (cfg.priority !== undefined && cfg.priority !== null && cfg.priority !== '') {
-    if (!VALID_PRIORITIES.includes(cfg.priority)) {
-      return { error: 'Invalid action priority' };
-    }
-    out.priority = cfg.priority;
-  } else {
-    out.priority = 'medium';
-  }
-
-  if (cfg.assignedTo !== undefined) {
-    const { ids, error } = validateAssignees(cfg.assignedTo, org);
-    if (error) return { error };
-    out.assignedTo = ids;
-  } else {
-    out.assignedTo = [];
-  }
-
-  if (cfg.status) {
-    if (!mongoose.Types.ObjectId.isValid(cfg.status)) {
-      return { error: 'Invalid action status' };
-    }
-    const known = (board?.statuses || []).some(
-      (s) => s._id.toString() === cfg.status.toString()
-    );
-    if (!known) {
-      return { error: 'Action status does not belong to board' };
-    }
-    out.status = cfg.status;
-  }
-
-  if (cfg.note) out.note = String(cfg.note);
-
-  return { config: out };
-};
-
-/**
- * Validate + normalise an actions[] array. Returns { actions } or { error }.
- * Empty arrays are rejected — an event-driven automation with nothing to
- * do is not useful.
+ * Validate + normalise an actions[] array via the F5 `actionTypes` registry.
+ * Each action's per-type `config` is validated by `actionTypes[type].validate`
+ * (the single source of truth, mirroring how `columnTypes` owns column values).
+ * Returns { actions } or { error }. Empty arrays are rejected — an event-driven
+ * automation with nothing to do is not useful.
+ *
+ * Channel-backed actions (SEND_EMAIL / SEND_SMS / … ) validate and persist now
+ * even while `disabled`; they execute as `skipped` until Phase 3/4 ships.
+ *
+ * The registry's validate is synchronous, so we pre-resolve the board's groups
+ * and member ids once and pass them as context (rather than a DB hit per action).
  */
 const sanitizeActions = async (rawActions, board, boardId, org) => {
   if (!Array.isArray(rawActions) || rawActions.length === 0) {
     return { error: 'At least one action is required' };
   }
+  const groups = await TaskGroup.find({ board: boardId }).select('_id').lean();
+  const memberIds = new Set((org?.members || []).map((m) => m.toString()));
+  const ctx = { board, groups, memberIds };
+
   const actions = [];
   for (const raw of rawActions) {
     if (!raw || typeof raw !== 'object') {
       return { error: 'Invalid action' };
     }
-    if (!VALID_ACTION_TYPES.includes(raw.type)) {
-      return { error: `Invalid action type "${raw.type}"` };
-    }
-    const { config, error } = await sanitizeActionConfig(
-      raw.type,
-      raw.config,
-      board,
-      boardId,
-      org
-    );
-    if (error) return { error };
+    const { ok, config, error } = validateActionConfig(raw.type, raw.config, ctx);
+    if (!ok) return { error };
     actions.push({ type: raw.type, config });
   }
   return { actions };
 };
+
+/**
+ * True when any action targets a channel whose phase hasn't shipped (the F5
+ * registry marks it `disabled`, e.g. SEND_EMAIL until F8). Such actions persist
+ * + validate fine but only execute as `skipped`, so an automation that still
+ * contains one is treated as `validation: 'incomplete'` — it can't fully run
+ * until the channel is connected. Used by `updateAutomation` to self-heal the
+ * flag after a manual edit and by the recipe clone path (F6.3).
+ */
+const automationNeedsSetup = (actions) =>
+  (Array.isArray(actions) ? actions : []).some((a) => {
+    const entry = getActionType(a.type);
+    return !!(entry && entry.disabled);
+  });
 
 const sanitizeSchedule = (raw) => {
   const s = {
@@ -488,134 +450,11 @@ const sanitizeSchedule = (raw) => {
   return s;
 };
 
-/**
- * Resolve the board's default status id. Returns the legacy enum string
- * 'not_started' as a fallback when the board has no statuses configured
- * (shouldn't happen post-migration).
- */
-const resolveDefaultStatusId = (board) => {
-  if (!board || !Array.isArray(board.statuses) || board.statuses.length === 0) {
-    return 'not_started';
-  }
-  const def =
-    board.statuses.find((s) => s.isDefault) ||
-    board.statuses.find((s) => s.key === 'not_started') ||
-    board.statuses[0];
-  return def ? def._id : 'not_started';
-};
-
-/**
- * Send assignee notifications + emails after an automation-created task
- * is saved. Mirrors the side effects a manual create has so users still
- * get pinged for tasks generated by automations.
- */
-const notifyAssignees = async (task, boardId, assigneeIds, orgId) => {
-  if (!assigneeIds.length) return;
-  await createNotificationsForUsers({
-    userIds: assigneeIds,
-    type: 'assigned',
-    message: `You were assigned to "${task.name}"`,
-    taskId: task._id,
-    orgId,
-  });
-
-  const taskLink = `${process.env.CLIENT_URL}/boards/${boardId}`;
-  const assigneeUsers = await User.find({ _id: { $in: assigneeIds } })
-    .select('email')
-    .lean();
-  const emailResults = await Promise.allSettled(
-    assigneeUsers
-      .filter((u) => u.email)
-      .map((u) =>
-        sendTaskAssignmentEmail({
-          to: u.email,
-          taskName: task.name,
-          priority: task.priority,
-          dueDate: task.dueDate,
-          taskLink,
-        })
-      )
-  );
-  emailResults.forEach((result, i) => {
-    if (result.status === 'rejected') {
-      console.error(
-        `[email] Failed to send to ${assigneeUsers[i]?.email}:`,
-        result.reason?.message || result.reason
-      );
-    }
-  });
-};
-
-/**
- * Spawn one task from a single action config. `actionType` controls whether
- * the new task is top-level (CREATE_TASK) or a child of `triggeringTask`
- * (CREATE_SUBITEM). Always tagged `createdByAutomation: true` so the
- * ITEM_CREATED dispatcher won't re-trigger on it.
- */
-const runActionOnce = async (action, automation, board, triggeringTask) => {
-  const cfg = action?.config || {};
-  const assigneeIds = (cfg.assignedTo || []).map((u) => u.toString());
-
-  let group;
-  let parent = null;
-
-  if (action.type === 'CREATE_SUBITEM') {
-    if (!triggeringTask) {
-      console.warn(
-        '[automation] CREATE_SUBITEM skipped — no triggering task on automation',
-        automation?._id?.toString()
-      );
-      return null;
-    }
-    group = triggeringTask.group;
-    parent = triggeringTask._id;
-  } else {
-    // CREATE_TASK — config.group is required (validated on save).
-    group = cfg.group;
-  }
-
-  if (!group) {
-    console.warn(
-      '[automation] action skipped — missing group on automation',
-      automation?._id?.toString()
-    );
-    return null;
-  }
-
-  // Status: prefer config override, fall back to board default. Validate
-  // override against the board's status set so a stale id from an old
-  // automation doesn't poison the task.
-  let status = resolveDefaultStatusId(board);
-  if (cfg.status) {
-    const cfgStatusId = cfg.status.toString();
-    const match = (board?.statuses || []).find(
-      (s) => s._id.toString() === cfgStatusId
-    );
-    if (match) status = match._id;
-  }
-
-  const task = await Task.create({
-    name: cfg.name,
-    board: automation.board,
-    group,
-    parent,
-    priority: cfg.priority || 'medium',
-    status,
-    assignedTo: assigneeIds,
-    note: cfg.note || undefined,
-    isPersonal: false,
-    createdBy: automation.createdBy,
-    createdByAutomation: true,
-  });
-
-  await Board.updateOne(
-    { _id: automation.board },
-    { $set: { updatedAt: new Date() } }
-  );
-
-  await notifyAssignees(task, automation.board, assigneeIds, automation.organisation);
-  return task;
-};
+// `resolveDefaultStatusId` and `notifyAssignees` now live in the F5
+// `actionTypes` registry (imported above) so the registry's CREATE_TASK /
+// CREATE_SUBITEM `execute` and the legacy SCHEDULE / GROUP_CREATED spawn paths
+// below share one copy. `runActionOnce` was retired — actions now execute
+// through `automationActionRunner.runActions`.
 
 /**
  * Spawn every template in `automation.groupCreatedTaskTemplates` into the
@@ -724,8 +563,6 @@ const runLegacyTemplateOnce = async (automation, board) => {
  * endpoint can keep returning a single `taskId` for backwards compat.
  */
 const runAutomationOnce = async (automation, ctx = {}) => {
-  const board = await Board.findById(automation.board).select('statuses');
-
   if (automation.triggerType === 'GROUP_CREATED') {
     if (!ctx.triggeringGroup) {
       console.warn(
@@ -734,21 +571,21 @@ const runAutomationOnce = async (automation, ctx = {}) => {
       );
       return null;
     }
+    const board = await Board.findById(automation.board).select('statuses');
     return runGroupCreatedTemplatesOnce(automation, board, ctx.triggeringGroup);
   }
 
+  // F5: event-driven actions[] run through the registry-backed action runner,
+  // which writes per-action AutomationRunLog rows + activity events. It loads
+  // its own board (statuses + columns), so no board fetch is needed here.
   const actions = Array.isArray(automation.actions) ? automation.actions : [];
   if (actions.length > 0) {
-    let lastTask = null;
-    for (const action of actions) {
-      const created = await runActionOnce(
-        action,
-        automation,
-        board,
-        ctx.triggeringTask
-      );
-      if (created) lastTask = created;
-    }
+    const { lastTask } = await runActions(automation, {
+      triggeringTask: ctx.triggeringTask,
+      prior: ctx.prior,
+      actorId: ctx.actorId,
+      cascadeDepth: ctx.cascadeDepth,
+    });
     return lastTask;
   }
 
@@ -760,6 +597,7 @@ const runAutomationOnce = async (automation, ctx = {}) => {
     return null;
   }
 
+  const board = await Board.findById(automation.board).select('statuses');
   return runLegacyTemplateOnce(automation, board);
 };
 
@@ -1009,6 +847,11 @@ const updateAutomation = async (req, res) => {
       const av = await sanitizeActions(body.actions, ctx.board, automation.board, ctx.org);
       if (av.error) return res.status(400).json({ error: av.error });
       automation.actions = av.actions;
+      // A successful strict validation means every binding resolved; the only
+      // remaining reason to stay 'incomplete' is a still-unconnected channel
+      // action. Self-heal the flag so a recipe-cloned automation flips back to
+      // 'complete' once the user finishes binding it in the chain editor.
+      automation.validation = automationNeedsSetup(av.actions) ? 'incomplete' : 'complete';
     }
 
     if (body.groupCreatedTaskTemplates !== undefined) {
@@ -1185,6 +1028,54 @@ const getRunLog = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/automations/:id/run-log/actions
+ *
+ * Member-level read of the per-action `AutomationRunLog` audit rows for one
+ * automation, most-recent-first. Complements `getRunLog` (the embedded last-20
+ * triggerHistory) with the unbounded, queryable audit trail (F5.3).
+ */
+const getActionRunLog = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+    const automation = await Automation.findById(id).select('board').lean();
+    if (!automation) return res.status(404).json({ error: 'Automation not found' });
+
+    const ctx = await loadBoardContext(automation.board, userId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    const rows = await AutomationRunLog.find({ automationId: id })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return res.json({ runLog: rows });
+  } catch (err) {
+    console.error('getActionRunLog error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * GET /api/automations/action-catalog
+ *
+ * Authenticated (any logged-in user) read of the F5 action catalogue built from
+ * the `actionTypes` registry: `[{ type, configSchema, requires, disabled }]`.
+ * Drives the FE action picker — disabled (un-shipped-channel) actions render
+ * greyed with "Available after Phase 3". Static + board-independent, so no
+ * board-membership gate beyond the router's auth middleware.
+ */
+const getActionCatalog = async (req, res) => {
+  try {
+    return res.json({ catalog: buildActionCatalog() });
+  } catch (err) {
+    console.error('getActionCatalog error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = {
   listAutomations,
   createAutomation,
@@ -1193,7 +1084,19 @@ module.exports = {
   runAutomationNow,
   runAutomationOnce,
   getRunLog,
+  getActionRunLog,
+  getActionCatalog,
   // Exported for the dispatcher / date runner / unit tests.
   sanitizeTriggerConfig,
   findBoardColumn,
+  // Exported for the F6 recipe controller (clone-from-recipe reuses the same
+  // board-context loading, response population, and per-field sanitizers).
+  loadBoardContext,
+  populateAutomation,
+  sanitizeConditions,
+  sanitizeActions,
+  automationNeedsSetup,
+  VALID_TRIGGER_TYPES,
+  CONDITION_TYPES_BY_TRIGGER,
+  F4_EVENT_TRIGGERS,
 };

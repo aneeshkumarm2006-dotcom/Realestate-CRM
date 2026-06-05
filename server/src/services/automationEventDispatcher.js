@@ -4,6 +4,7 @@ const TaskGroup = require('../models/TaskGroup');
 const Board = require('../models/Board');
 const eventBus = require('./eventBus');
 const { runAutomationOnce } = require('../controllers/automationController');
+const { runActions } = require('./automationActionRunner');
 
 let mounted = false;
 
@@ -199,6 +200,25 @@ const handleItemCreated = async (payload) => {
 
 const asId = (v) => (v == null ? '' : v.toString());
 
+// ----- F5.4 loop guard -----------------------------------------------------
+// Cross-automation cascade safeguard (pre-flight decision: depth cap of 5). A
+// SET_COLUMN_VALUE write tags its emitted events with an incremented
+// `_cascadeDepth`; once the depth reaches the cap the dispatcher drops the event
+// so an A→B→A… column chain can't run away.
+const MAX_CASCADE_DEPTH = 5;
+
+const cascadeDepthExceeded = (payload, max = MAX_CASCADE_DEPTH) =>
+  (Number(payload && payload._cascadeDepth) || 0) >= max;
+
+// Same-automation re-entry guard: skip an event this very automation just
+// produced (via its own SET_COLUMN_VALUE write). Cross-automation chains still
+// pass — only re-entry into the originating automation is suppressed. This is
+// the F5 equivalent of `createdByAutomation` for column writes (that flag stays
+// for CREATE_TASK recursion).
+const originMatches = (automation, payload) =>
+  !!(payload && payload._originAutomationId) &&
+  asId(payload._originAutomationId) === asId(automation && automation._id);
+
 /**
  * Per-trigger `triggerConfig` matchers. Each takes the automation's stored
  * config and the event payload and returns true when the trigger's *watched
@@ -240,45 +260,32 @@ const TRIGGER_MATCHERS = {
 };
 
 /**
- * Run an automation's actions and summarise each outcome for triggerHistory.
- * F4-level granularity: the whole run succeeds (every action `ok`) or throws
- * (every action `failed` with the error). F5.4 replaces this with true
- * per-action outcomes once the actionTypes registry lands.
- */
-const runActionsAndSummarize = async (automation, ctx) => {
-  const actions = Array.isArray(automation.actions) ? automation.actions : [];
-  try {
-    await runAutomationOnce(automation, ctx);
-    return actions.map((a) => ({ actionType: a.type, status: 'ok' }));
-  } catch (err) {
-    console.error(
-      '[automation/dispatcher] action run failed for',
-      automation?._id?.toString(),
-      err
-    );
-    return actions.map((a) => ({
-      actionType: a.type,
-      status: 'failed',
-      error: err.message,
-    }));
-  }
-};
-
-/**
  * Generic handler for the F4 task-scoped triggers. Loads the triggering task
  * (skipping automation-created tasks — the loop guard), then for every enabled
  * automation of `triggerType` on the board:
+ *   - drops the whole event when the cross-automation cascade depth cap is hit;
+ *   - skips an automation that produced this very event (same-automation guard);
  *   - skips entirely when triggerConfig doesn't match (not relevant, no log);
  *   - logs `matched: false` when the watched surface matched but a condition
  *     rejected the event (so users can debug a non-firing automation);
- *   - otherwise runs the actions and logs `matched: true` with per-action
- *     outcomes.
+ *   - otherwise runs the actions through the F5 registry runner and logs
+ *     `matched: true` with the per-action outcomes (also written to the
+ *     AutomationRunLog audit collection).
  * Mirrors `handleItemCreated`'s structure (load task, skip createdByAutomation).
  */
 const handleTaskTriggerEvent = async (triggerType, payload) => {
   if (!payload || !payload.taskId || !payload.boardId) return;
   const matchFn = TRIGGER_MATCHERS[triggerType];
   if (!matchFn) return;
+
+  // F5.4 cascade safeguard: drop events that have already chained too deep.
+  if (cascadeDepthExceeded(payload)) {
+    console.warn(
+      '[automation/dispatcher] cascade depth cap reached — dropping event',
+      triggerType
+    );
+    return;
+  }
 
   let triggeringTask;
   try {
@@ -288,8 +295,8 @@ const handleTaskTriggerEvent = async (triggerType, payload) => {
     return;
   }
   if (!triggeringTask) return;
-  // Loop guard: never react to a task an automation created/just wrote. The
-  // F5 `_originAutomationId` tag will refine this for SET_COLUMN_VALUE chains.
+  // Loop guard: never react to a task an automation created (CREATE_TASK). The
+  // F5 `_originAutomationId` tag handles the SET_COLUMN_VALUE re-entry case below.
   if (triggeringTask.createdByAutomation) return;
 
   // Resolve group/status for ITEM_IN_GROUP / ITEM_IN_STATUS condition eval.
@@ -319,6 +326,10 @@ const handleTaskTriggerEvent = async (triggerType, payload) => {
   }
 
   for (const automation of automations) {
+    // Same-automation re-entry guard: an automation never reacts to the column
+    // write it just made (cross-automation chains still pass — see originMatches).
+    if (originMatches(automation, payload)) continue;
+
     const cfg = automation.triggerConfig || {};
     if (!matchFn(cfg, payload)) continue; // watched surface didn't match
 
@@ -337,7 +348,26 @@ const handleTaskTriggerEvent = async (triggerType, payload) => {
       continue;
     }
 
-    const actionsRun = await runActionsAndSummarize(automation, { triggeringTask });
+    let actionsRun = [];
+    try {
+      const result = await runActions(automation, {
+        triggeringTask,
+        board,
+        prior: payload,
+        actorId: payload.actorId,
+        cascadeDepth: Number(payload._cascadeDepth) || 0,
+      });
+      actionsRun = result.outcomes;
+    } catch (err) {
+      console.error(
+        '[automation/dispatcher] action run failed for',
+        automation?._id?.toString(),
+        err
+      );
+      actionsRun = (Array.isArray(automation.actions) ? automation.actions : []).map(
+        (a) => ({ actionType: a.type, status: 'failed', error: err.message })
+      );
+    }
     Automation.appendTriggerHistory(automation, {
       taskId: triggeringTask._id,
       matched: true,
@@ -348,7 +378,7 @@ const handleTaskTriggerEvent = async (triggerType, payload) => {
       await automation.save();
     } catch (err) {
       console.error(
-        '[automation/dispatcher] failed to run automation',
+        '[automation/dispatcher] failed to save automation',
         automation?._id?.toString(),
         err
       );
@@ -373,13 +403,18 @@ const handleWebhookReceived = (payload) =>
   handleTaskTriggerEvent('WEBHOOK_RECEIVED', payload);
 
 /**
- * F9 lead-intake hook: routed through both the WEBHOOK_RECEIVED and
- * FORM_SUBMITTED matchers so an intake event can fire either family. Safe
- * no-op until `lead.intake` is emitted in Phase 3.
+ * F9 lead-intake hook. `lead.intake` is the dedicated signal for the F9
+ * lead-intake-policy runner (owner assignment, welcome touch, follow-up) which
+ * subscribes here in F9. It is intentionally NOT re-routed into the
+ * WEBHOOK_RECEIVED / FORM_SUBMITTED automation matchers: F7 emits
+ * `webhook.received` and F13 emits `form.submitted` directly alongside
+ * `lead.intake`, and those dedicated emitters already drive their automation
+ * families exactly once. Routing `lead.intake` through them too would double-fire
+ * every WEBHOOK_RECEIVED / FORM_SUBMITTED automation. Until F9 mounts its runner
+ * this is a deliberate no-op.
  */
-const handleLeadIntake = async (payload) => {
-  await handleTaskTriggerEvent('WEBHOOK_RECEIVED', payload);
-  await handleTaskTriggerEvent('FORM_SUBMITTED', payload);
+const handleLeadIntake = async (_payload) => {
+  // no-op until F9's lead-intake-policy runner subscribes to `lead.intake`.
 };
 
 /**
@@ -417,4 +452,8 @@ module.exports = {
   // Exported for unit tests.
   TRIGGER_MATCHERS,
   handleTaskTriggerEvent,
+  // F5.4 loop-guard helpers (pure — unit-tested).
+  MAX_CASCADE_DEPTH,
+  cascadeDepthExceeded,
+  originMatches,
 };

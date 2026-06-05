@@ -15,6 +15,9 @@ const ACTIVITY_TYPES = [
   'attachment.deleted',
   'comment.added',
   'update.added',
+  // Emitted per AutomationRunLog row by the F5 action runner. Multiple actions
+  // from one firing share a `runId` in metadata so they roll up under one run.
+  'automation.run',
 ];
 
 const FIELD_KEYS = [

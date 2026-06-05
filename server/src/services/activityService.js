@@ -47,6 +47,47 @@ const logActivity = async ({
   }
 };
 
+/**
+ * Record an `automation.run` activity event for a single AutomationRunLog row
+ * (F5.6). Fire-and-forget like `logActivity` — a broken audit write never blocks
+ * the automation. Multiple actions from one firing share `runId` so an audit
+ * view (F16) can roll them up under one parent run.
+ *
+ * @param {Object} args
+ * @param {Object|string} args.task        - triggering or created task (supplies board); optional
+ * @param {string|ObjectId} args.actor     - actor (defaults to the automation owner)
+ * @param {string|ObjectId} args.automationId
+ * @param {string} args.actionType
+ * @param {'ok'|'failed'|'skipped'} args.status
+ * @param {string|ObjectId} [args.runId]
+ * @param {string|null} [args.error]
+ */
+const logAutomationRun = async ({
+  task,
+  actor,
+  automationId,
+  actionType,
+  status,
+  runId,
+  error,
+}) => {
+  if (!task || !actor) return null;
+  return logActivity({
+    task,
+    actor,
+    type: 'automation.run',
+    metadata: {
+      automationId: automationId ? automationId.toString() : null,
+      actionType,
+      status,
+      runId: runId ? runId.toString() : null,
+      error: error || null,
+      taskName: task.name,
+    },
+  });
+};
+
 module.exports = {
   logActivity,
+  logAutomationRun,
 };

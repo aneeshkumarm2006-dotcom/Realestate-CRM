@@ -5,9 +5,26 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
 });
 
+// Public surfaces that must NOT carry a Bearer token — the OAuth callback (the
+// browser returns to it from the provider) and the email tracking pixels/links
+// (hit by mail clients). These are normally not requested via this client, but
+// the bypass keeps the interceptor honest if they ever are (F8.6).
+const PUBLIC_PATHS = [
+  /\/api\/email-accounts\/oauth\/callback\//,
+  /\/api\/email\/track\//,
+  /\/api\/email\/inbound\//,
+  /\/api\/webhooks\/in\//,
+  /\/api\/sms\/(inbound|status)/,
+  /\/api\/whatsapp\/(inbound|status)/,
+  // F13 public form render + submit — hit by logged-out visitors / embeds.
+  /\/f\//,
+];
+
+const isPublicPath = (url = '') => PUBLIC_PATHS.some((re) => re.test(url));
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('macan_token');
-  if (token) {
+  if (token && !isPublicPath(config.url)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;

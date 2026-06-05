@@ -127,44 +127,48 @@ const conditionSchema = new mongoose.Schema(
 );
 
 /**
- * Per-action config. Both action types share the same shape — `group` is
- * required for CREATE_TASK (where the new top-level task needs a home) but
- * ignored for CREATE_SUBITEM (which inherits the parent's group).
+ * One automation action. The F5 catalogue grows this from 2 → 11 types; the
+ * per-type `config` shape is owned and validated by the `actionTypes.js`
+ * registry (mirrors how `columnTypes.js` owns column-value validation), so the
+ * model stores `config` as Mixed rather than a single fixed sub-schema.
+ *
+ * Back-compat: legacy CREATE_TASK / CREATE_SUBITEM rows persisted
+ * `{ name, group, priority, assignedTo, status, note }` under `config` and load
+ * unchanged — Mixed accepts the existing shape.
+ *
+ * Channel-backed actions (SEND_EMAIL / SEND_SMS / SEND_WHATSAPP / POST_WEBHOOK /
+ * ASSIGN_LEAD_AGENT / CREATE_CALENDAR_EVENT) are persistable now but execute as
+ * `skipped` until Phase 3/4 ships their channel (the registry marks them
+ * `disabled`).
  */
-const actionConfigSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    group: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'TaskGroup',
-    },
-    priority: {
-      type: String,
-      enum: ['critical', 'high', 'medium', 'low'],
-      default: 'medium',
-    },
-    assignedTo: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-      },
-    ],
-    status: {
-      type: mongoose.Schema.Types.ObjectId,
-    },
-    note: { type: String },
-  },
-  { _id: false }
-);
-
 const actionSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['CREATE_TASK', 'CREATE_SUBITEM'],
+      enum: [
+        'CREATE_TASK',
+        'CREATE_SUBITEM',
+        'SET_COLUMN_VALUE',
+        'MOVE_TO_GROUP',
+        'NOTIFY_PERSON',
+        'SEND_EMAIL',
+        'SEND_SMS',
+        'SEND_WHATSAPP',
+        'CREATE_CALENDAR_EVENT',
+        'POST_WEBHOOK',
+        'ASSIGN_LEAD_AGENT',
+      ],
       required: true,
     },
-    config: { type: actionConfigSchema, required: true },
+    config: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // Loop-guard provenance (F5.4): which automation a cascaded/cloned action
+    // originated from. The live same-automation re-entry guard reads the emitted
+    // event's `_originAutomationId`; this persisted field records provenance for
+    // recipes (F6) and audit.
+    _originAutomationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Automation',
+    },
   },
   { _id: false }
 );
@@ -232,6 +236,20 @@ const automationSchema = new mongoose.Schema(
     enabled: {
       type: Boolean,
       default: true,
+    },
+    // Completeness of the automation's configuration (F6.3). 'complete' means
+    // every binding resolved and no required channel is missing; 'incomplete' is
+    // set when an automation is cloned from a recipe (`createFromRecipe`) that
+    // references a not-yet-connected channel (SMS/email/webhook/…) or a binding
+    // the target board can't satisfy yet (an unmapped column or group). Cloned
+    // automations are always created `enabled: false`, so an 'incomplete' one
+    // never fires — the user finishes binding it in the chain editor, at which
+    // point a normal `updateAutomation` re-validates and the UI flips it back to
+    // 'complete'. Default 'complete' for hand-built automations.
+    validation: {
+      type: String,
+      enum: ['complete', 'incomplete'],
+      default: 'complete',
     },
     // What fires this automation. SCHEDULE is the legacy cron-style trigger;
     // ITEM_CREATED runs in response to a task being created on the board;

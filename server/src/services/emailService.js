@@ -1,4 +1,7 @@
 const nodemailer = require('nodemailer');
+const { getAdapter } = require('./emailProviders');
+const { ensureAccessToken } = require('./emailOAuth');
+const { injectTracking, htmlToText, textToHtml, sanitizeEmailHtml } = require('../utils/emailHtml');
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.resend.com',
@@ -265,4 +268,183 @@ const sendMentionEmail = async ({ to, mentionedByName, taskName, commentText, ta
   });
 };
 
-module.exports = { sendTaskAssignmentEmail, sendInviteEmail, sendMentionEmail };
+/**
+ * Send a lightweight automation-digest email (the optional email channel for the
+ * F5 NOTIFY_PERSON action). Deliberately simple — the full templated email
+ * pipeline lands in F8; this just relays the in-app notification text so the
+ * "also send email" toggle does something useful today. Callers invoke it
+ * best-effort and swallow failures (RESEND may be unconfigured in dev).
+ *
+ * @param {object} opts
+ * @param {string} opts.to       — recipient email address
+ * @param {string} opts.subject  — email subject
+ * @param {string} opts.message  — already-interpolated notification text
+ * @param {string} [opts.taskLink] — optional URL to the related board/task
+ */
+const sendAutomationDigestEmail = async ({ to, subject, message, taskLink }) => {
+  const cta = taskLink
+    ? `<div class="cta"><a href="${taskLink}">Open in Macan &rarr;</a></div>`
+    : '';
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(subject)}</title>
+  <style>
+    body { margin: 0; padding: 0; background: #F3F4F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif; }
+    .wrapper { max-width: 560px; margin: 40px auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .header { background: #2563EB; padding: 28px 32px; }
+    .header-logo { font-size: 22px; font-weight: 800; color: #FFFFFF; letter-spacing: -0.02em; }
+    .body { padding: 32px; }
+    .title { font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 14px; }
+    .message { font-size: 14px; color: #374151; line-height: 1.6; margin: 0 0 24px; white-space: pre-wrap; word-break: break-word; }
+    .cta { text-align: center; }
+    .cta a { display: inline-block; background: #2563EB; color: #FFFFFF !important; font-size: 14px; font-weight: 600; padding: 13px 32px; border-radius: 8px; text-decoration: none; }
+    .footer { background: #F9FAFB; border-top: 1px solid #E5E7EB; padding: 18px 32px; }
+    .footer p { font-size: 12px; color: #9CA3AF; margin: 0; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="header-logo">Macan</div>
+    </div>
+    <div class="body">
+      <p class="title">${escapeHtml(subject)}</p>
+      <p class="message">${escapeHtml(message)}</p>
+      ${cta}
+    </div>
+    <div class="footer">
+      <p>You received this email from an automation in Macan.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || 'noreply@davnoot.com',
+    to,
+    subject,
+    html,
+  });
+};
+
+// ===========================================================================
+// F8.3 — User-mailbox send dispatcher + Resend fallback.
+//
+// `sendUserEmail` routes a composed message through the connected provider
+// adapter (Gmail / Microsoft / SMTP) so it arrives from the user's REAL address
+// (AC2). `sendUserEmailViaResend` is the no-mailbox fallback (AC5): it relays
+// through the system Resend transport with a `[Sent via CRM]` footer.
+// ===========================================================================
+
+const PUBLIC_BASE_URL = () => process.env.WEBHOOK_PUBLIC_BASE_URL || '';
+
+/**
+ * Normalise a composed body into `{ html, text }`. `body` is treated as HTML
+ * when it contains markup, otherwise as plain text; explicit `bodyHtml` /
+ * `bodyText` always win.
+ */
+const normaliseBody = ({ body, bodyHtml, bodyText }) => {
+  let html = bodyHtml || '';
+  let text = bodyText || '';
+  if (!html && body) html = /<[a-z][\s\S]*>/i.test(body) ? body : textToHtml(body);
+  if (!text) text = html ? htmlToText(html) : body || '';
+  return { html: sanitizeEmailHtml(html), text };
+};
+
+/**
+ * Send an email through a user's connected mailbox.
+ *
+ * @param {object} opts
+ * @param {object} opts.account            — an EmailAccount doc (provider + tokens)
+ * @param {string|string[]} opts.to
+ * @param {string|string[]} [opts.cc]
+ * @param {string|string[]} [opts.bcc]
+ * @param {string} opts.subject
+ * @param {string} [opts.body]             — HTML or plain text
+ * @param {string} [opts.bodyHtml]
+ * @param {string} [opts.bodyText]
+ * @param {Array}  [opts.attachments]      — [{ url, name, mime }]
+ * @param {string} [opts.inReplyTo]        — parent Message-ID for threading
+ * @param {string} [opts.threadId]         — provider thread id (reply in-thread)
+ * @param {string} [opts.trackingMessageId]— EmailMessage id to wire open/click tracking
+ * @returns {Promise<{ provider, providerMessageId, threadId, rfcMessageId }>}
+ */
+const sendUserEmail = async ({
+  account,
+  to,
+  cc,
+  bcc,
+  subject,
+  body,
+  bodyHtml,
+  bodyText,
+  attachments,
+  inReplyTo,
+  threadId,
+  trackingMessageId,
+}) => {
+  if (!account) throw new Error('sendUserEmail requires a connected account');
+  const adapter = getAdapter(account.provider);
+  if (!adapter) throw new Error(`No adapter for provider "${account.provider}"`);
+
+  const { html, text } = normaliseBody({ body, bodyHtml, bodyText });
+  const signedHtml = account.signature ? `${html}<br/><br/>${account.signature}` : html;
+  const trackedHtml = injectTracking(signedHtml, trackingMessageId, PUBLIC_BASE_URL());
+
+  const mail = {
+    from: account.defaultFrom || undefined,
+    to,
+    cc,
+    bcc,
+    subject,
+    bodyHtml: trackedHtml,
+    bodyText: text,
+    attachments,
+    inReplyTo,
+  };
+
+  if (account.provider === 'smtp') {
+    // SMTP/IMAP fallback: connection config is assembled by the caller and
+    // attached to the account; provider OAuth doesn't apply.
+    return adapter.send({ smtp: account.smtpConfig, mail });
+  }
+
+  const accessToken = await ensureAccessToken(account);
+  return adapter.send({ accessToken, mail, threadId });
+};
+
+/**
+ * No-mailbox fallback (AC5): relay through the system Resend transport with a
+ * `[Sent via CRM]` footer. Used by SEND_EMAIL when the owning user has no
+ * connected mailbox. Returns `{ provider: 'resend', messageId }`.
+ */
+const sendUserEmailViaResend = async ({ to, cc, bcc, subject, body, bodyHtml, bodyText, attachments }) => {
+  const { html, text } = normaliseBody({ body, bodyHtml, bodyText });
+  const footer =
+    '<div style="margin-top:24px;padding-top:12px;border-top:1px solid #E5E7EB;font-size:12px;color:#9CA3AF">[Sent via CRM]</div>';
+  const info = await transporter.sendMail({
+    from: process.env.EMAIL_FROM || 'noreply@davnoot.com',
+    to,
+    cc,
+    bcc,
+    subject,
+    html: `${html}${footer}`,
+    text: text ? `${text}\n\n[Sent via CRM]` : undefined,
+    attachments: (Array.isArray(attachments) ? attachments : [])
+      .filter((a) => a && a.url)
+      .map((a) => ({ filename: a.name || undefined, path: a.url })),
+  });
+  return { provider: 'resend', messageId: info.messageId || null };
+};
+
+module.exports = {
+  sendTaskAssignmentEmail,
+  sendInviteEmail,
+  sendMentionEmail,
+  sendAutomationDigestEmail,
+  // F8.3 — user-mailbox dispatcher + fallback.
+  sendUserEmail,
+  sendUserEmailViaResend,
+};

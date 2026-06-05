@@ -15,8 +15,10 @@ const notificationSchema = new mongoose.Schema({
     index: true,
   },
   type: {
+    // 'automation' is emitted by the F5 NOTIFY_PERSON action (in-app notice from
+    // an automation rather than a direct user action).
     type: String,
-    enum: ['assigned', 'commented', 'mentioned', 'statusChanged', 'dueSoon'],
+    enum: ['assigned', 'commented', 'mentioned', 'statusChanged', 'dueSoon', 'automation'],
   },
   message: {
     type: String,

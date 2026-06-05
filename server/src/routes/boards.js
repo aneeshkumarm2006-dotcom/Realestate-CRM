@@ -27,6 +27,11 @@ const {
   reorderColumns,
   deleteColumn,
 } = require('../controllers/columnController');
+const {
+  getIntakePolicy,
+  upsertIntakePolicy,
+  listIntakeEvents,
+} = require('../controllers/intakePolicyController');
 
 const router = express.Router();
 
@@ -83,5 +88,11 @@ router.delete('/:id/columns/:cid',    deleteColumn);
 // --- Cross-board connectivity (F2) ----------------------------------------
 // Boards a connect_boards column on this board may target.
 router.get('/:id/connectable',        getConnectableBoards);
+
+// --- Lead Intake policy (F9) ----------------------------------------------
+// GET (member): policy + form meta · PUT (admin): upsert · events (member).
+router.get('/:id/intake-policy',      getIntakePolicy);
+router.put('/:id/intake-policy',      upsertIntakePolicy);
+router.get('/:id/intake-events',      listIntakeEvents);
 
 module.exports = router;

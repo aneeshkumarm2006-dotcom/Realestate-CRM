@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Camera, Copy, Check, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import SettingsSidebar, { SettingsTabBar } from '../components/settings/SettingsSidebar';
+import EmailAccountConnect from '../components/settings/EmailAccountConnect';
+import SmsConfigForm from '../components/settings/SmsConfigForm';
+import SmsOptOutList from '../components/settings/SmsOptOutList';
+import WhatsAppConfigForm from '../components/settings/WhatsAppConfigForm';
+import WhatsAppTemplateManager from '../components/settings/WhatsAppTemplateManager';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Modal from '../components/ui/Modal';
@@ -889,8 +894,31 @@ const SettingsPage = () => {
     });
   const isAdmin = isMainAdmin || isExtraAdmin;
 
-  const [activeTab, setActiveTab] = useState('organisation');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get('tab') === 'email' ? 'email' : 'organisation'
+  );
   const [orgState, setOrgState] = useState(currentOrg || null);
+  const toast = useToastStore.getState();
+
+  // Surface the OAuth callback result (?email=connected|error) once, then strip
+  // the query so a refresh doesn't re-toast.
+  useEffect(() => {
+    const status = searchParams.get('email');
+    if (!status) return;
+    setActiveTab('email');
+    if (status === 'connected') {
+      toast.success?.(`Mailbox connected${searchParams.get('provider') ? ` (${searchParams.get('provider')})` : ''}`);
+    } else if (status === 'error') {
+      toast.error?.(`Could not connect mailbox${searchParams.get('reason') ? `: ${searchParams.get('reason')}` : ''}`);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('email');
+    next.delete('provider');
+    next.delete('reason');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep local orgState in sync with currentOrg
   useEffect(() => {
@@ -899,7 +927,13 @@ const SettingsPage = () => {
 
   // If a non-admin has an admin-only tab selected, bounce them to Profile
   useEffect(() => {
-    if (!isAdmin && (activeTab === 'organisation' || activeTab === 'templates')) {
+    if (
+      !isAdmin &&
+      (activeTab === 'organisation' ||
+        activeTab === 'templates' ||
+        activeTab === 'sms' ||
+        activeTab === 'whatsapp')
+    ) {
       setActiveTab('profile');
     }
   }, [isAdmin, activeTab]);
@@ -956,6 +990,25 @@ const SettingsPage = () => {
     }
     if (activeTab === 'templates') {
       return <TemplatesTab orgId={currentOrg?._id} isAdmin={isAdmin} />;
+    }
+    if (activeTab === 'email') {
+      return <EmailAccountConnect workspaceId={currentOrg?._id} />;
+    }
+    if (activeTab === 'sms' && isAdmin) {
+      return (
+        <div>
+          <SmsConfigForm workspaceId={currentOrg?._id} />
+          <SmsOptOutList workspaceId={currentOrg?._id} />
+        </div>
+      );
+    }
+    if (activeTab === 'whatsapp' && isAdmin) {
+      return (
+        <div>
+          <WhatsAppConfigForm workspaceId={currentOrg?._id} />
+          <WhatsAppTemplateManager workspaceId={currentOrg?._id} />
+        </div>
+      );
     }
     return (
       <ProfileTab

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, Filter, X } from 'lucide-react';
+import { ChevronDown, Check, Filter, X, SlidersHorizontal, Pencil } from 'lucide-react';
 import useDropdownPosition from '../../utils/useDropdownPosition';
 import AssigneePicker from '../board/AssigneePicker';
 
@@ -16,9 +16,23 @@ import AssigneePicker from '../board/AssigneePicker';
  *
  * State lives in the parent (CalendarPage) and is persisted to URL search
  * params there so navigating months / reloading keeps the filter applied.
+ *
+ * When a saved view is active (`activeView` set), the view's own filter/color
+ * config drives the calendar server-side, so the legacy board/assignee pickers
+ * are replaced by a compact, read-only "filtered by view" chip (F12.5).
  */
 
 const UNASSIGNED_ID = 'unassigned';
+
+// Human-readable summary of a saved view's filter for the active-view chip.
+const summarizeView = (view) => {
+  const parts = [];
+  if (view.layout) parts.push(view.layout);
+  const n = Array.isArray(view.filter) ? view.filter.length : 0;
+  if (n > 0) parts.push(`${n} filter${n === 1 ? '' : 's'}`);
+  if (view.isShared) parts.push('shared');
+  return parts.join(' · ');
+};
 
 const CalendarFilterBar = ({
   boards = [],
@@ -28,11 +42,61 @@ const CalendarFilterBar = ({
   assigneeFilter = [],
   onAssigneeFilterChange,
   isAdmin = false,
+  activeView = null,
+  onEditView,
 }) => {
+  // Hooks must run unconditionally before any early return (Rules of Hooks).
   const membersWithUnassigned = useMemo(
     () => [{ _id: UNASSIGNED_ID, name: 'Unassigned' }, ...members],
     [members]
   );
+
+  // Active saved view: render a compact summary chip instead of legacy pickers.
+  if (activeView) {
+    return (
+      <div
+        className="flex flex-wrap items-center justify-end gap-2"
+        role="region"
+        aria-label="Active calendar view"
+      >
+        <span
+          className="inline-flex items-center gap-1.5 font-body font-medium"
+          style={{
+            fontSize: 12,
+            color: 'var(--color-text-secondary)',
+            background: 'var(--color-bg-subtle)',
+            borderRadius: 'var(--radius-full)',
+            padding: '5px 12px',
+          }}
+        >
+          <SlidersHorizontal size={13} aria-hidden="true" />
+          <span style={{ color: 'var(--color-text-primary)' }}>{activeView.name}</span>
+          {summarizeView(activeView) && (
+            <span style={{ color: 'var(--color-text-muted)' }}>· {summarizeView(activeView)}</span>
+          )}
+        </span>
+        {onEditView && (
+          <button
+            type="button"
+            onClick={onEditView}
+            className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:text-[color:var(--color-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
+            style={{
+              fontSize: 12,
+              color: 'var(--color-text-secondary)',
+              background: 'transparent',
+              border: 'none',
+              padding: '4px 8px',
+              cursor: 'pointer',
+              borderRadius: 'var(--radius-full)',
+            }}
+          >
+            <Pencil size={12} aria-hidden="true" />
+            Edit view
+          </button>
+        )}
+      </div>
+    );
+  }
 
   const hasActiveFilter =
     boardFilter.length > 0 || assigneeFilter.length > 0;

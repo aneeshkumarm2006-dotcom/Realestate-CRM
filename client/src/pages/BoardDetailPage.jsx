@@ -7,9 +7,14 @@ import {
   Plus,
   Settings as SettingsIcon,
   Zap,
+  Webhook,
+  UserPlus,
   GripVertical,
   SearchX,
   Columns3,
+  LayoutList,
+  Table2,
+  BarChart3,
 } from 'lucide-react';
 import {
   DndContext,
@@ -40,11 +45,12 @@ import StatusMenu from '../components/board/StatusMenu';
 import PriorityMenu from '../components/board/PriorityMenu';
 import TaskActionsMenu from '../components/board/TaskActionsMenu';
 import CommentPanel from '../components/board/CommentPanel';
-import AutomationBuilder from '../components/board/AutomationBuilder';
 import LabelPicker from '../components/board/LabelPicker';
 import EditChipsModal from '../components/board/EditChipsModal';
 import BulkActionBar from '../components/board/BulkActionBar';
 import BoardFilterBar from '../components/board/BoardFilterBar';
+import TableView from '../components/board/TableView';
+import InsightsTab from '../components/board/InsightsTab';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -68,6 +74,14 @@ const GROUP_DOT_CYCLE = [
   'var(--color-card-green)',
   'var(--color-card-orange)',
   'var(--color-card-purple)',
+];
+
+// F13 — board view modes: the default grouped board, a generic table view, and
+// the per-board Insights (charts) tab.
+const VIEW_TABS = [
+  { value: 'board', label: 'Board', icon: LayoutList },
+  { value: 'table', label: 'Table view', icon: Table2 },
+  { value: 'insights', label: 'Insights', icon: BarChart3 },
 ];
 
 /**
@@ -177,9 +191,6 @@ const BoardDetailPage = () => {
   // Delete-group confirmation state
   const [groupPendingDelete, setGroupPendingDelete] = useState(null);
   const [deletingGroup, setDeletingGroup] = useState(false);
-  // Automations modal
-  const [automationsOpen, setAutomationsOpen] = useState(false);
-
   // --- Filtering ---------------------------------------------------------
   // Filter bar at the top of the board narrows the visible tasks by name,
   // status, priority, label, due date, and assignee. See utils/taskFilters.js.
@@ -199,6 +210,19 @@ const BoardDetailPage = () => {
 
   const board = getBoardById(boardId) || null;
   const orgId = currentOrg?._id || null;
+
+  // F13 — which view mode is active (board | table | insights), backed by ?mode=.
+  const viewMode = searchParams.get('mode') || 'board';
+  const setViewMode = (mode) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (mode && mode !== 'board') next.set('mode', mode);
+        else next.delete('mode');
+        return next;
+      },
+      { replace: true }
+    );
 
   // A board belonging to ANOTHER workspace (opened via a "Shared with me" grant)
   // is read-only here: structural + value edits are gated to members of the
@@ -1000,9 +1024,23 @@ const BoardDetailPage = () => {
             <Button
               variant="secondary"
               icon={Zap}
-              onClick={() => setAutomationsOpen(true)}
+              onClick={() => navigate(`/boards/${boardId}/automations`)}
             >
               Automations
+            </Button>
+            <Button
+              variant="secondary"
+              icon={Webhook}
+              onClick={() => navigate(`/boards/${boardId}/integrations`)}
+            >
+              Integrations
+            </Button>
+            <Button
+              variant="secondary"
+              icon={UserPlus}
+              onClick={() => navigate(`/boards/${boardId}/intake`)}
+            >
+              Lead Intake
             </Button>
             <Button
               variant="primary"
@@ -1032,6 +1070,50 @@ const BoardDetailPage = () => {
         )}
       </header>
 
+      {/* F13 — view-mode tabs: Board / Table view / Insights */}
+      <div
+        className="mt-5 flex items-center gap-1 overflow-x-auto"
+        role="tablist"
+        style={{ borderBottom: '1px solid var(--color-border)' }}
+      >
+        {VIEW_TABS.map((t) => {
+          const active = viewMode === t.value;
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setViewMode(t.value)}
+              className="inline-flex items-center gap-1.5 font-body whitespace-nowrap transition-colors duration-150"
+              style={{
+                fontSize: 13,
+                fontWeight: active ? 600 : 500,
+                padding: '8px 14px',
+                color: active ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                borderBottom: active ? '2px solid var(--color-accent)' : '2px solid transparent',
+                background: 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              <Icon size={15} aria-hidden="true" />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {viewMode === 'table' ? (
+        <div className="mt-5">
+          <TableView board={board} tasks={allTasks} members={members} />
+        </div>
+      ) : viewMode === 'insights' ? (
+        <div className="mt-5">
+          <InsightsTab boardId={boardId} board={board} isAdmin={isAdmin} />
+        </div>
+      ) : (
+        <>
       {/* Filter bar */}
       {hasGroups && board && (
         <BoardFilterBar
@@ -1257,6 +1339,8 @@ const BoardDetailPage = () => {
           </DndContext>
         )}
       </section>
+        </>
+      )}
 
       {/* Status chip menu */}
       {statusMenu && (
@@ -1581,18 +1665,6 @@ const BoardDetailPage = () => {
         onCommentCountChange={setCommentCount}
       />
 
-      {/* Automations */}
-      {isAdmin && (
-        <AutomationBuilder
-          isOpen={automationsOpen}
-          onClose={() => setAutomationsOpen(false)}
-          boardId={boardId}
-          board={board}
-          groups={groups}
-          members={members}
-          isAdmin={isAdmin}
-        />
-      )}
     </PageWrapper>
   );
 };

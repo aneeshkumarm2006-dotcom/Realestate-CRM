@@ -49,3 +49,44 @@ export const getRunLog = async (id) => {
   const { data } = await api.get(`/api/automations/${id}/run-log`);
   return data.runLog || [];
 };
+
+/**
+ * GET /api/automations/action-catalog — the F5 action registry
+ * (`[{ type, configSchema, requires, disabled }]`). Drives the action picker;
+ * `disabled` entries render greyed with "Available after Phase 3". (F5.7)
+ */
+export const getActionCatalog = async () => {
+  const { data } = await api.get('/api/automations/action-catalog');
+  return data.catalog || [];
+};
+
+/**
+ * GET /api/automations/:id/run-log/actions — per-action AutomationRunLog audit
+ * rows for one automation (most-recent-first). Member-level access. (F5.3)
+ */
+export const getActionRunLog = async (id) => {
+  const { data } = await api.get(`/api/automations/${id}/run-log/actions`);
+  return data.runLog || [];
+};
+
+/**
+ * GET /api/automations/recipes — the F6 recipe catalogue. Optional `region`
+ * filters to region-agnostic recipes plus those tagged for that region. Each
+ * recipe carries a `requiresSetup` / `triggerDormant` summary. (F6.4)
+ */
+export const listRecipes = async (region) => {
+  const { data } = await api.get('/api/automations/recipes', {
+    params: region ? { region } : undefined,
+  });
+  return data.recipes || [];
+};
+
+/**
+ * POST /api/automations/from-recipe/:slug — clone a recipe into a new, disabled
+ * Automation on a board (admin). `payload = { boardId, overrides? }`. Returns
+ * `{ automation, validation, warnings }`. (F6.4)
+ */
+export const createFromRecipe = async (slug, payload) => {
+  const { data } = await api.post(`/api/automations/from-recipe/${slug}`, payload);
+  return data;
+};

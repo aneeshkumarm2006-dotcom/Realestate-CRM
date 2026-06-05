@@ -1,4 +1,4 @@
-import { Building2, UserCircle2, LayoutTemplate } from 'lucide-react';
+import { Building2, UserCircle2, LayoutTemplate, Mail, MessageSquare, MessageCircle } from 'lucide-react';
 
 /**
  * SettingsSidebar — left-rail tab nav used exclusively by the Settings page.
@@ -12,6 +12,12 @@ import { Building2, UserCircle2, LayoutTemplate } from 'lucide-react';
 const TABS = [
   { key: 'organisation', label: 'Organisation', icon: Building2, adminOnly: true },
   { key: 'templates', label: 'Templates', icon: LayoutTemplate, adminOnly: true },
+  // Email connection is per-user (any member can connect their own mailbox).
+  { key: 'email', label: 'Email connection', icon: Mail, adminOnly: false },
+  // SMS (Twilio) is a workspace-level credential — admin only.
+  { key: 'sms', label: 'SMS', icon: MessageSquare, adminOnly: true },
+  // WhatsApp (Twilio) is a workspace-level credential — admin only.
+  { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, adminOnly: true },
   { key: 'profile', label: 'Profile', icon: UserCircle2, adminOnly: false },
 ];
 

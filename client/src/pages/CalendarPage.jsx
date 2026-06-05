@@ -1,45 +1,52 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
+import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { ChevronLeft, ChevronRight, List as ListIcon, LayoutGrid } from 'lucide-react';
+import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
+import { ChevronLeft, ChevronRight, List as ListIcon, LayoutGrid, AlertTriangle } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import { SkeletonCalendarGrid } from '../components/ui/Skeleton';
 import CommentPanel from '../components/board/CommentPanel';
 import CalendarFilterBar, { UNASSIGNED_ID } from '../components/calendar/CalendarFilterBar';
+import CalendarViewSidebar from '../components/calendar/CalendarViewSidebar';
+import CalendarViewForm from '../components/calendar/CalendarViewForm';
 import useOrgStore from '../store/orgStore';
+import useAuthStore from '../store/authStore';
 import useBoardStore from '../store/boardStore';
-import { getCalendarTasks } from '../services/taskService';
+import { getCalendarTasks, getTasks, updateTask } from '../services/taskService';
+import * as calendarViewService from '../services/calendarViewService';
 import { getPriorityColor } from '../utils/priorityColors';
 import { isStatusDone } from '../utils/statusUtils';
 
 // Canonical "done" green from globals.css → --color-status-done.
 const DONE_GREEN = '#16A34A';
 
-/**
- * CalendarPage — month/week calendar view of all tasks with a due date.
- *
- * See Macan_Design.md Section 7.6.
- *
- * Admins see all org board tasks. Regular users see only assigned tasks on
- * public boards. Personal tasks are always included for the current user.
- * Event pills are color-coded by priority. Clicking an event opens the same
- * CommentPanel used on the board view (Section 6.9).
- *
- * On mobile (<768px) the default view is a simplified list. On desktop the
- * default is the month grid with a month/week toggle.
- */
-
 const localizer = momentLocalizer(moment);
+// react-big-calendar's dragAndDrop addon is a CommonJS module. Under Vite's
+// ESM interop the default import can arrive as the function itself or wrapped
+// as { default: fn }, so normalise before calling it.
+const withDnD =
+  typeof withDragAndDrop === 'function' ? withDragAndDrop : withDragAndDrop.default;
+const DnDCalendar = withDnD(Calendar);
+
+// react-big-calendar built-in views we expose. The saved "resource" layout
+// renders through the `day` time view with a `resources` roster.
+const RBC_VIEWS = ['month', 'week', 'day', 'agenda'];
+const UNASSIGNED_RESOURCE = '__unassigned__';
+
+/** Map a saved view's layout to a concrete react-big-calendar view name. */
+const layoutToRbcView = (layout) => (layout === 'resource' ? 'day' : layout || 'month');
 
 /**
- * Map a task to a react-big-calendar event. `start`/`end` are set to the
- * same date (due date) so it renders as a single-day event.
+ * Map a legacy task (default calendar) to a react-big-calendar event. start/end
+ * are the due date so it renders as a single-day block.
  */
 const taskToEvent = (task) => {
   const due = task.dueDate ? new Date(task.dueDate) : null;
   return {
+    id: task._id,
     title: task.name,
     start: due,
     end: due,
@@ -48,19 +55,28 @@ const taskToEvent = (task) => {
   };
 };
 
+/** Map a normalized saved-view event to a react-big-calendar event. */
+const normalizedToEvent = (e) => ({
+  id: e.id,
+  title: e.title,
+  start: new Date(e.start),
+  end: new Date(e.end),
+  allDay: true,
+  color: e.color,
+  resourceId: e.resourceId == null ? UNASSIGNED_RESOURCE : e.resourceId,
+});
+
 /**
- * Style an event pill in the calendar grid using the task's priority color.
- * Returns a Tailwind-free inline style. react-big-calendar calls this for
- * every event instance.
+ * Style an event pill. Saved-view events carry an explicit `color`; the legacy
+ * default calendar colours by priority (green when done).
  */
 const eventPropGetter = (event) => {
-  const task = event.resource || {};
-  // Completed tasks render green regardless of priority — quick visual cue
-  // that the work for that day is already finished.
-  const done = isStatusDone(task.board, task.status);
-  const solid = done
-    ? DONE_GREEN
-    : getPriorityColor(task.priority || 'low').solid;
+  let solid = event.color;
+  if (!solid) {
+    const task = event.resource || {};
+    const done = isStatusDone(task.board, task.status);
+    solid = done ? DONE_GREEN : getPriorityColor(task.priority || 'low').solid;
+  }
   return {
     style: {
       backgroundColor: solid,
@@ -97,6 +113,7 @@ const CalendarToolbar = ({
   mobileMode,
   onMobileModeChange,
   isMobile,
+  showViewToggle = true,
 }) => {
   const label = view === 'week'
     ? moment(date).startOf('week').format('MMM D') +
@@ -108,17 +125,12 @@ const CalendarToolbar = ({
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       <h1
         className="font-display font-bold"
-        style={{
-          fontSize: 28,
-          color: 'var(--color-text-primary)',
-          lineHeight: 1.2,
-        }}
+        style={{ fontSize: 28, color: 'var(--color-text-primary)', lineHeight: 1.2 }}
       >
         Calendar
       </h1>
 
       <div className="flex flex-wrap items-center gap-3">
-        {/* Mobile grid/list toggle */}
         {isMobile && (
           <PillToggle
             options={[
@@ -130,19 +142,17 @@ const CalendarToolbar = ({
           />
         )}
 
-        {/* Month/Week view toggle — hidden in mobile list mode */}
-        {(!isMobile || mobileMode === 'grid') && (
+        {showViewToggle && (!isMobile || mobileMode === 'grid') && (
           <PillToggle
             options={[
               { value: 'month', label: 'Month' },
               { value: 'week', label: 'Week' },
             ]}
-            value={view}
+            value={view === 'week' ? 'week' : 'month'}
             onChange={onViewChange}
           />
         )}
 
-        {/* Month navigation — always visible */}
         <div
           className="flex items-center gap-1 bg-surface"
           style={{
@@ -151,10 +161,7 @@ const CalendarToolbar = ({
             padding: '2px 6px',
           }}
         >
-          <NavArrow
-            direction="prev"
-            onClick={() => onNavigate('PREV')}
-          />
+          <NavArrow direction="prev" onClick={() => onNavigate('PREV')} />
           <span
             className="font-body font-medium"
             style={{
@@ -167,10 +174,7 @@ const CalendarToolbar = ({
           >
             {label}
           </span>
-          <NavArrow
-            direction="next"
-            onClick={() => onNavigate('NEXT')}
-          />
+          <NavArrow direction="next" onClick={() => onNavigate('NEXT')} />
         </div>
       </div>
     </div>
@@ -192,9 +196,6 @@ const NavArrow = ({ direction, onClick }) => {
   );
 };
 
-/**
- * Small pill-style segmented toggle.
- */
 const PillToggle = ({ options, value, onChange }) => (
   <div
     className="flex items-center bg-surface"
@@ -236,8 +237,7 @@ const PillToggle = ({ options, value, onChange }) => (
 );
 
 /**
- * Simplified list view — used as the default on mobile. Groups tasks by due
- * date and displays them as rows with a priority dot.
+ * Simplified list view — used as the default on mobile. Groups events by date.
  */
 const TaskListView = ({ events, onSelect }) => {
   const grouped = useMemo(() => {
@@ -260,11 +260,8 @@ const TaskListView = ({ events, onSelect }) => {
           padding: '40px 20px',
         }}
       >
-        <p
-          className="font-body"
-          style={{ fontSize: 14, color: 'var(--color-text-muted)' }}
-        >
-          No tasks scheduled for this month.
+        <p className="font-body" style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
+          No tasks scheduled for this range.
         </p>
       </div>
     );
@@ -273,10 +270,7 @@ const TaskListView = ({ events, onSelect }) => {
   return (
     <div
       className="bg-surface overflow-hidden"
-      style={{
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-card)',
-      }}
+      style={{ borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-card)' }}
     >
       {grouped.map(([dateKey, items], groupIdx) => (
         <div key={dateKey}>
@@ -289,8 +283,7 @@ const TaskListView = ({ events, onSelect }) => {
               color: 'var(--color-text-secondary)',
               padding: '10px 16px',
               background: 'var(--color-bg-subtle)',
-              borderTop:
-                groupIdx === 0 ? 'none' : '1px solid var(--color-border)',
+              borderTop: groupIdx === 0 ? 'none' : '1px solid var(--color-border)',
               borderBottom: '1px solid var(--color-border)',
             }}
           >
@@ -299,18 +292,16 @@ const TaskListView = ({ events, onSelect }) => {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {items.map((ev, i) => {
               const task = ev.resource;
-              const done = isStatusDone(task.board, task.status);
-              const solid = done
-                ? DONE_GREEN
-                : getPriorityColor(task.priority || 'low').solid;
+              let solid = ev.color;
+              if (!solid) {
+                const done = isStatusDone(task?.board, task?.status);
+                solid = done ? DONE_GREEN : getPriorityColor(task?.priority || 'low').solid;
+              }
               return (
                 <li
-                  key={task._id}
+                  key={ev.id}
                   style={{
-                    borderBottom:
-                      i === items.length - 1
-                        ? 'none'
-                        : '1px solid var(--color-border)',
+                    borderBottom: i === items.length - 1 ? 'none' : '1px solid var(--color-border)',
                   }}
                 >
                   <button
@@ -321,48 +312,23 @@ const TaskListView = ({ events, onSelect }) => {
                   >
                     <span
                       aria-hidden="true"
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                        background: solid,
-                        flexShrink: 0,
-                      }}
+                      style={{ width: 10, height: 10, borderRadius: '50%', background: solid, flexShrink: 0 }}
                     />
                     <span className="min-w-0 flex-1">
                       <span
                         className="font-body block truncate"
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 500,
-                          color: 'var(--color-text-primary)',
-                        }}
+                        style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)' }}
                       >
-                        {task.name}
+                        {ev.title}
                       </span>
-                      {task.board?.name && (
+                      {task?.board?.name && (
                         <span
                           className="font-body block truncate"
-                          style={{
-                            fontSize: 12,
-                            color: 'var(--color-text-muted)',
-                            marginTop: 2,
-                          }}
+                          style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}
                         >
                           {task.board.name}
                         </span>
                       )}
-                    </span>
-                    <span
-                      className="font-body"
-                      style={{
-                        fontSize: 11,
-                        color: 'var(--color-text-muted)',
-                        textTransform: 'capitalize',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {(task.priority || 'low').replace(/_/g, ' ')}
                     </span>
                   </button>
                 </li>
@@ -375,6 +341,20 @@ const TaskListView = ({ events, onSelect }) => {
   );
 };
 
+/** Compute the [from, to] window of tasks to fetch for the current view+date. */
+const rangeForView = (date, rbcView) => {
+  const m = moment(date);
+  if (rbcView === 'week' || rbcView === 'day' || rbcView === 'agenda') {
+    const unit = rbcView === 'day' ? 'day' : 'week';
+    return { from: m.clone().startOf(unit).toDate(), to: m.clone().endOf(unit).toDate() };
+  }
+  // month — pad to the full visible grid (leading/trailing weeks).
+  return {
+    from: m.clone().startOf('month').startOf('week').toDate(),
+    to: m.clone().endOf('month').endOf('week').toDate(),
+  };
+};
+
 const CalendarPage = () => {
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const orgId = currentOrg?._id || null;
@@ -382,36 +362,65 @@ const CalendarPage = () => {
   const fetchMembers = useOrgStore((s) => s.fetchMembers);
   const boards = useBoardStore((s) => s.boards);
   const fetchBoards = useBoardStore((s) => s.fetchBoards);
+  const currentUserId = useAuthStore((s) => s.user?._id);
 
-  const [view, setView] = useState('month');
+  const isAdmin = useMemo(() => {
+    if (!currentOrg || !currentUserId) return false;
+    const adminId = typeof currentOrg.admin === 'object' ? currentOrg.admin?._id : currentOrg.admin;
+    if (adminId && String(adminId) === String(currentUserId)) return true;
+    return (
+      Array.isArray(currentOrg.admins) &&
+      currentOrg.admins.some((a) => String(typeof a === 'object' ? a._id : a) === String(currentUserId))
+    );
+  }, [currentOrg, currentUserId]);
+
+  const [rbcView, setRbcView] = useState('month');
   const [date, setDate] = useState(() => new Date());
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
 
-  // --- URL-backed filter state -------------------------------------------
-  // `?boards=id1,id2&assignees=id3,unassigned` survives month navigation and
-  // page reloads. Empty arrays mean "no filter — show everything".
-  const [searchParams, setSearchParams] = useSearchParams();
+  // Saved views
+  const [views, setViews] = useState([]);
+  const [resources, setResources] = useState(null);
+  // task lookup for CommentPanel click-through on saved-view events
+  const [taskById, setTaskById] = useState({});
 
+  // Form modal
+  const [formOpen, setFormOpen] = useState(false);
+  const [formInitial, setFormInitial] = useState(null);
+  const [formSaving, setFormSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedViewId = searchParams.get('view') || null;
+  const selectedView = useMemo(
+    () => views.find((v) => String(v._id) === String(selectedViewId)) || null,
+    [views, selectedViewId]
+  );
+
+  // --- URL-backed legacy filter state (default calendar only) -------------
   const boardFilter = useMemo(() => {
     const raw = searchParams.get('boards');
     return raw ? raw.split(',').filter(Boolean) : [];
   }, [searchParams]);
-
   const assigneeFilter = useMemo(() => {
     const raw = searchParams.get('assignees');
     return raw ? raw.split(',').filter(Boolean) : [];
   }, [searchParams]);
 
-  const updateFilterParam = useCallback(
-    (key, ids) => {
+  const setParam = useCallback(
+    (key, value) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          if (ids && ids.length > 0) next.set(key, ids.join(','));
-          else next.delete(key);
+          if (value && (Array.isArray(value) ? value.length : true)) {
+            next.set(key, Array.isArray(value) ? value.join(',') : value);
+          } else {
+            next.delete(key);
+          }
           return next;
         },
         { replace: true }
@@ -420,38 +429,63 @@ const CalendarPage = () => {
     [setSearchParams]
   );
 
-  const handleBoardFilterChange = useCallback(
-    (ids) => updateFilterParam('boards', ids),
-    [updateFilterParam]
-  );
-  const handleAssigneeFilterChange = useCallback(
-    (ids) => updateFilterParam('assignees', ids),
-    [updateFilterParam]
+  const handleSelectView = useCallback(
+    (id) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (id) {
+            next.set('view', id);
+            // A saved view filters server-side — drop the legacy filters.
+            next.delete('boards');
+            next.delete('assignees');
+          } else {
+            next.delete('view');
+          }
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
   );
 
-  // Hydrate the boardStore and orgStore.members so the filter bar has options
-  // when the calendar is opened directly (not via a board page).
+  // Hydrate boards + members for the filter bar / view form.
   useEffect(() => {
     if (!orgId) return;
-    if (boards.length === 0) {
-      fetchBoards(orgId).catch((err) => {
-        console.error('Failed to fetch boards for calendar filter:', err);
-      });
-    }
-    if (orgMembers.length === 0) {
-      fetchMembers(orgId).catch((err) => {
-        console.error('Failed to fetch members for calendar filter:', err);
-      });
-    }
+    if (boards.length === 0) fetchBoards(orgId).catch((e) => console.error(e));
+    if (orgMembers.length === 0) fetchMembers(orgId).catch((e) => console.error(e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  // Track viewport width to switch between calendar grid and list view
+  // Load saved views for the workspace.
+  const reloadViews = useCallback(async () => {
+    if (!orgId) return [];
+    try {
+      const list = await calendarViewService.listViews(orgId);
+      setViews(list);
+      return list;
+    } catch (err) {
+      console.error('Failed to load calendar views:', err);
+      return [];
+    }
+  }, [orgId]);
+
+  useEffect(() => {
+    reloadViews();
+  }, [reloadViews]);
+
+  // When a saved view is selected, align the RBC view with its layout.
+  useEffect(() => {
+    if (selectedView) setRbcView(layoutToRbcView(selectedView.layout));
+    else setRbcView((v) => (v === 'month' || v === 'week' ? v : 'month'));
+  }, [selectedView]);
+
+  // Responsive: list view on mobile.
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
   const [mobileMode, setMobileMode] = useState('list');
-
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -459,70 +493,208 @@ const CalendarPage = () => {
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // Fetch tasks for the currently-shown month
-  useEffect(() => {
-    let cancelled = false;
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
+  // Source column type for the active saved view (drives drag write shape).
+  const activeSourceColumn = useMemo(() => {
+    if (!selectedView || !selectedView.boardId || !selectedView.sourceColumnId) return null;
+    const board = boards.find((b) => String(b._id) === String(selectedView.boardId));
+    if (!board || !Array.isArray(board.columns)) return null;
+    return board.columns.find((c) => String(c._id) === String(selectedView.sourceColumnId)) || null;
+  }, [selectedView, boards]);
 
-    // Kick off the request. setState calls only happen inside the async
-    // callbacks, guarded by `cancelled`, so no cascading renders from the
-    // effect body itself.
-    getCalendarTasks(month, year, orgId)
-      .then((tasks) => {
-        if (cancelled) return;
+  // --- Fetch events for the active view + range ---------------------------
+  const fetchEvents = useCallback(async () => {
+    if (!orgId) return;
+    setLoading(true);
+    setWarning('');
+    try {
+      if (!selectedView) {
+        // Default calendar — legacy dueDate source.
+        const month = date.getMonth() + 1;
+        const year = date.getFullYear();
+        const tasks = await getCalendarTasks(month, year, orgId);
         const withDates = (tasks || []).filter((t) => t.dueDate);
         setEvents(withDates.map(taskToEvent));
+        setTaskById(Object.fromEntries(withDates.map((t) => [String(t._id), t])));
+        setResources(null);
         setError('');
-      })
-      .catch((err) => {
-        console.error('Failed to fetch calendar tasks:', err);
-        if (cancelled) return;
-        setError(
-          err?.response?.data?.error ||
-            'Failed to load calendar. Please try again.'
-        );
-        setEvents([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+        return;
+      }
 
-    // Mark as loading via a microtask so the setState doesn't happen
-    // synchronously inside the effect body.
-    Promise.resolve().then(() => {
-      if (!cancelled) setLoading(true);
-    });
+      const range = rangeForView(date, rbcView);
+      const res = await calendarViewService.getEvents(selectedView._id, range);
+      setEvents((res.events || []).map(normalizedToEvent));
+      setWarning(res.warning || '');
+      setError('');
 
-    return () => {
-      cancelled = true;
-    };
-  }, [date, orgId]);
+      // Build resource roster for resource layouts.
+      if (selectedView.layout === 'resource') {
+        if (res.resources) {
+          setResources([
+            ...res.resources.filter((r) => r.id).map((r) => ({ id: r.id, title: r.title })),
+            { id: UNASSIGNED_RESOURCE, title: 'Unassigned' },
+          ]);
+        } else {
+          setResources([
+            ...orgMembers.map((m) => ({ id: String(m._id), title: m.name })),
+            { id: UNASSIGNED_RESOURCE, title: 'Unassigned' },
+          ]);
+        }
+      } else {
+        setResources(null);
+      }
+
+      // Best-effort: load the board's tasks so clicking an event opens the
+      // full CommentPanel. Failure is non-fatal (falls back to a stub task).
+      if (selectedView.boardId) {
+        try {
+          const tasks = await getTasks(selectedView.boardId);
+          setTaskById(Object.fromEntries((tasks || []).map((t) => [String(t._id), t])));
+        } catch {
+          setTaskById({});
+        }
+      } else {
+        setTaskById({});
+      }
+    } catch (err) {
+      console.error('Failed to fetch calendar events:', err);
+      setError(err?.response?.data?.error || 'Failed to load calendar. Please try again.');
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId, selectedView, date, rbcView, orgMembers]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
 
   const handleNavigate = useCallback(
     (action) => {
       setDate((prev) => {
         const next = new Date(prev);
         const delta = action === 'PREV' ? -1 : 1;
-        if (view === 'week') {
-          next.setDate(prev.getDate() + delta * 7);
-        } else {
+        if (rbcView === 'week') next.setDate(prev.getDate() + delta * 7);
+        else if (rbcView === 'day') next.setDate(prev.getDate() + delta);
+        else {
           next.setMonth(prev.getMonth() + delta);
           next.setDate(1);
         }
         return next;
       });
     },
-    [view]
+    [rbcView]
   );
 
-  const handleSelectEvent = useCallback((event) => {
-    setSelectedTask(event.resource);
-  }, []);
+  const handleSelectEvent = useCallback(
+    (event) => {
+      if (event.resource) {
+        setSelectedTask(event.resource);
+        return;
+      }
+      const full = taskById[String(event.id)];
+      setSelectedTask(
+        full || { _id: event.id, name: event.title, board: selectedView?.boardId || null }
+      );
+    },
+    [taskById, selectedView]
+  );
 
-  // Apply board + assignee filters with AND logic. The `unassigned` synthetic
-  // id matches tasks with no assignees; real ids match by member _id.
+  // --- Drag-to-reschedule -------------------------------------------------
+  const handleEventDrop = useCallback(
+    async ({ event, start, end }) => {
+      const startDate = start instanceof Date ? start : new Date(start);
+      const endDate = end instanceof Date ? end : new Date(end);
+
+      // Optimistic local move.
+      setEvents((prev) =>
+        prev.map((e) => (e.id === event.id ? { ...e, start: startDate, end: endDate } : e))
+      );
+
+      try {
+        if (!selectedView) {
+          await updateTask(event.id, { dueDate: startDate.toISOString() });
+        } else if (activeSourceColumn) {
+          const colId = String(activeSourceColumn._id);
+          const value =
+            activeSourceColumn.type === 'timeline'
+              ? { start: startDate.toISOString(), end: endDate.toISOString() }
+              : startDate.toISOString();
+          await updateTask(event.id, { columnValues: { [colId]: value } });
+        } else {
+          // No writable source — revert.
+          fetchEvents();
+          return;
+        }
+        fetchEvents();
+      } catch (err) {
+        console.error('Failed to reschedule:', err);
+        setError('Could not reschedule that item. Reverting.');
+        fetchEvents();
+      }
+    },
+    [selectedView, activeSourceColumn, fetchEvents]
+  );
+
+  const handleEventResize = useCallback(
+    ({ event, start, end }) => {
+      // Resize only meaningful for timeline sources; reuse the drop handler.
+      if (selectedView && activeSourceColumn?.type === 'timeline') {
+        handleEventDrop({ event, start, end });
+      }
+    },
+    [selectedView, activeSourceColumn, handleEventDrop]
+  );
+
+  const draggable = !selectedView || !!activeSourceColumn;
+
+  // --- View CRUD ----------------------------------------------------------
+  const openCreateForm = () => {
+    setFormInitial(null);
+    setFormError('');
+    setFormOpen(true);
+  };
+  const openEditForm = (view) => {
+    setFormInitial(view);
+    setFormError('');
+    setFormOpen(true);
+  };
+
+  const handleFormSubmit = async (payload) => {
+    setFormSaving(true);
+    setFormError('');
+    try {
+      let saved;
+      if (formInitial) {
+        saved = await calendarViewService.updateView(formInitial._id, payload);
+      } else {
+        saved = await calendarViewService.createView({ ...payload, workspaceId: orgId });
+      }
+      await reloadViews();
+      setFormOpen(false);
+      handleSelectView(saved._id);
+    } catch (err) {
+      setFormError(err?.response?.data?.error || 'Could not save the view.');
+    } finally {
+      setFormSaving(false);
+    }
+  };
+
+  const handleDeleteView = async (view) => {
+    if (!window.confirm(`Delete the view "${view.name}"?`)) return;
+    try {
+      await calendarViewService.deleteView(view._id);
+      const next = await reloadViews();
+      if (String(selectedViewId) === String(view._id)) handleSelectView(null);
+      else if (!next.length) handleSelectView(null);
+    } catch (err) {
+      console.error('Failed to delete view:', err);
+      setError('Could not delete that view.');
+    }
+  };
+
+  // --- Legacy filter (default calendar only) ------------------------------
   const visibleEvents = useMemo(() => {
+    if (selectedView) return events; // saved views filter server-side
     if (boardFilter.length === 0 && assigneeFilter.length === 0) return events;
     const boardSet = new Set(boardFilter);
     const assigneeSet = new Set(assigneeFilter);
@@ -534,91 +706,145 @@ const CalendarPage = () => {
       if (assigneeSet.size > 0) {
         const assigned = task.assignedTo || [];
         const hasAny = assigned.length > 0;
-        const matchesUser = assigned.some((a) =>
-          assigneeSet.has(a?._id || a)
-        );
+        const matchesUser = assigned.some((a) => assigneeSet.has(a?._id || a));
         const matchesUnassignedRow = matchUnassigned && !hasAny;
         if (!matchesUser && !matchesUnassignedRow) return false;
       }
       return true;
     });
-  }, [events, boardFilter, assigneeFilter]);
+  }, [events, selectedView, boardFilter, assigneeFilter]);
 
   const showList = isMobile && mobileMode === 'list';
+  const isResourceLayout = selectedView?.layout === 'resource' && !!resources;
 
   return (
     <>
       <PageWrapper>
         <CalendarToolbar
-          view={view}
-          onViewChange={setView}
+          view={rbcView}
+          onViewChange={setRbcView}
           date={date}
           onNavigate={handleNavigate}
           mobileMode={mobileMode}
           onMobileModeChange={setMobileMode}
           isMobile={isMobile}
+          showViewToggle={!selectedView || selectedView.layout === 'month' || selectedView.layout === 'week'}
         />
 
-        <div className="mt-4 flex justify-end">
-          <CalendarFilterBar
-            boards={boards}
-            members={orgMembers}
-            boardFilter={boardFilter}
-            onBoardFilterChange={handleBoardFilterChange}
-            assigneeFilter={assigneeFilter}
-            onAssigneeFilterChange={handleAssigneeFilterChange}
-          />
-        </div>
-
-        {error && (
-          <div
-            role="alert"
-            className="mt-4 font-body"
-            style={{
-              background: 'var(--color-status-stuck-bg)',
-              color: 'var(--color-status-stuck)',
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 13,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        <div className="mt-5">
-          {showList ? (
-            <TaskListView events={visibleEvents} onSelect={handleSelectEvent} />
-          ) : (
-            <div
-              className="bg-surface macan-calendar-wrap"
-              style={{
-                borderRadius: 'var(--radius-lg)',
-                boxShadow: 'var(--shadow-card)',
-                padding: 12,
-                position: 'relative',
-              }}
-            >
-              {loading && events.length === 0 ? (
-                <SkeletonCalendarGrid />
-              ) : (
-                <Calendar
-                  localizer={localizer}
-                  events={visibleEvents}
-                  date={date}
-                  view={view}
-                  onNavigate={setDate}
-                  onView={setView}
-                  onSelectEvent={handleSelectEvent}
-                  eventPropGetter={eventPropGetter}
-                  views={['month', 'week']}
-                  popup
-                  toolbar={false}
-                  style={{ height: view === 'week' ? 640 : 720 }}
-                />
-              )}
-            </div>
+        <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-start">
+          {!isMobile && (
+            <CalendarViewSidebar
+              views={views}
+              activeViewId={selectedViewId}
+              currentUserId={currentUserId}
+              isAdmin={isAdmin}
+              onSelect={handleSelectView}
+              onNew={openCreateForm}
+              onEdit={openEditForm}
+              onDelete={handleDeleteView}
+            />
           )}
+
+          <div className="flex-1 min-w-0">
+            {/* Legacy filter bar only for the default calendar. */}
+            {!selectedView ? (
+              <div className="mb-4 flex justify-end">
+                <CalendarFilterBar
+                  boards={boards}
+                  members={orgMembers}
+                  boardFilter={boardFilter}
+                  onBoardFilterChange={(ids) => setParam('boards', ids)}
+                  assigneeFilter={assigneeFilter}
+                  onAssigneeFilterChange={(ids) => setParam('assignees', ids)}
+                  isAdmin={isAdmin}
+                />
+              </div>
+            ) : (
+              <CalendarFilterBar activeView={selectedView} onEditView={() => openEditForm(selectedView)} />
+            )}
+
+            {warning === 'column_missing' && (
+              <div
+                role="alert"
+                className="mb-4 flex items-center gap-2 font-body"
+                style={{
+                  background: 'var(--color-status-working-bg)',
+                  color: 'var(--color-status-working)',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 13,
+                }}
+              >
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>
+                  Column missing — this view references a column that no longer exists.{' '}
+                  <button
+                    type="button"
+                    onClick={() => openEditForm(selectedView)}
+                    style={{ textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit' }}
+                  >
+                    Edit view
+                  </button>
+                </span>
+              </div>
+            )}
+
+            {error && (
+              <div
+                role="alert"
+                className="mb-4 font-body"
+                style={{
+                  background: 'var(--color-status-stuck-bg)',
+                  color: 'var(--color-status-stuck)',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 13,
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {showList ? (
+              <TaskListView events={visibleEvents} onSelect={handleSelectEvent} />
+            ) : (
+              <div
+                className="bg-surface macan-calendar-wrap"
+                style={{
+                  borderRadius: 'var(--radius-lg)',
+                  boxShadow: 'var(--shadow-card)',
+                  padding: 12,
+                  position: 'relative',
+                }}
+              >
+                {loading && events.length === 0 ? (
+                  <SkeletonCalendarGrid />
+                ) : (
+                  <DnDCalendar
+                    localizer={localizer}
+                    events={visibleEvents}
+                    date={date}
+                    view={rbcView}
+                    onNavigate={setDate}
+                    onView={setRbcView}
+                    onSelectEvent={handleSelectEvent}
+                    onEventDrop={handleEventDrop}
+                    onEventResize={handleEventResize}
+                    draggableAccessor={() => draggable}
+                    resizable={isResourceLayout || (selectedView && activeSourceColumn?.type === 'timeline')}
+                    eventPropGetter={eventPropGetter}
+                    views={RBC_VIEWS}
+                    popup
+                    toolbar={false}
+                    resources={isResourceLayout ? resources : undefined}
+                    resourceIdAccessor={isResourceLayout ? 'id' : undefined}
+                    resourceTitleAccessor={isResourceLayout ? 'title' : undefined}
+                    style={{ height: rbcView === 'week' || rbcView === 'day' ? 640 : 720 }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </PageWrapper>
 
@@ -627,6 +853,18 @@ const CalendarPage = () => {
         isOpen={!!selectedTask}
         onClose={() => setSelectedTask(null)}
       />
+
+      {formOpen && (
+        <CalendarViewForm
+          isOpen={formOpen}
+          onClose={() => setFormOpen(false)}
+          boards={boards}
+          initial={formInitial}
+          saving={formSaving}
+          error={formError}
+          onSubmit={handleFormSubmit}
+        />
+      )}
 
       {/* react-big-calendar theming overrides to match Macan design system */}
       <style>{`
@@ -652,9 +890,7 @@ const CalendarPage = () => {
           border-bottom: 1px solid var(--color-border);
           border-left: 1px solid var(--color-border);
         }
-        .macan-calendar-wrap .rbc-header:first-child {
-          border-left: none;
-        }
+        .macan-calendar-wrap .rbc-header:first-child { border-left: none; }
         .macan-calendar-wrap .rbc-month-row {
           border-top: 1px solid var(--color-border);
           min-height: 100px;
@@ -664,18 +900,10 @@ const CalendarPage = () => {
           border-left: 1px solid var(--color-border);
           background: var(--color-bg-surface);
         }
-        .macan-calendar-wrap .rbc-day-bg:first-child {
-          border-left: none;
-        }
-        .macan-calendar-wrap .rbc-off-range-bg {
-          background: var(--color-bg-base);
-        }
-        .macan-calendar-wrap .rbc-off-range {
-          color: var(--color-text-muted);
-        }
-        .macan-calendar-wrap .rbc-today {
-          background: var(--color-accent-light);
-        }
+        .macan-calendar-wrap .rbc-day-bg:first-child { border-left: none; }
+        .macan-calendar-wrap .rbc-off-range-bg { background: var(--color-bg-base); }
+        .macan-calendar-wrap .rbc-off-range { color: var(--color-text-muted); }
+        .macan-calendar-wrap .rbc-today { background: var(--color-accent-light); }
         .macan-calendar-wrap .rbc-date-cell {
           text-align: right;
           padding: 6px 8px;
@@ -712,26 +940,22 @@ const CalendarPage = () => {
           background: transparent;
           padding: 2px 6px;
         }
-        .macan-calendar-wrap .rbc-show-more:hover {
-          color: var(--color-accent-hover);
-        }
+        .macan-calendar-wrap .rbc-show-more:hover { color: var(--color-accent-hover); }
         .macan-calendar-wrap .rbc-time-header-content,
         .macan-calendar-wrap .rbc-time-content {
           border-left: 1px solid var(--color-border);
         }
         .macan-calendar-wrap .rbc-time-slot,
-        .macan-calendar-wrap .rbc-timeslot-group {
-          border-color: var(--color-border);
-        }
+        .macan-calendar-wrap .rbc-timeslot-group { border-color: var(--color-border); }
         .macan-calendar-wrap .rbc-time-view .rbc-label {
           font-size: 11px;
           color: var(--color-text-muted);
         }
-        .macan-calendar-wrap .rbc-allday-cell {
-          min-height: 40px;
-        }
-        .macan-calendar-wrap .rbc-row-segment {
-          padding: 0 2px;
+        .macan-calendar-wrap .rbc-allday-cell { min-height: 40px; }
+        .macan-calendar-wrap .rbc-row-segment { padding: 0 2px; }
+        .macan-calendar-wrap .rbc-addons-dnd .rbc-addons-dnd-resize-ns-icon,
+        .macan-calendar-wrap .rbc-addons-dnd .rbc-addons-dnd-resize-ew-icon {
+          opacity: 0.6;
         }
       `}</style>
     </>
