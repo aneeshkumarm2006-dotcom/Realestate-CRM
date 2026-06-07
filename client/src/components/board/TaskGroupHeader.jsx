@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 
 /**
@@ -26,6 +27,7 @@ const TaskGroupHeader = ({
   onDeleteGroup,
   dragHandle = null,
 }) => {
+  const { t } = useTranslation();
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   const progressPct =
     totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
@@ -51,7 +53,7 @@ const TaskGroupHeader = ({
       <button
         type="button"
         onClick={onToggle}
-        aria-label={collapsed ? 'Expand group' : 'Collapse group'}
+        aria-label={collapsed ? t('grid.expandGroup') : t('grid.collapseGroup')}
         aria-expanded={!collapsed}
         className="flex items-center justify-center rounded-sm transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
         style={{ width: 24, height: 24 }}
@@ -102,7 +104,7 @@ const TaskGroupHeader = ({
           border: '1px solid var(--color-border)',
         }}
       >
-        {totalCount} {totalCount === 1 ? 'item' : 'items'}
+        {t('grid.leadCount', { count: totalCount })}
       </span>
 
       {/* Progress bar — hidden on small screens to save horizontal space */}
@@ -112,8 +114,8 @@ const TaskGroupHeader = ({
         aria-valuenow={progressPct}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`${doneCount} of ${totalCount} done`}
-        title={`${doneCount} of ${totalCount} done`}
+        aria-label={t('grid.doneProgress', { done: doneCount, total: totalCount })}
+        title={t('grid.doneProgress', { done: doneCount, total: totalCount })}
         style={{
           width: 80,
           height: 4,
@@ -142,7 +144,7 @@ const TaskGroupHeader = ({
         <button
           type="button"
           onClick={onDeleteGroup}
-          aria-label={`Delete group ${name}`}
+          aria-label={t('grid.deleteGroupNamed', { name })}
           className="inline-flex items-center justify-center transition-colors duration-150 hover:bg-[#FFF0F0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-status-stuck)]"
           style={{
             width: 28,

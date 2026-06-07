@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   MoreHorizontal,
   MessageSquare,
@@ -46,6 +47,7 @@ const TaskRow = ({
   isDragging = false,
   dndDisabled = false,
 }) => {
+  const { t } = useTranslation();
   const rowRef = useRef(null);
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const overdue = isOverdue(task.dueDate) && !isStatusDone(board, task.status);
@@ -103,7 +105,7 @@ const TaskRow = ({
           <button
             ref={dragHandleRef}
             type="button"
-            aria-label="Drag to reorder task"
+            aria-label={t('grid.dragToReorderLead')}
             {...(dragHandleListeners || {})}
             onClick={(e) => e.stopPropagation()}
             data-row-click-ignore
@@ -129,7 +131,7 @@ const TaskRow = ({
           type="checkbox"
           checked={selected}
           onChange={(e) => onSelect?.(task._id, e.target.checked)}
-          aria-label={`Select ${task.name}`}
+          aria-label={t('grid.selectNamed', { name: task.name })}
           style={{
             width: 16,
             height: 16,
@@ -146,7 +148,7 @@ const TaskRow = ({
             <button
               type="button"
               onClick={() => onToggleExpand(task._id)}
-              aria-label={expanded ? 'Collapse subitems' : 'Expand subitems'}
+              aria-label={expanded ? t('grid.collapseSubitems') : t('grid.expandSubitems')}
               aria-expanded={expanded}
               className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
               style={{
@@ -253,7 +255,7 @@ const TaskRow = ({
               className="font-body"
               style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
             >
-              Unassigned
+              {t('grid.unassigned')}
             </span>
           )}
         </div>
@@ -291,8 +293,8 @@ const TaskRow = ({
           onClick={() => onOpen?.(task)}
           aria-label={
             commentCount > 0
-              ? `Open comments (${commentCount})`
-              : 'Open comments'
+              ? t('grid.openCommentsCount', { count: commentCount })
+              : t('grid.openComments')
           }
           className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
           style={{ position: 'relative', width: 28, height: 28, margin: '0 auto', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
@@ -333,7 +335,7 @@ const TaskRow = ({
           <button
             type="button"
             onClick={(e) => onActionsClick(task, e)}
-            aria-label="Task actions"
+            aria-label={t('grid.leadActions')}
             className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
             style={{ width: 28, height: 28, marginLeft: 'auto' }}
           >
@@ -355,6 +357,7 @@ const TaskRow = ({
  * done/total ratio; full green with a check icon at 100%.
  */
 const ChecklistBadge = ({ checklist }) => {
+  const { t } = useTranslation();
   const { total, done } = useMemo(() => {
     const list = Array.isArray(checklist) ? checklist : [];
     return {
@@ -377,8 +380,8 @@ const ChecklistBadge = ({ checklist }) => {
     <span
       className="inline-flex items-center justify-center shrink-0"
       style={{ width: size, height: size, position: 'relative' }}
-      title={`${done} / ${total} complete`}
-      aria-label={`${done} of ${total} checklist items complete`}
+      title={t('grid.checklistComplete', { done, total })}
+      aria-label={t('grid.checklistItemsComplete', { done, total })}
     >
       <svg
         width={size}
@@ -429,12 +432,13 @@ const ChecklistBadge = ({ checklist }) => {
  * labels yet, surfaces a small `+` affordance.
  */
 const LabelsCell = ({ board, labels, onClick }) => {
+  const { t } = useTranslation();
   if (!labels || labels.length === 0) {
     return (
       <button
         type="button"
         onClick={onClick}
-        aria-label="Add labels"
+        aria-label={t('grid.addLabels')}
         className="inline-flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
         style={{
           width: 22,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   DndContext,
@@ -41,15 +42,15 @@ import * as formService from '../services/formService';
  * with a copy button. New forms read `?boardId=`; editing loads `/forms/:id/edit`.
  */
 
-const FORM_TYPE_OPTIONS = [
-  { value: 'text', label: 'Text' },
-  { value: 'long_text', label: 'Long text' },
-  { value: 'email', label: 'Email' },
-  { value: 'phone', label: 'Phone' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'dropdown', label: 'Dropdown' },
-  { value: 'checkbox', label: 'Checkbox' },
+const FORM_TYPE_OPTION_KEYS = [
+  { value: 'text', labelKey: 'pages.fieldTypeText' },
+  { value: 'long_text', labelKey: 'pages.fieldTypeLongText' },
+  { value: 'email', labelKey: 'pages.fieldTypeEmail' },
+  { value: 'phone', labelKey: 'pages.fieldTypePhone' },
+  { value: 'number', labelKey: 'pages.fieldTypeNumber' },
+  { value: 'date', labelKey: 'pages.fieldTypeDate' },
+  { value: 'dropdown', labelKey: 'pages.fieldTypeDropdown' },
+  { value: 'checkbox', labelKey: 'pages.fieldTypeCheckbox' },
 ];
 
 /** Map a board column type → a sensible default form field type. */
@@ -113,6 +114,7 @@ const sectionCard = {
 };
 
 const FormBuilderPage = () => {
+  const { t } = useTranslation();
   const { id: formId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -163,16 +165,21 @@ const FormBuilderPage = () => {
         setEnabled(!!f.enabled);
         setSavedForm({ publicUrl: f.publicUrl, slug: f.slug });
       })
-      .catch(() => setError('Could not load this form.'))
+      .catch(() => setError(t('pages.couldNotLoadForm')))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [isEdit, formId]);
+  }, [isEdit, formId, t]);
 
   const board = boardId ? getBoardById(boardId) : null;
   const columns = useMemo(() => board?.columns || [], [board]);
   const columnsById = useMemo(() => new Map(columns.map((c) => [String(c._id), c])), [columns]);
+
+  const formTypeOptions = useMemo(
+    () => FORM_TYPE_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -199,7 +206,7 @@ const FormBuilderPage = () => {
   const addCustomField = () =>
     setFields((prev) => [
       ...prev,
-      { formFieldId: newFieldId(), label: 'New field', type: 'text', required: false, columnId: null, options: [] },
+      { formFieldId: newFieldId(), label: t('pages.newField'), type: 'text', required: false, columnId: null, options: [] },
     ]);
 
   const updateField = (id, patch) =>
@@ -236,11 +243,11 @@ const FormBuilderPage = () => {
   const handleSave = useCallback(async () => {
     setError('');
     if (!boardId) {
-      setError('Pick a board for this form.');
+      setError(t('pages.pickBoardForForm'));
       return;
     }
     if (!name.trim()) {
-      setError('Give the form a name.');
+      setError(t('pages.giveFormName'));
       return;
     }
     setSaving(true);
@@ -248,15 +255,15 @@ const FormBuilderPage = () => {
       if (isEdit) {
         const updated = await formService.updateForm(formId, buildPayload());
         setSavedForm({ publicUrl: updated.publicUrl, slug: updated.slug });
-        toastSuccess('Form saved');
+        toastSuccess(t('pages.formSaved'));
       } else {
         const created = await formService.createForm(boardId, buildPayload());
         setSavedForm({ publicUrl: created.publicUrl, slug: created.slug });
-        toastSuccess('Form published');
+        toastSuccess(t('pages.formPublished'));
         navigate(`/forms/${created._id}/edit`, { replace: true });
       }
     } catch (err) {
-      setError(err?.response?.data?.error || 'Could not save the form.');
+      setError(err?.response?.data?.error || t('pages.couldNotSaveForm'));
     } finally {
       setSaving(false);
     }
@@ -287,7 +294,7 @@ const FormBuilderPage = () => {
     return (
       <PageWrapper>
         <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-          The form builder is admin-only.
+          {t('pages.formBuilderAdminOnly')}
         </p>
       </PageWrapper>
     );
@@ -296,7 +303,7 @@ const FormBuilderPage = () => {
   if (loading) {
     return (
       <PageWrapper>
-        <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('pages.loading')}</p>
       </PageWrapper>
     );
   }
@@ -306,14 +313,14 @@ const FormBuilderPage = () => {
       <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display font-bold inline-flex items-center gap-2" style={{ fontSize: 22, color: 'var(--color-text-primary)' }}>
-            <FileText size={20} /> {isEdit ? 'Edit form' : 'New form'}
+            <FileText size={20} /> {isEdit ? t('pages.editForm') : t('pages.newForm')}
           </h1>
           <p className="font-body mt-1" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Build a public form that creates tasks on this board — submissions run through the same lead intake as inbound webhooks.
+            {t('pages.formBuilderIntro')}
           </p>
         </div>
         <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Publish form'}
+          {saving ? t('pages.saving') : isEdit ? t('pages.saveChanges') : t('pages.publishForm')}
         </Button>
       </header>
 
@@ -325,13 +332,13 @@ const FormBuilderPage = () => {
 
       {savedForm?.publicUrl && (
         <div className="mb-5 flex items-center gap-3 flex-wrap font-body" style={{ padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'var(--color-status-done-bg)', color: 'var(--color-status-done)', fontSize: 13 }}>
-          <span style={{ fontWeight: 600 }}>Public URL:</span>
+          <span style={{ fontWeight: 600 }}>{t('pages.publicUrl')}</span>
           <code style={{ wordBreak: 'break-all', color: 'var(--color-text-primary)' }}>{savedForm.publicUrl}</code>
           <button type="button" onClick={copyUrl} className="inline-flex items-center gap-1.5" style={{ fontSize: 12, padding: '4px 8px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--color-border)', background: '#fff', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-            {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy'}
+            {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? t('pages.copied') : t('pages.copy')}
           </button>
           <a href={`/f/${savedForm.slug}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5" style={{ fontSize: 12, color: 'var(--color-accent)' }}>
-            <ExternalLink size={13} /> Open
+            <ExternalLink size={13} /> {t('pages.open')}
           </a>
         </div>
       )}
@@ -342,43 +349,43 @@ const FormBuilderPage = () => {
           <div style={sectionCard} className="flex flex-col gap-4">
             {!isEdit && (
               <Dropdown
-                label="Board"
+                label={t('pages.board')}
                 options={boardOptions}
                 value={boardId || ''}
                 onChange={(v) => setBoardId(v)}
-                placeholder="Pick a board"
+                placeholder={t('pages.pickABoard')}
               />
             )}
-            <Input label="Form name" required placeholder="e.g. Contact us" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input label="Thank-you message" multiline rows={2} placeholder="Shown after a successful submission." value={welcomeMessage} onChange={(e) => setWelcomeMessage(e.target.value)} />
-            <Input label="Redirect URL (optional)" placeholder="https://… (overrides the thank-you message)" value={postSubmitRedirectUrl} onChange={(e) => setPostSubmitRedirectUrl(e.target.value)} />
+            <Input label={t('pages.formName')} required placeholder={t('pages.formNamePlaceholder')} value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label={t('pages.thankYouMessage')} multiline rows={2} placeholder={t('pages.thankYouMessagePlaceholder')} value={welcomeMessage} onChange={(e) => setWelcomeMessage(e.target.value)} />
+            <Input label={t('pages.redirectUrl')} placeholder={t('pages.redirectUrlPlaceholder')} value={postSubmitRedirectUrl} onChange={(e) => setPostSubmitRedirectUrl(e.target.value)} />
             <div className="flex items-center gap-6">
               <label className="inline-flex items-center gap-2 cursor-pointer font-body" style={{ fontSize: 14 }}>
                 <input type="checkbox" checked={captchaEnabled} onChange={(e) => setCaptchaEnabled(e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }} />
-                Enable captcha (Turnstile)
+                {t('pages.enableCaptcha')}
               </label>
               <label className="inline-flex items-center gap-2 cursor-pointer font-body" style={{ fontSize: 14 }}>
                 <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }} />
-                Published
+                {t('pages.published')}
               </label>
             </div>
           </div>
 
           <div style={sectionCard} className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <h2 className="font-display font-semibold" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>Fields</h2>
+              <h2 className="font-display font-semibold" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>{t('pages.fields')}</h2>
               <div className="flex items-center gap-2">
                 <div style={{ width: 200 }}>
-                  <Dropdown size="sm" options={columnAddOptions} value={addColumnId} onChange={addFieldFromColumn} placeholder="Add field from column" />
+                  <Dropdown size="sm" options={columnAddOptions} value={addColumnId} onChange={addFieldFromColumn} placeholder={t('pages.addFieldFromColumn')} />
                 </div>
-                <Button variant="secondary" size="sm" icon={Plus} onClick={addCustomField}>Custom</Button>
+                <Button variant="secondary" size="sm" icon={Plus} onClick={addCustomField}>{t('pages.custom')}</Button>
               </div>
             </div>
 
             {!board ? (
-              <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Pick a board to map fields to its columns.</p>
+              <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('pages.pickBoardToMapFields')}</p>
             ) : fields.length === 0 ? (
-              <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No fields yet — add one from a board column above.</p>
+              <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('pages.noFieldsYet')}</p>
             ) : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={fields.map((f) => f.formFieldId)} strategy={verticalListSortingStrategy}>
@@ -388,28 +395,28 @@ const FormBuilderPage = () => {
                         {({ ref, setActivatorNodeRef, style, attributes, listeners }) => (
                           <div ref={ref} style={{ ...style, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 10, background: 'var(--color-bg-surface)' }}>
                             <div className="flex items-center gap-2">
-                              <button ref={setActivatorNodeRef} type="button" aria-label="Drag to reorder" {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none', background: 'transparent', border: 'none', padding: 2 }}>
+                              <button ref={setActivatorNodeRef} type="button" aria-label={t('pages.dragToReorder')} {...attributes} {...listeners} style={{ cursor: 'grab', touchAction: 'none', background: 'transparent', border: 'none', padding: 2 }}>
                                 <GripVertical size={15} color="var(--color-text-muted)" />
                               </button>
                               <div style={{ flex: '1 1 40%' }}>
-                                <Input value={field.label} onChange={(e) => updateField(field.formFieldId, { label: e.target.value })} placeholder="Field label" style={{ height: 32 }} />
+                                <Input value={field.label} onChange={(e) => updateField(field.formFieldId, { label: e.target.value })} placeholder={t('pages.fieldLabel')} style={{ height: 32 }} />
                               </div>
                               <div style={{ flex: '0 0 130px' }}>
-                                <Dropdown size="sm" options={FORM_TYPE_OPTIONS} value={field.type} onChange={(v) => updateField(field.formFieldId, { type: v })} />
+                                <Dropdown size="sm" options={formTypeOptions} value={field.type} onChange={(v) => updateField(field.formFieldId, { type: v })} />
                               </div>
                               <label className="inline-flex items-center gap-1.5 font-body shrink-0" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
                                 <input type="checkbox" checked={!!field.required} onChange={(e) => updateField(field.formFieldId, { required: e.target.checked })} style={{ width: 15, height: 15, accentColor: 'var(--color-accent)' }} />
-                                Required
+                                {t('pages.required')}
                               </label>
-                              <button type="button" aria-label="Remove field" onClick={() => removeField(field.formFieldId)} className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]" style={{ width: 30, height: 30, flexShrink: 0 }}>
+                              <button type="button" aria-label={t('pages.removeField')} onClick={() => removeField(field.formFieldId)} className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]" style={{ width: 30, height: 30, flexShrink: 0 }}>
                                 <Trash2 size={14} color="var(--color-text-secondary)" />
                               </button>
                             </div>
                             <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6, marginLeft: 26 }}>
                               {field.columnId && columnsById.get(String(field.columnId))
-                                ? `Maps to column: ${columnsById.get(String(field.columnId)).name}`
-                                : 'Not mapped to a column (stored on the task note for legacy boards).'}
-                              {field.type === 'dropdown' && (field.options || []).length > 0 && ` · options: ${field.options.join(', ')}`}
+                                ? t('pages.mapsToColumn', { name: columnsById.get(String(field.columnId)).name })
+                                : t('pages.notMappedToColumn')}
+                              {field.type === 'dropdown' && (field.options || []).length > 0 && t('pages.fieldOptionsSuffix', { options: field.options.join(', ') })}
                             </p>
                           </div>
                         )}
@@ -424,19 +431,19 @@ const FormBuilderPage = () => {
 
         {/* --- Live preview --- */}
         <div style={sectionCard}>
-          <h2 className="font-display font-semibold mb-1" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>Live preview</h2>
-          <p className="font-body mb-4" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>How visitors see your form.</p>
+          <h2 className="font-display font-semibold mb-1" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>{t('pages.livePreview')}</h2>
+          <p className="font-body mb-4" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('pages.howVisitorsSeeForm')}</p>
           <div style={{ background: '#fff', border: '1px solid var(--color-border)', borderRadius: 12, padding: 24 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 18 }}>{name || 'Untitled form'}</h3>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 18 }}>{name || t('pages.untitledForm')}</h3>
             <div className="flex flex-col gap-4">
               {fields.map((field) => (
                 <div key={field.formFieldId}>
                   <label style={{ display: 'block', marginBottom: 5, fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#475569' }}>
-                    {field.label || 'Field'}{field.required && <span style={{ color: '#DC2626', marginLeft: 4 }}>*</span>}
+                    {field.label || t('pages.field')}{field.required && <span style={{ color: '#DC2626', marginLeft: 4 }}>*</span>}
                   </label>
                   {field.type === 'dropdown' ? (
                     <select disabled style={previewInput}>
-                      <option>Select…</option>
+                      <option>{t('pages.selectPlaceholder')}</option>
                       {(field.options || []).map((o) => <option key={o}>{o}</option>)}
                     </select>
                   ) : field.type === 'checkbox' ? (
@@ -448,9 +455,9 @@ const FormBuilderPage = () => {
                   )}
                 </div>
               ))}
-              {fields.length === 0 && <p style={{ fontSize: 13, color: '#94A3B8' }}>Add fields to preview the form.</p>}
-              {captchaEnabled && <div style={{ height: 60, border: '1px dashed #CBD5E1', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#94A3B8' }}>Captcha challenge</div>}
-              <button disabled style={{ height: 42, borderRadius: 8, border: 'none', background: '#2563EB', color: '#fff', fontSize: 15, fontWeight: 600, opacity: 0.9 }}>Submit</button>
+              {fields.length === 0 && <p style={{ fontSize: 13, color: '#94A3B8' }}>{t('pages.addFieldsToPreview')}</p>}
+              {captchaEnabled && <div style={{ height: 60, border: '1px dashed #CBD5E1', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#94A3B8' }}>{t('pages.captchaChallenge')}</div>}
+              <button disabled style={{ height: 42, borderRadius: 8, border: 'none', background: '#2563EB', color: '#fff', fontSize: 15, fontWeight: 600, opacity: 0.9 }}>{t('pages.submit')}</button>
             </div>
           </div>
         </div>

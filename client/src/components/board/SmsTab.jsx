@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageSquare, Send, RefreshCw } from 'lucide-react';
 import * as smsService from '../../services/smsService';
 import ChatBubble from './ChatBubble';
@@ -16,6 +17,7 @@ import ChatBubble from './ChatBubble';
  *   onCountChange(n) — bubbles the message count to the tab badge
  */
 const SmsTab = ({ task, onCountChange }) => {
+  const { t } = useTranslation();
   const taskId = task?._id || null;
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -35,13 +37,13 @@ const SmsTab = ({ task, onCountChange }) => {
           onCountChange?.(list.length);
         })
         .catch((err) => {
-          if (!silent) setError(err?.response?.data?.error || 'Failed to load messages');
+          if (!silent) setError(err?.response?.data?.error || t('itemTabs.messagesLoadError'));
         })
         .finally(() => {
           if (!silent) setLoading(false);
         });
     },
-    [taskId, onCountChange]
+    [taskId, onCountChange, t]
   );
 
   useEffect(() => {
@@ -83,7 +85,7 @@ const SmsTab = ({ task, onCountChange }) => {
       });
       setDraft('');
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to send SMS');
+      setError(err?.response?.data?.error || t('itemTabs.smsSendError'));
     } finally {
       setSending(false);
     }
@@ -93,13 +95,13 @@ const SmsTab = ({ task, onCountChange }) => {
     <div className="flex flex-col" style={{ flex: 1, minHeight: 0 }}>
       <div className="flex items-center justify-between" style={{ padding: '10px 16px' }}>
         <span className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          {messages.length} message{messages.length === 1 ? '' : 's'}
+          {t('itemTabs.messageCount', { count: messages.length })}
         </span>
         <button
           type="button"
           onClick={() => reload()}
           disabled={!taskId}
-          aria-label="Refresh messages"
+          aria-label={t('itemTabs.refreshMessages')}
           className="inline-flex items-center justify-center transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
           style={{
             width: 28,
@@ -124,13 +126,13 @@ const SmsTab = ({ task, onCountChange }) => {
       <div ref={threadRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' }}>
         {loading ? (
           <p className="font-body text-center" style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '24px 0' }}>
-            Loading messages…
+            {t('itemTabs.loadingMessages')}
           </p>
         ) : ordered.length === 0 ? (
           <div className="flex flex-col items-center justify-center" style={{ padding: '32px 16px', gap: 8 }}>
             <MessageSquare size={28} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
             <p className="font-body text-center" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              No SMS yet. Send a text to this lead to start the conversation.
+              {t('itemTabs.noSmsOnLead')}
             </p>
           </div>
         ) : (
@@ -152,7 +154,7 @@ const SmsTab = ({ task, onCountChange }) => {
                 handleSend();
               }
             }}
-            placeholder="Type a message…"
+            placeholder={t('itemTabs.typeAMessage')}
             rows={2}
             disabled={!taskId || sending}
             className="flex-1 font-body focus:outline-none"
@@ -184,7 +186,7 @@ const SmsTab = ({ task, onCountChange }) => {
             }}
           >
             <Send size={14} aria-hidden="true" />
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? t('itemTabs.sending') : t('itemTabs.send')}
           </button>
         </div>
       </form>

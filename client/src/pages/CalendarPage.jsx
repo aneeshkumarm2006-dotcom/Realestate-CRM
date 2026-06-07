@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
@@ -115,6 +116,7 @@ const CalendarToolbar = ({
   isMobile,
   showViewToggle = true,
 }) => {
+  const { t } = useTranslation();
   const label = view === 'week'
     ? moment(date).startOf('week').format('MMM D') +
       ' – ' +
@@ -127,15 +129,15 @@ const CalendarToolbar = ({
         className="font-display font-bold"
         style={{ fontSize: 28, color: 'var(--color-text-primary)', lineHeight: 1.2 }}
       >
-        Calendar
+        {t('pages.calendar')}
       </h1>
 
       <div className="flex flex-wrap items-center gap-3">
         {isMobile && (
           <PillToggle
             options={[
-              { value: 'list', label: 'List', icon: ListIcon },
-              { value: 'grid', label: 'Grid', icon: LayoutGrid },
+              { value: 'list', label: t('pages.list'), icon: ListIcon },
+              { value: 'grid', label: t('pages.grid'), icon: LayoutGrid },
             ]}
             value={mobileMode}
             onChange={onMobileModeChange}
@@ -145,8 +147,8 @@ const CalendarToolbar = ({
         {showViewToggle && (!isMobile || mobileMode === 'grid') && (
           <PillToggle
             options={[
-              { value: 'month', label: 'Month' },
-              { value: 'week', label: 'Week' },
+              { value: 'month', label: t('pages.month') },
+              { value: 'week', label: t('pages.week') },
             ]}
             value={view === 'week' ? 'week' : 'month'}
             onChange={onViewChange}
@@ -182,12 +184,13 @@ const CalendarToolbar = ({
 };
 
 const NavArrow = ({ direction, onClick }) => {
+  const { t } = useTranslation();
   const Icon = direction === 'prev' ? ChevronLeft : ChevronRight;
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={direction === 'prev' ? 'Previous' : 'Next'}
+      aria-label={direction === 'prev' ? t('pages.previous') : t('pages.next')}
       className="flex items-center justify-center rounded-full transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
       style={{ width: 28, height: 28 }}
     >
@@ -240,6 +243,7 @@ const PillToggle = ({ options, value, onChange }) => (
  * Simplified list view — used as the default on mobile. Groups events by date.
  */
 const TaskListView = ({ events, onSelect }) => {
+  const { t } = useTranslation();
   const grouped = useMemo(() => {
     const byDate = new Map();
     for (const ev of events) {
@@ -261,7 +265,7 @@ const TaskListView = ({ events, onSelect }) => {
         }}
       >
         <p className="font-body" style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>
-          No tasks scheduled for this range.
+          {t('pages.noLeadsScheduled')}
         </p>
       </div>
     );
@@ -356,6 +360,7 @@ const rangeForView = (date, rbcView) => {
 };
 
 const CalendarPage = () => {
+  const { t } = useTranslation();
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const orgId = currentOrg?._id || null;
   const orgMembers = useOrgStore((s) => s.members);
@@ -531,12 +536,12 @@ const CalendarPage = () => {
         if (res.resources) {
           setResources([
             ...res.resources.filter((r) => r.id).map((r) => ({ id: r.id, title: r.title })),
-            { id: UNASSIGNED_RESOURCE, title: 'Unassigned' },
+            { id: UNASSIGNED_RESOURCE, title: t('pages.unassigned') },
           ]);
         } else {
           setResources([
             ...orgMembers.map((m) => ({ id: String(m._id), title: m.name })),
-            { id: UNASSIGNED_RESOURCE, title: 'Unassigned' },
+            { id: UNASSIGNED_RESOURCE, title: t('pages.unassigned') },
           ]);
         }
       } else {
@@ -557,12 +562,12 @@ const CalendarPage = () => {
       }
     } catch (err) {
       console.error('Failed to fetch calendar events:', err);
-      setError(err?.response?.data?.error || 'Failed to load calendar. Please try again.');
+      setError(err?.response?.data?.error || t('pages.failedToLoadCalendar'));
       setEvents([]);
     } finally {
       setLoading(false);
     }
-  }, [orgId, selectedView, date, rbcView, orgMembers]);
+  }, [orgId, selectedView, date, rbcView, orgMembers, t]);
 
   useEffect(() => {
     fetchEvents();
@@ -628,11 +633,11 @@ const CalendarPage = () => {
         fetchEvents();
       } catch (err) {
         console.error('Failed to reschedule:', err);
-        setError('Could not reschedule that item. Reverting.');
+        setError(t('pages.couldNotReschedule'));
         fetchEvents();
       }
     },
-    [selectedView, activeSourceColumn, fetchEvents]
+    [selectedView, activeSourceColumn, fetchEvents, t]
   );
 
   const handleEventResize = useCallback(
@@ -673,14 +678,14 @@ const CalendarPage = () => {
       setFormOpen(false);
       handleSelectView(saved._id);
     } catch (err) {
-      setFormError(err?.response?.data?.error || 'Could not save the view.');
+      setFormError(err?.response?.data?.error || t('pages.couldNotSaveView'));
     } finally {
       setFormSaving(false);
     }
   };
 
   const handleDeleteView = async (view) => {
-    if (!window.confirm(`Delete the view "${view.name}"?`)) return;
+    if (!window.confirm(t('pages.deleteViewConfirm', { name: view.name }))) return;
     try {
       await calendarViewService.deleteView(view._id);
       const next = await reloadViews();
@@ -688,7 +693,7 @@ const CalendarPage = () => {
       else if (!next.length) handleSelectView(null);
     } catch (err) {
       console.error('Failed to delete view:', err);
-      setError('Could not delete that view.');
+      setError(t('pages.couldNotDeleteView'));
     }
   };
 
@@ -777,13 +782,13 @@ const CalendarPage = () => {
               >
                 <AlertTriangle size={15} aria-hidden="true" />
                 <span>
-                  Column missing — this view references a column that no longer exists.{' '}
+                  {t('pages.columnMissing')}{' '}
                   <button
                     type="button"
                     onClick={() => openEditForm(selectedView)}
                     style={{ textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit' }}
                   >
-                    Edit view
+                    {t('pages.editView')}
                   </button>
                 </span>
               </div>

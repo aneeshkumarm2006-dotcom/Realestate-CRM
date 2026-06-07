@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pencil, Trash2 } from 'lucide-react';
 
 /**
@@ -12,6 +13,7 @@ import { Pencil, Trash2 } from 'lucide-react';
  *   onClose  — callback to close the menu
  */
 const TaskActionsMenu = ({ anchorEl, onEdit, onDelete, onClose }) => {
+  const { t } = useTranslation();
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -55,8 +57,8 @@ const TaskActionsMenu = ({ anchorEl, onEdit, onDelete, onClose }) => {
         animation: 'macan-dropdown-enter 150ms ease-out',
       }}
     >
-      <MenuItem icon={Pencil} label="Edit" onClick={onEdit} />
-      <MenuItem icon={Trash2} label="Delete" onClick={onDelete} danger />
+      <MenuItem icon={Pencil} label={t('grid.edit')} onClick={onEdit} />
+      <MenuItem icon={Trash2} label={t('grid.delete')} onClick={onDelete} danger />
       <style>{`
         @keyframes macan-dropdown-enter {
           from { opacity: 0; transform: translateY(-4px); }

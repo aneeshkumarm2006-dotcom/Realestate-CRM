@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageCircle, Send, RefreshCw, Paperclip, X, FileText, Clock } from 'lucide-react';
 import * as whatsappService from '../../services/whatsappService';
 import useOrgStore from '../../store/orgStore';
@@ -42,6 +43,7 @@ const renderPreview = (body, vars) =>
   );
 
 const WhatsAppTab = ({ task, onCountChange }) => {
+  const { t } = useTranslation();
   const taskId = task?._id || null;
   const workspaceId = useOrgStore((s) => s.currentOrg?._id) || null;
 
@@ -78,13 +80,13 @@ const WhatsAppTab = ({ task, onCountChange }) => {
           onCountChange?.((data.messages || []).length);
         })
         .catch((err) => {
-          if (!silent) setError(err?.response?.data?.error || 'Failed to load messages');
+          if (!silent) setError(err?.response?.data?.error || t('itemTabs.messagesLoadError'));
         })
         .finally(() => {
           if (!silent) setLoading(false);
         });
     },
-    [taskId, onCountChange]
+    [taskId, onCountChange, t]
   );
 
   useEffect(() => {
@@ -146,7 +148,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
       const uploaded = await whatsappService.uploadMedia(file);
       setMedia({ url: uploaded.url, name: uploaded.name, mime: uploaded.mime });
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to upload media');
+      setError(err?.response?.data?.error || t('itemTabs.mediaUploadError'));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -169,7 +171,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
       setDraft('');
       setMedia(null);
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to send WhatsApp message');
+      setError(err?.response?.data?.error || t('itemTabs.whatsappSendError'));
     } finally {
       setSending(false);
     }
@@ -192,7 +194,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
       setShowTemplates(false);
       setMedia(null);
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to send template');
+      setError(err?.response?.data?.error || t('itemTabs.templateSendError'));
     } finally {
       setSending(false);
     }
@@ -212,13 +214,13 @@ const WhatsAppTab = ({ task, onCountChange }) => {
     <div className="flex flex-col" style={{ flex: 1, minHeight: 0 }}>
       <div className="flex items-center justify-between" style={{ padding: '10px 16px' }}>
         <span className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          {messages.length} message{messages.length === 1 ? '' : 's'}
+          {t('itemTabs.messageCount', { count: messages.length })}
         </span>
         <button
           type="button"
           onClick={() => reload()}
           disabled={!taskId}
-          aria-label="Refresh messages"
+          aria-label={t('itemTabs.refreshMessages')}
           className="inline-flex items-center justify-center transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
           style={{
             width: 28,
@@ -242,17 +244,17 @@ const WhatsAppTab = ({ task, onCountChange }) => {
             style={{ fontSize: 11, color: 'var(--color-status-done)' }}
           >
             <MessageCircle size={12} aria-hidden="true" />
-            24-hour window open — free-form replies allowed
-            {lastInboundAt ? ` · last reply ${timeAgo(lastInboundAt)}` : ''}
+            {t('itemTabs.windowOpen')}
+            {lastInboundAt ? t('itemTabs.lastReply', { time: timeAgo(lastInboundAt) }) : ''}
           </span>
         ) : (
           <span
             className="inline-flex items-center gap-1 font-body"
             style={{ fontSize: 11, color: 'var(--color-text-muted)' }}
-            title={lastInboundAt ? `Last inbound ${formatDate(lastInboundAt)}` : 'No inbound reply yet'}
+            title={lastInboundAt ? t('itemTabs.lastInbound', { date: formatDate(lastInboundAt) }) : t('itemTabs.noInboundReply')}
           >
             <Clock size={12} aria-hidden="true" />
-            24-hour window closed — send an approved template to reach this contact
+            {t('itemTabs.windowClosed')}
           </span>
         )}
       </div>
@@ -266,13 +268,13 @@ const WhatsAppTab = ({ task, onCountChange }) => {
       <div ref={threadRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 16px' }}>
         {loading ? (
           <p className="font-body text-center" style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '24px 0' }}>
-            Loading messages…
+            {t('itemTabs.loadingMessages')}
           </p>
         ) : ordered.length === 0 ? (
           <div className="flex flex-col items-center justify-center" style={{ padding: '32px 16px', gap: 8 }}>
             <MessageCircle size={28} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
             <p className="font-body text-center" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              No WhatsApp messages yet. Start the conversation with a template.
+              {t('itemTabs.noWhatsappMessages')}
             </p>
           </div>
         ) : (
@@ -299,12 +301,12 @@ const WhatsAppTab = ({ task, onCountChange }) => {
         >
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
             <span className="font-body font-semibold" style={{ fontSize: 12, color: 'var(--color-text-primary)' }}>
-              {selectedTemplate ? 'Fill template variables' : 'Choose an approved template'}
+              {selectedTemplate ? t('itemTabs.fillTemplateVariables') : t('itemTabs.chooseApprovedTemplate')}
             </span>
             <button
               type="button"
               onClick={() => { setShowTemplates(false); setSelectedTemplate(null); }}
-              aria-label="Close template picker"
+              aria-label={t('itemTabs.closeTemplatePicker')}
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}
             >
               <X size={14} />
@@ -314,7 +316,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
           {!selectedTemplate ? (
             approvedTemplates.length === 0 ? (
               <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                No approved templates. Sync templates in Settings → WhatsApp.
+                {t('itemTabs.noApprovedTemplates')}
               </p>
             ) : (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -347,7 +349,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
             <div className="flex flex-col gap-2">
               {selectedKeys.length === 0 ? (
                 <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  This template has no variables.
+                  {t('itemTabs.templateNoVariables')}
                 </p>
               ) : (
                 selectedKeys.map((k) => (
@@ -397,7 +399,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
                     border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', cursor: 'pointer',
                   }}
                 >
-                  Back
+                  {t('itemTabs.back')}
                 </button>
                 <button
                   type="button"
@@ -411,7 +413,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
                   }}
                 >
                   <Send size={13} aria-hidden="true" />
-                  {sending ? 'Sending…' : 'Send template'}
+                  {sending ? t('itemTabs.sending') : t('itemTabs.sendTemplate')}
                 </button>
               </div>
             </div>
@@ -438,7 +440,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
             <button
               type="button"
               onClick={() => setMedia(null)}
-              aria-label="Remove attachment"
+              aria-label={t('itemTabs.removeAttachmentSimple')}
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}
             >
               <X size={13} />
@@ -446,12 +448,12 @@ const WhatsAppTab = ({ task, onCountChange }) => {
           </div>
         )}
         <div className="flex items-end gap-2">
-          <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" aria-label="Attach media" />
+          <input ref={fileInputRef} type="file" onChange={handleFileSelect} className="hidden" aria-label={t('itemTabs.attachMedia')} />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!taskId || uploading || sending}
-            aria-label="Attach media"
+            aria-label={t('itemTabs.attachMedia')}
             className="inline-flex items-center justify-center transition-colors hover:bg-[color:var(--color-bg-subtle)]"
             style={{
               width: 38, height: 38, flexShrink: 0,
@@ -471,7 +473,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
                 handleSend();
               }
             }}
-            placeholder={windowOpen ? 'Type a message…' : '24-hour window closed — use a template'}
+            placeholder={windowOpen ? t('itemTabs.typeAMessage') : t('itemTabs.windowClosedUseTemplate')}
             rows={2}
             disabled={!taskId || sending || !windowOpen}
             className="flex-1 font-body focus:outline-none disabled:opacity-60"
@@ -492,12 +494,12 @@ const WhatsAppTab = ({ task, onCountChange }) => {
             }}
           >
             <Send size={14} aria-hidden="true" />
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? t('itemTabs.sending') : t('itemTabs.send')}
           </button>
         </div>
         <div className="flex items-center justify-between" style={{ marginTop: 8 }}>
           <span className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-            {uploading ? 'Uploading…' : windowOpen ? 'Cmd/Ctrl + Enter to send' : 'Free-form sending is locked'}
+            {uploading ? t('itemTabs.uploading') : windowOpen ? t('itemTabs.cmdEnterToSend') : t('itemTabs.freeFormLocked')}
           </span>
           <button
             type="button"
@@ -512,7 +514,7 @@ const WhatsAppTab = ({ task, onCountChange }) => {
             }}
           >
             <MessageCircle size={13} aria-hidden="true" />
-            Send template
+            {t('itemTabs.sendTemplate')}
           </button>
         </div>
       </form>
@@ -522,13 +524,14 @@ const WhatsAppTab = ({ task, onCountChange }) => {
 
 /** A small media preview rendered under a chat bubble. */
 const MediaThumb = ({ url }) => {
+  const { t } = useTranslation();
   const isImage = /\.(png|jpe?g|gif|webp)$/i.test(url || '');
   if (isImage) {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" style={{ marginTop: 4, display: 'inline-block' }}>
         <img
           src={url}
-          alt="WhatsApp media"
+          alt={t('itemTabs.whatsappMedia')}
           style={{ maxWidth: 180, maxHeight: 180, borderRadius: 10, objectFit: 'cover', display: 'block' }}
         />
       </a>
@@ -543,7 +546,7 @@ const MediaThumb = ({ url }) => {
       style={{ marginTop: 4, fontSize: 11, color: 'var(--color-accent)' }}
     >
       <FileText size={12} aria-hidden="true" />
-      View attachment
+      {t('itemTabs.viewAttachment')}
     </a>
   );
 };

@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Trash2,
   FolderInput,
@@ -45,6 +46,7 @@ const BulkActionBar = ({
   onClear,
   busy = false,
 }) => {
+  const { t } = useTranslation();
   // Only one popover open at a time. `openMenu` is one of: null, 'status',
   // 'priority', 'move'.
   const [openMenu, setOpenMenu] = useState(null);
@@ -84,7 +86,7 @@ const BulkActionBar = ({
   return (
     <div
       role="toolbar"
-      aria-label={`Bulk actions for ${count} selected ${count === 1 ? 'task' : 'tasks'}`}
+      aria-label={t('grid.bulkActionsLabel', { count })}
       className="fixed left-1/2 flex items-center font-body"
       style={{
         bottom: 24,
@@ -103,7 +105,7 @@ const BulkActionBar = ({
         aria-live="polite"
         style={{ fontSize: 13, fontWeight: 600, marginRight: 4 }}
       >
-        {count} selected
+        {t('grid.selectedCount', { count })}
       </span>
 
       <span
@@ -121,7 +123,7 @@ const BulkActionBar = ({
         <BarButton
           ref={statusBtnRef}
           icon={CircleDot}
-          label="Status"
+          label={t('grid.status')}
           trailing={ChevronDown}
           disabled={busy || statusOptions.length === 0}
           onClick={() => toggleMenu('status')}
@@ -131,14 +133,14 @@ const BulkActionBar = ({
         {openMenu === 'status' && (
           <ChipPopover
             ref={popoverRef}
-            label="Set status for selected tasks"
+            label={t('grid.setStatusForSelected')}
             items={statusOptions}
             getKey={(opt) => opt.id}
             onPick={(opt) => {
               setOpenMenu(null);
               onChangeStatus?.(opt.id);
             }}
-            emptyMessage="No statuses configured"
+            emptyMessage={t('grid.noStatusesConfigured')}
           />
         )}
       </div>
@@ -148,7 +150,7 @@ const BulkActionBar = ({
         <BarButton
           ref={priorityBtnRef}
           icon={Flag}
-          label="Priority"
+          label={t('grid.priority')}
           trailing={ChevronDown}
           disabled={busy || priorityOptions.length === 0}
           onClick={() => toggleMenu('priority')}
@@ -158,14 +160,14 @@ const BulkActionBar = ({
         {openMenu === 'priority' && (
           <ChipPopover
             ref={popoverRef}
-            label="Set priority for selected tasks"
+            label={t('grid.setPriorityForSelected')}
             items={priorityOptions}
             getKey={(opt) => opt.key}
             onPick={(opt) => {
               setOpenMenu(null);
               onChangePriority?.(opt.key);
             }}
-            emptyMessage="No priorities available"
+            emptyMessage={t('grid.noPrioritiesAvailable')}
           />
         )}
       </div>
@@ -175,7 +177,7 @@ const BulkActionBar = ({
         <BarButton
           ref={moveBtnRef}
           icon={FolderInput}
-          label="Move to"
+          label={t('grid.moveTo')}
           trailing={ChevronDown}
           disabled={busy || groups.length === 0}
           onClick={() => toggleMenu('move')}
@@ -186,7 +188,7 @@ const BulkActionBar = ({
           <div
             ref={popoverRef}
             role="menu"
-            aria-label="Move selected tasks to group"
+            aria-label={t('grid.moveSelectedToGroup')}
             className="bg-white"
             style={{
               position: 'absolute',
@@ -211,7 +213,7 @@ const BulkActionBar = ({
                   color: 'var(--color-text-muted)',
                 }}
               >
-                No other groups available
+                {t('grid.noOtherGroups')}
               </p>
             ) : (
               groups.map((g) => (
@@ -244,7 +246,7 @@ const BulkActionBar = ({
 
       <BarButton
         icon={Trash2}
-        label="Delete"
+        label={t('grid.delete')}
         disabled={busy}
         onClick={onDelete}
         danger
@@ -264,8 +266,8 @@ const BulkActionBar = ({
         type="button"
         onClick={onClear}
         disabled={busy}
-        aria-label="Clear selection"
-        title="Clear selection"
+        aria-label={t('grid.clearSelection')}
+        title={t('grid.clearSelection')}
         className="flex items-center justify-center transition-colors duration-150 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50 disabled:cursor-not-allowed"
         style={{
           width: 32,

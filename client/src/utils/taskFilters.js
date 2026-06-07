@@ -11,6 +11,8 @@
  * imposes no constraint.
  */
 
+import { taskMatchesColumnFilter, countColumnClauses } from './columnFilter';
+
 export const EMPTY_FILTERS = {
   search: '',
   statuses: [],   // status _id strings (or legacy enum keys)
@@ -18,6 +20,10 @@ export const EMPTY_FILTERS = {
   labels: [],     // label _id strings
   due: [],        // DUE_BUCKETS keys
   assignees: [],  // user _id strings, plus the synthetic 'unassigned'
+  // Column-aware clauses for flexible boards: [{ columnId, op:'in', value:[] }].
+  // Legacy boards leave this empty (they use the categories above); flexible
+  // boards leave the categories empty and drive everything through clauses.
+  clauses: [],
 };
 
 /**
@@ -80,6 +86,7 @@ export const countActiveFilters = (filters) => {
   if (filters.labels?.length) n += 1;
   if (filters.due?.length) n += 1;
   if (filters.assignees?.length) n += 1;
+  n += countColumnClauses(filters.clauses);
   return n;
 };
 
@@ -129,6 +136,12 @@ export const taskMatchesFilters = (task, filters, now = new Date()) => {
       (id) => id !== 'unassigned' && ids.includes(id)
     );
     if (!matchesUnassigned && !matchesMember) return false;
+  }
+
+  // Column-aware clauses (flexible boards) — AND with the above. Empty on
+  // legacy boards, so this is a no-op there.
+  if (filters.clauses?.length && !taskMatchesColumnFilter(task, filters.clauses)) {
+    return false;
   }
 
   return true;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Mail, MailOpen, ArrowDownLeft, ArrowUpRight, CornerUpLeft, Plus, MousePointerClick } from 'lucide-react';
 import * as emailService from '../../services/emailService';
 import { timeAgo, formatDate } from '../../utils/dateUtils';
@@ -16,15 +17,17 @@ import EmailComposeModal from './EmailComposeModal';
  *   task — populated task
  *   onCountChange(n) — bubbles the message count to the tab badge
  */
-const STATUS_LABELS = {
-  queued: 'Queued',
-  sent: 'Sent',
-  failed: 'Failed',
-  bounced: 'Bounced',
-  received: 'Received',
+// Maps an email status to its `itemTabs.*` translation key.
+const STATUS_LABEL_KEYS = {
+  queued: 'itemTabs.statusQueued',
+  sent: 'itemTabs.statusSent',
+  failed: 'itemTabs.statusFailed',
+  bounced: 'itemTabs.statusBounced',
+  received: 'itemTabs.statusReceived',
 };
 
 const EmailsTab = ({ task, onCountChange }) => {
+  const { t } = useTranslation();
   const taskId = task?._id || null;
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -44,7 +47,7 @@ const EmailsTab = ({ task, onCountChange }) => {
         onCountChange?.(list.length);
         if (list.length && !selectedId) setSelectedId(list[0]._id);
       })
-      .catch((err) => setError(err?.response?.data?.error || 'Failed to load emails'))
+      .catch((err) => setError(err?.response?.data?.error || t('itemTabs.emailsLoadError')))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, onCountChange]);
@@ -77,7 +80,7 @@ const EmailsTab = ({ task, onCountChange }) => {
       {/* Header row with Compose */}
       <div className="flex items-center justify-between" style={{ padding: '10px 16px' }}>
         <span className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          {emails.length} message{emails.length === 1 ? '' : 's'}
+          {t('itemTabs.messageCount', { count: emails.length })}
         </span>
         <button
           type="button"
@@ -97,7 +100,7 @@ const EmailsTab = ({ task, onCountChange }) => {
           }}
         >
           <Plus size={14} aria-hidden="true" />
-          New email
+          {t('itemTabs.newEmail')}
         </button>
       </div>
 
@@ -110,13 +113,13 @@ const EmailsTab = ({ task, onCountChange }) => {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {loading ? (
           <p className="font-body text-center" style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '24px 0' }}>
-            Loading emails…
+            {t('itemTabs.loadingEmails')}
           </p>
         ) : emails.length === 0 ? (
           <div className="flex flex-col items-center justify-center" style={{ padding: '32px 16px', gap: 8 }}>
             <Mail size={28} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true" />
             <p className="font-body text-center" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              No emails yet. Start a conversation with this lead.
+              {t('itemTabs.noEmailsOnLead')}
             </p>
           </div>
         ) : (
@@ -149,20 +152,20 @@ const EmailsTab = ({ task, onCountChange }) => {
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <span className="flex items-center justify-between gap-2">
                           <span className="font-body truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                            {isOut ? `To: ${(m.to || []).join(', ')}` : m.from}
+                            {isOut ? t('itemTabs.toRecipients', { recipients: (m.to || []).join(', ') }) : m.from}
                           </span>
                           <span className="font-body shrink-0" style={{ fontSize: 11, color: 'var(--color-text-muted)' }} title={formatDate(m.sentAt)}>
                             {timeAgo(m.sentAt)}
                           </span>
                         </span>
                         <span className="font-body truncate block" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                          {m.subject || '(no subject)'}
+                          {m.subject || t('itemTabs.noSubject')}
                         </span>
                         <span className="flex items-center gap-2 mt-1">
                           <StatusBadge status={m.status} />
                           {isOut && opened && (
                             <span className="inline-flex items-center gap-1 font-body" style={{ fontSize: 10, color: 'var(--color-status-done)' }}>
-                              <MailOpen size={11} /> Opened
+                              <MailOpen size={11} /> {t('itemTabs.opened')}
                             </span>
                           )}
                           {isOut && Array.isArray(m.clicks) && m.clicks.length > 0 && (
@@ -184,15 +187,15 @@ const EmailsTab = ({ task, onCountChange }) => {
                 <div className="flex items-start justify-between gap-3">
                   <div style={{ minWidth: 0 }}>
                     <p className="font-display" style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
-                      {selected.subject || '(no subject)'}
+                      {selected.subject || t('itemTabs.noSubject')}
                     </p>
                     <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                      {selected.direction === 'out' ? 'To' : 'From'}:{' '}
+                      {selected.direction === 'out' ? t('itemTabs.to') : t('itemTabs.from')}:{' '}
                       {selected.direction === 'out' ? (selected.to || []).join(', ') : selected.from}
                     </p>
                     <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                      {formatDate(selected.sentAt)} · {STATUS_LABELS[selected.status] || selected.status}
-                      {selected.provider ? ` · via ${selected.provider}` : ''}
+                      {formatDate(selected.sentAt)} · {STATUS_LABEL_KEYS[selected.status] ? t(STATUS_LABEL_KEYS[selected.status]) : selected.status}
+                      {selected.provider ? t('itemTabs.viaProvider', { provider: selected.provider }) : ''}
                     </p>
                   </div>
                   <button
@@ -201,7 +204,7 @@ const EmailsTab = ({ task, onCountChange }) => {
                     className="inline-flex items-center gap-1 font-body shrink-0"
                     style={{ fontSize: 12, color: 'var(--color-accent)', background: 'transparent', border: 'none', cursor: 'pointer' }}
                   >
-                    <CornerUpLeft size={13} aria-hidden="true" /> Reply
+                    <CornerUpLeft size={13} aria-hidden="true" /> {t('itemTabs.reply')}
                   </button>
                 </div>
 
@@ -223,7 +226,7 @@ const EmailsTab = ({ task, onCountChange }) => {
                           className="font-body"
                           style={{ fontSize: 12, color: 'var(--color-accent)' }}
                         >
-                          {a.name || 'attachment'}
+                          {a.name || t('itemTabs.attachment')}
                         </a>
                       </li>
                     ))}
@@ -249,6 +252,7 @@ const EmailsTab = ({ task, onCountChange }) => {
 };
 
 const StatusBadge = ({ status }) => {
+  const { t } = useTranslation();
   const color =
     status === 'failed' || status === 'bounced'
       ? 'var(--color-status-stuck)'
@@ -259,7 +263,7 @@ const StatusBadge = ({ status }) => {
           : 'var(--color-text-muted)';
   return (
     <span className="font-body" style={{ fontSize: 10, fontWeight: 600, color }}>
-      {STATUS_LABELS[status] || status}
+      {STATUS_LABEL_KEYS[status] ? t(STATUS_LABEL_KEYS[status]) : status}
     </span>
   );
 };

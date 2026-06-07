@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Bell,
   Search,
@@ -13,6 +14,7 @@ import {
   Folder,
   CheckSquare,
 } from 'lucide-react';
+import LanguageSwitcher from '../ui/LanguageSwitcher';
 import useAuthStore from '../../store/authStore';
 import useOrgStore from '../../store/orgStore';
 import useBoardStore from '../../store/boardStore';
@@ -65,16 +67,18 @@ const Logo = () => (
 );
 
 const NavLinks = ({ isAdmin, onNavigate }) => {
+  const { t } = useTranslation();
+  // Phase 0 reframe: CRM-language labels routed to the existing pages. The full
+  // Contacts/Listings/Deals/Docs nav lands with their boards in Phase 1+.
+  // Productivity is shelved (§0.2) — removed from nav, code retained.
   const links = [
-    { to: '/dashboard', label: 'Dashboard' },
-    { to: '/boards', label: 'My Boards' },
-    { to: '/my-tasks', label: 'My Tasks' },
-    { to: '/workspace-settings', label: 'Members' },
+    { to: '/dashboard', label: t('nav.dashboard') },
+    { to: '/boards', label: t('nav.boards') },
+    { to: '/my-tasks', label: t('nav.myLeads') },
+    { to: '/calendar', label: t('nav.calendar') },
+    { to: '/workspace-settings', label: t('nav.members') },
     ...(isAdmin
-      ? [
-          { to: '/analytics', label: 'Analytics' },
-          { to: '/productivity', label: 'Productivity' },
-        ]
+      ? [{ to: '/analytics', label: t('nav.reports') }]
       : []),
   ];
 
@@ -122,6 +126,7 @@ const NavLinks = ({ isAdmin, onNavigate }) => {
 
 /** Dropdown panel shared by desktop and mobile search. */
 const SearchResultsDropdown = ({ results, loading, onBoardClick, onTaskClick }) => {
+  const { t } = useTranslation();
   const hasBoards = results?.boards?.length > 0;
   const hasTasks = results?.tasks?.length > 0;
   const noResults = results && !hasBoards && !hasTasks;
@@ -140,15 +145,15 @@ const SearchResultsDropdown = ({ results, loading, onBoardClick, onTaskClick }) 
     >
       {loading ? (
         <div className="px-4 py-6 text-center font-body text-[13px] text-[color:var(--color-text-muted)]">
-          Searching…
+          {t('navbar.searching')}
         </div>
       ) : noResults ? (
         <div className="px-4 py-8 text-center">
           <p className="font-body font-medium text-[13px] text-[color:var(--color-text-primary)]">
-            Nothing found
+            {t('navbar.nothingFound')}
           </p>
           <p className="font-body text-[12px] text-[color:var(--color-text-muted)] mt-1">
-            Try a different search term
+            {t('navbar.tryDifferent')}
           </p>
         </div>
       ) : (
@@ -160,7 +165,7 @@ const SearchResultsDropdown = ({ results, loading, onBoardClick, onTaskClick }) 
                 style={{ borderBottom: '1px solid var(--color-border)' }}
               >
                 <span className="font-body text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                  Boards
+                  {t('navbar.resultsBoards')}
                 </span>
               </div>
               {results.boards.map((board) => (
@@ -203,7 +208,7 @@ const SearchResultsDropdown = ({ results, loading, onBoardClick, onTaskClick }) 
                 }}
               >
                 <span className="font-body text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                  Tasks
+                  {t('navbar.resultsLeads')}
                 </span>
               </div>
               {results.tasks.map((task) => (
@@ -244,6 +249,7 @@ const SearchResultsDropdown = ({ results, loading, onBoardClick, onTaskClick }) 
 
 /** Desktop search bar — max 380px, centered in the nav. */
 const SearchBar = ({ className = '' }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -327,7 +333,7 @@ const SearchBar = ({ className = '' }) => {
         value={query}
         onChange={handleChange}
         onFocus={() => { if (results) setOpen(true); }}
-        placeholder="Search tasks and boards…"
+        placeholder={t('navbar.searchPlaceholder')}
         className="w-full font-body text-[13px] text-[color:var(--color-text-primary)] bg-[color:var(--color-bg-input)] transition-[border-color,background-color] duration-150 focus:outline-none focus:border-[color:var(--color-accent)] focus:bg-white placeholder:text-[color:var(--color-text-muted)]"
         style={{
           height: 36,
@@ -336,7 +342,7 @@ const SearchBar = ({ className = '' }) => {
           border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-full)',
         }}
-        aria-label="Search tasks and boards"
+        aria-label={t('navbar.searchAria')}
       />
       {(open || (loading && !results)) && (
         <div className="absolute top-full left-0 right-0 mt-2" style={{ zIndex: 60 }}>
@@ -357,6 +363,7 @@ const SearchBar = ({ className = '' }) => {
  * when the search icon is tapped on mobile (<768px).
  */
 const MobileSearchOverlay = ({ onClose }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -425,7 +432,7 @@ const MobileSearchOverlay = ({ onClose }) => {
           type="search"
           value={query}
           onChange={handleChange}
-          placeholder="Search tasks and boards…"
+          placeholder={t('navbar.searchPlaceholder')}
           className="w-full font-body text-[13px] text-[color:var(--color-text-primary)] bg-[color:var(--color-bg-input)] transition-[border-color,background-color] duration-150 focus:outline-none focus:border-[color:var(--color-accent)] focus:bg-white placeholder:text-[color:var(--color-text-muted)]"
           style={{
             height: 36,
@@ -434,7 +441,7 @@ const MobileSearchOverlay = ({ onClose }) => {
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-full)',
           }}
-          aria-label="Search tasks and boards"
+          aria-label={t('navbar.searchAria')}
         />
         {(open || (loading && !results)) && (
           <div className="absolute top-full left-0 right-0 mt-2" style={{ zIndex: 60 }}>
@@ -552,6 +559,7 @@ const NotificationItem = ({ notif, onClick, onDelete }) => {
 };
 
 const NotificationBell = () => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
   const navigate = useNavigate();
@@ -639,7 +647,7 @@ const NotificationBell = () => {
               className="font-display text-[color:var(--color-text-primary)]"
               style={{ fontWeight: 700, fontSize: 16 }}
             >
-              Notifications
+              {t('navbar.notifications')}
             </span>
             <button
               type="button"
@@ -655,7 +663,7 @@ const NotificationBell = () => {
                 cursor: unreadCount === 0 ? 'default' : 'pointer',
               }}
             >
-              Mark all read
+              {t('navbar.markAllRead')}
             </button>
           </div>
 
@@ -663,11 +671,11 @@ const NotificationBell = () => {
           <div className="overflow-y-auto flex-1">
             {loading && notifications.length === 0 ? (
               <div className="px-4 py-8 text-center font-body text-[13px] text-[color:var(--color-text-muted)]">
-                Loading…
+                {t('navbar.loading')}
               </div>
             ) : notifications.length === 0 ? (
               <div className="px-4 py-10 text-center font-body text-[13px] text-[color:var(--color-text-muted)]">
-                You're all caught up.
+                {t('navbar.allCaughtUp')}
               </div>
             ) : (
               <div>
@@ -857,7 +865,12 @@ const AvatarDropdown = ({ user, onLogout }) => {
                   onClick={handleOpenSwitcher}
                 />
               )}
-              <MenuItem icon={LogOut} label="Logout" onClick={handleLogout} danger />
+              <div style={{ borderTop: '1px solid var(--color-border)' }}>
+                <LanguageSwitcher />
+              </div>
+              <div style={{ borderTop: '1px solid var(--color-border)' }}>
+                <MenuItem icon={LogOut} label="Logout" onClick={handleLogout} danger />
+              </div>
             </div>
           ) : (
             <div className="py-1 max-h-80 overflow-y-auto">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Camera, Copy, Check, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
@@ -97,6 +98,7 @@ const Chip = ({ children, variant = 'grey' }) => {
 /* ------------------------- Organisation tab ------------------------- */
 
 const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -148,7 +150,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
     try {
       await onDeleteOrg();
     } catch (err) {
-      setDeleteError(err.response?.data?.error || 'Failed to delete organisation. Please try again.');
+      setDeleteError(err.response?.data?.error || t('pages.failedToDeleteOrg'));
       setDeleting(false);
     }
   };
@@ -167,10 +169,10 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
           className="font-display font-bold text-[color:var(--color-text-primary)]"
           style={{ fontSize: 20 }}
         >
-          Organisation
+          {t('pages.organisation')}
         </h2>
         <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-          {org?.name || 'Workspace settings'}
+          {org?.name || t('pages.workspaceSettings')}
         </p>
       </header>
 
@@ -180,10 +182,10 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
           className="font-display font-semibold text-[color:var(--color-text-primary)]"
           style={{ fontSize: 15 }}
         >
-          Invite Link
+          {t('pages.inviteLink')}
         </h3>
         <p className="mt-1 font-body text-xs text-[color:var(--color-text-muted)]">
-          Share this link with teammates to let them join.
+          {t('pages.inviteLinkDescription')}
         </p>
 
         <div className="mt-3 flex flex-col sm:flex-row items-stretch gap-2">
@@ -197,7 +199,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               border: '1px solid var(--color-border)',
               borderRadius: 'var(--radius-md)',
             }}
-            aria-label="Invite link"
+            aria-label={t('pages.inviteLink')}
             onFocus={(e) => e.target.select()}
           />
           <div className="flex items-center gap-2">
@@ -207,7 +209,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               icon={copied ? Check : Copy}
               onClick={handleCopy}
             >
-              {copied ? 'Copied' : 'Copy Link'}
+              {copied ? t('pages.copied') : t('pages.copyLink')}
             </Button>
             <Button
               variant="secondary"
@@ -216,13 +218,13 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               onClick={handleRegenerate}
               disabled={regenerating}
             >
-              {regenerating ? 'Regenerating…' : 'Regenerate'}
+              {regenerating ? t('pages.regenerating') : t('pages.regenerate')}
             </Button>
           </div>
         </div>
 
         <p className="mt-2 font-body text-xs text-[color:var(--color-text-muted)]">
-          Invite code:{' '}
+          {t('pages.inviteCode')}{' '}
           <span
             className="font-mono font-semibold text-[color:var(--color-text-secondary)]"
             style={{ fontSize: 12 }}
@@ -241,10 +243,10 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
           className="font-display font-semibold text-[color:var(--color-status-stuck)]"
           style={{ fontSize: 15 }}
         >
-          Danger Zone
+          {t('pages.dangerZone')}
         </h3>
         <p className="mt-1 font-body text-xs text-[color:var(--color-text-muted)]">
-          Irreversible actions for this organisation.
+          {t('pages.irreversibleActions')}
         </p>
         <div
           className="mt-3"
@@ -258,10 +260,10 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
           <div className="p-4 flex items-center justify-between gap-4 flex-wrap">
             <div>
               <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)]">
-                Regenerate invite code
+                {t('pages.regenerateInviteCode')}
               </p>
               <p className="font-body text-[12px] text-[color:var(--color-text-secondary)]">
-                Old invite links will stop working immediately.
+                {t('pages.oldInviteLinksStop')}
               </p>
             </div>
             <Button
@@ -271,7 +273,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               onClick={handleRegenerate}
               disabled={regenerating}
             >
-              Regenerate
+              {t('pages.regenerate')}
             </Button>
           </div>
 
@@ -283,7 +285,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               <div>
                 <div className="flex items-center gap-2">
                   <p className="font-body font-semibold text-[13px] text-[color:var(--color-text-primary)]">
-                    Delete this organisation
+                    {t('pages.deleteThisOrg')}
                   </p>
                   <span
                     className="inline-flex items-center font-body font-semibold"
@@ -297,12 +299,11 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
                       color: 'white',
                     }}
                   >
-                    OWNER ONLY
+                    {t('pages.ownerOnly')}
                   </span>
                 </div>
                 <p className="font-body text-[12px] text-[color:var(--color-text-secondary)]">
-                  Permanently deletes the workspace, all boards, tasks, automations,
-                  and removes every member. This cannot be undone.
+                  {t('pages.deleteOrgWarning')}
                 </p>
               </div>
               <Button
@@ -315,7 +316,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
                   setShowDeleteModal(true);
                 }}
               >
-                Delete Organisation
+                {t('pages.deleteOrganisation')}
               </Button>
             </div>
           )}
@@ -326,7 +327,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
       <Modal
         isOpen={showDeleteModal}
         onClose={closeDeleteModal}
-        title={`Delete "${org?.name || 'organisation'}"`}
+        title={t('pages.deleteOrgModalTitle', { name: org?.name || t('pages.organisationLower') })}
         closeOnOverlayClick={!deleting}
         footer={
           <>
@@ -336,7 +337,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               onClick={closeDeleteModal}
               disabled={deleting}
             >
-              Cancel
+              {t('pages.cancel')}
             </Button>
             <Button
               type="button"
@@ -344,7 +345,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
               onClick={handleDeleteConfirm}
               disabled={deleting || !confirmMatches}
             >
-              {deleting ? 'Deleting…' : 'Delete Organisation'}
+              {deleting ? t('pages.deleting') : t('pages.deleteOrganisation')}
             </Button>
           </>
         }
@@ -356,27 +357,27 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
           >
             <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
             <p className="font-body text-[13px]" style={{ color: '#374151' }}>
-              <strong>This action is permanent and cannot be undone.</strong>
+              <strong>{t('pages.actionPermanent')}</strong>
             </p>
           </div>
           <p className="font-body text-[14px] text-[color:var(--color-text-primary)]">
-            Deleting this organisation will:
+            {t('pages.deletingOrgWill')}
           </p>
           <ul
             className="font-body text-[13px] text-[color:var(--color-text-secondary)] flex flex-col gap-1"
             style={{ paddingLeft: 16, listStyleType: 'disc' }}
           >
-            <li>Delete every board, group, task, comment, and update in this workspace</li>
-            <li>Delete all automations configured for this workspace</li>
-            <li>Delete all notifications scoped to this organisation</li>
-            <li>Remove all {org?.members?.length || ''} members from the workspace</li>
+            <li>{t('pages.deleteOrgBulletBoards')}</li>
+            <li>{t('pages.deleteOrgBulletAutomations')}</li>
+            <li>{t('pages.deleteOrgBulletNotifications')}</li>
+            <li>{t('pages.deleteOrgBulletMembers', { count: org?.members?.length || 0 })}</li>
           </ul>
           <div className="mt-1">
             <label
               className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]"
               htmlFor="delete-org-confirm"
             >
-              Type <span className="font-mono text-[color:var(--color-text-primary)]">{org?.name}</span> to confirm:
+              {t('pages.typeToConfirmBefore')}<span className="font-mono text-[color:var(--color-text-primary)]">{org?.name}</span>{t('pages.typeToConfirmAfter')}
             </label>
             <input
               id="delete-org-confirm"
@@ -407,6 +408,7 @@ const OrganisationTab = ({ org, isMainAdmin, onRegenerate, onDeleteOrg }) => {
 /* ---------------------------- Profile tab ---------------------------- */
 
 const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState(user?.name || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -429,11 +431,11 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file');
+      setError(t('pages.chooseImageFile'));
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setError('Image must be smaller than 5MB');
+      setError(t('pages.imageTooLarge'));
       return;
     }
     setError('');
@@ -451,7 +453,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
       URL.revokeObjectURL(localUrl);
       setPreviewUrl(null);
     } catch (err) {
-      setError(err.response?.data?.error || 'Upload failed');
+      setError(err.response?.data?.error || t('pages.uploadFailed'));
       URL.revokeObjectURL(localUrl);
       setPreviewUrl(null);
     } finally {
@@ -471,7 +473,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not save');
+      setError(err.response?.data?.error || t('pages.couldNotSave'));
     } finally {
       setSaving(false);
     }
@@ -485,7 +487,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
     try {
       await onDeleteAccount();
     } catch (err) {
-      setDeleteError(err.response?.data?.error || 'Failed to delete account. Please try again.');
+      setDeleteError(err.response?.data?.error || t('pages.failedToDeleteAccount'));
       setDeleting(false);
     }
   };
@@ -497,10 +499,10 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
           className="font-display font-bold text-[color:var(--color-text-primary)]"
           style={{ fontSize: 20 }}
         >
-          Profile
+          {t('pages.profile')}
         </h2>
         <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-          Manage your personal details
+          {t('pages.managePersonalDetails')}
         </p>
       </header>
 
@@ -510,7 +512,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          aria-label="Change profile picture"
+          aria-label={t('pages.changeProfilePicture')}
           className="relative group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] rounded-full"
           style={{ width: 80, height: 80 }}
         >
@@ -556,17 +558,17 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
               }}
             >
               <span className="font-body text-[11px] font-semibold text-white">
-                Uploading…
+                {t('pages.uploading')}
               </span>
             </span>
           )}
         </button>
         <div>
           <p className="font-body font-semibold text-[14px] text-[color:var(--color-text-primary)]">
-            Profile picture
+            {t('pages.profilePicture')}
           </p>
           <p className="font-body text-[12px] text-[color:var(--color-text-muted)]">
-            PNG or JPG, up to 5MB
+            {t('pages.pngOrJpg')}
           </p>
           <input
             ref={fileInputRef}
@@ -574,7 +576,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
             accept="image/*"
             onChange={handleFileSelect}
             className="hidden"
-            aria-label="Upload avatar"
+            aria-label={t('pages.uploadAvatar')}
           />
         </div>
       </div>
@@ -582,20 +584,20 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
       {/* Name + email form */}
       <form onSubmit={handleSaveName} className="flex flex-col gap-4 max-w-[480px]" style={{ maxWidth: 480 }}>
         <Input
-          label="Display name"
+          label={t('pages.displayName')}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Your name"
+          placeholder={t('pages.yourName')}
           disabled={saving}
           required
         />
         <Input
-          label="Email"
+          label={t('pages.email')}
           type="email"
           value={user?.email || ''}
           onChange={() => {}}
           disabled
-          helperText="Connected via Google — cannot be changed."
+          helperText={t('pages.connectedViaGoogle')}
         />
 
         {error && (
@@ -610,12 +612,12 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
             variant="primary"
             disabled={!dirty || saving}
           >
-            {saving ? 'Saving…' : 'Save Changes'}
+            {saving ? t('pages.saving') : t('pages.saveChanges')}
           </Button>
           {saved && (
             <span className="inline-flex items-center gap-1 font-body text-[12px] font-semibold text-[color:var(--color-status-done)]">
               <Check size={14} aria-hidden="true" />
-              Saved
+              {t('pages.saved')}
             </span>
           )}
         </div>
@@ -638,11 +640,11 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
             className="font-display font-semibold"
             style={{ fontSize: 14, color: '#dc2626' }}
           >
-            Danger Zone
+            {t('pages.dangerZone')}
           </h3>
         </div>
         <p className="font-body text-[13px] mb-4" style={{ color: '#6b7280' }}>
-          Permanently delete your account and all associated data. This cannot be undone.
+          {t('pages.deleteAccountWarning')}
         </p>
         <Button
           type="button"
@@ -653,7 +655,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
           }}
         >
           <Trash2 size={14} aria-hidden="true" />
-          Delete Account
+          {t('pages.deleteAccount')}
         </Button>
       </div>
 
@@ -661,7 +663,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
       <Modal
         isOpen={showDeleteModal}
         onClose={() => !deleting && setShowDeleteModal(false)}
-        title="Delete Account"
+        title={t('pages.deleteAccount')}
         closeOnOverlayClick={!deleting}
         footer={
           <>
@@ -671,7 +673,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
               onClick={() => setShowDeleteModal(false)}
               disabled={deleting}
             >
-              Cancel
+              {t('pages.cancel')}
             </Button>
             <Button
               type="button"
@@ -679,7 +681,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
               onClick={handleDeleteConfirm}
               disabled={deleting}
             >
-              {deleting ? 'Deleting…' : 'Yes, Delete My Account'}
+              {deleting ? t('pages.deleting') : t('pages.yesDeleteAccount')}
             </Button>
           </>
         }
@@ -691,17 +693,17 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
           >
             <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
             <p className="font-body text-[13px]" style={{ color: '#374151' }}>
-              <strong>This action is permanent and cannot be undone.</strong>
+              <strong>{t('pages.actionPermanent')}</strong>
             </p>
           </div>
           <p className="font-body text-[14px] text-[color:var(--color-text-primary)]">
-            Deleting your account will:
+            {t('pages.deletingAccountWill')}
           </p>
           <ul className="font-body text-[13px] text-[color:var(--color-text-secondary)] flex flex-col gap-1" style={{ paddingLeft: 16, listStyleType: 'disc' }}>
-            <li>Delete all organisations you own (including all their boards, tasks, and members)</li>
-            <li>Remove you from all other organisations</li>
-            <li>Delete all your personal tasks and comments</li>
-            <li>Delete your profile and all account data</li>
+            <li>{t('pages.deleteAccountBulletOrgs')}</li>
+            <li>{t('pages.deleteAccountBulletRemove')}</li>
+            <li>{t('pages.deleteAccountBulletLeads')}</li>
+            <li>{t('pages.deleteAccountBulletProfile')}</li>
           </ul>
           {deleteError && (
             <p className="font-body text-[12px] text-[color:var(--color-status-stuck)]">
@@ -724,6 +726,7 @@ const ProfileTab = ({ user, onSaveName, onUploadAvatar, onDeleteAccount }) => {
  * Phase 1, F1 — wired up via /api/boards/templates.
  */
 const TemplatesTab = ({ orgId, isAdmin }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -738,13 +741,13 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
     columnService
       .listBoardTemplates()
       .then((t) => setTemplates(t || []))
-      .catch((err) => toastError(err?.response?.data?.error || 'Could not load templates'))
+      .catch((err) => toastError(err?.response?.data?.error || t('pages.couldNotLoadTemplates')))
       .finally(() => setLoading(false));
-  }, [toastError]);
+  }, [toastError, t]);
 
   const handleCreate = async (templateId) => {
     if (!orgId) {
-      toastError('Select a workspace first');
+      toastError(t('pages.selectWorkspaceFirst'));
       return;
     }
     if (!name.trim()) return;
@@ -755,12 +758,12 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
         organisation: orgId,
       });
       addBoardLocal(board);
-      toastSuccess?.(`Board "${board.name}" created from template`);
+      toastSuccess?.(t('pages.boardCreatedFromTemplate', { name: board.name }));
       setCreateOpen(null);
       setName('');
       navigate(`/boards/${board._id}`);
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Could not create board');
+      toastError(err?.response?.data?.error || t('pages.couldNotCreateBoard'));
     } finally {
       setBusy(false);
     }
@@ -769,34 +772,34 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
   if (!isAdmin) {
     return (
       <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>
-        Only org admins can create boards from templates.
+        {t('pages.onlyAdminsCreateBoards')}
       </p>
     );
   }
 
   if (loading) {
-    return <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>Loading templates…</p>;
+    return <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>{t('pages.loadingTemplates')}</p>;
   }
 
   if (templates.length === 0) {
-    return <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>No templates available.</p>;
+    return <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>{t('pages.noTemplatesAvailable')}</p>;
   }
 
   return (
     <div>
       <header className="mb-4">
         <h2 className="font-display" style={{ fontSize: 18, fontWeight: 700 }}>
-          Board Templates
+          {t('pages.boardTemplates')}
         </h2>
         <p className="mt-1 font-body" style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-          Pre-built board layouts. Pick one and we'll seed a new board with the right columns.
+          {t('pages.boardTemplatesDescription')}
         </p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {templates.map((t) => (
+        {templates.map((tpl) => (
           <div
-            key={t.id}
+            key={tpl.id}
             className="bg-surface"
             style={{
               padding: 16,
@@ -804,23 +807,29 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
               borderRadius: 'var(--radius-lg)',
             }}
           >
-            <h3 className="font-display" style={{ fontSize: 15, fontWeight: 700 }}>{t.name}</h3>
+            <h3 className="font-display" style={{ fontSize: 15, fontWeight: 700 }}>{tpl.name}</h3>
             <p className="mt-1 font-body" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-              {t.description}
+              {tpl.description}
             </p>
             <p className="mt-2 font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-              {t.columns?.length || 0} columns: {t.columns?.slice(0, 4).map((c) => c.name).join(', ')}
-              {t.columns?.length > 4 ? '…' : ''}
+              {t('pages.templateColumns', { count: tpl.columns?.length || 0 })} {tpl.columns?.slice(0, 4).map((c) => c.name).join(', ')}
+              {tpl.columns?.length > 4 ? '…' : ''}
             </p>
+            {tpl.groups?.length > 0 && (
+              <p className="mt-1 font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                {t('pages.templateStages', { count: tpl.groups.length })} {tpl.groups.slice(0, 4).join(', ')}
+                {tpl.groups.length > 4 ? '…' : ''}
+              </p>
+            )}
             <div className="mt-3">
               <Button
                 variant="primary"
                 onClick={() => {
-                  setCreateOpen(t.id);
-                  setName(t.name);
+                  setCreateOpen(tpl.id);
+                  setName(tpl.name);
                 }}
               >
-                Create board
+                {t('pages.createBoard')}
               </Button>
             </div>
           </div>
@@ -834,14 +843,14 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
             setCreateOpen(null);
             setName('');
           }}
-          title="Name your new board"
+          title={t('pages.nameYourNewBoard')}
         >
           <div style={{ padding: 16 }}>
             <Input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Board name"
+              placeholder={t('pages.boardNamePlaceholder')}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <Button
@@ -851,14 +860,14 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
                   setName('');
                 }}
               >
-                Cancel
+                {t('pages.cancel')}
               </Button>
               <Button
                 variant="primary"
                 onClick={() => handleCreate(createOpen)}
                 disabled={busy || !name.trim()}
               >
-                {busy ? 'Creating…' : 'Create'}
+                {busy ? t('pages.creating') : t('pages.create')}
               </Button>
             </div>
           </div>
@@ -871,6 +880,7 @@ const TemplatesTab = ({ orgId, isAdmin }) => {
 /* ------------------------------ Page ------------------------------ */
 
 const SettingsPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
@@ -908,9 +918,11 @@ const SettingsPage = () => {
     if (!status) return;
     setActiveTab('email');
     if (status === 'connected') {
-      toast.success?.(`Mailbox connected${searchParams.get('provider') ? ` (${searchParams.get('provider')})` : ''}`);
+      const provider = searchParams.get('provider');
+      toast.success?.(provider ? t('pages.mailboxConnectedWith', { provider }) : t('pages.mailboxConnected'));
     } else if (status === 'error') {
-      toast.error?.(`Could not connect mailbox${searchParams.get('reason') ? `: ${searchParams.get('reason')}` : ''}`);
+      const reason = searchParams.get('reason');
+      toast.error?.(reason ? t('pages.mailboxConnectErrorWith', { reason }) : t('pages.mailboxConnectError'));
     }
     const next = new URLSearchParams(searchParams);
     next.delete('email');
@@ -1029,10 +1041,10 @@ const SettingsPage = () => {
             className="font-display font-bold text-[color:var(--color-text-primary)]"
             style={{ fontSize: 28, letterSpacing: '-0.01em' }}
           >
-            Settings
+            {t('pages.settings')}
           </h1>
           <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-            Manage your organisation and profile
+            {t('pages.manageOrgAndProfile')}
           </p>
         </header>
 

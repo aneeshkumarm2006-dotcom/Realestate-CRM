@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, CheckCircle2, XCircle, MinusCircle, History } from 'lucide-react';
 import * as automationService from '../../services/automationService';
 
@@ -35,9 +36,10 @@ const shortId = (id) => {
   return s.length > 8 ? `…${s.slice(-6)}` : s;
 };
 
-const ActionOutcome = ({ outcome }) => {
+const ActionOutcome = ({ outcome, t }) => {
   const meta = STATUS_META[outcome.status] || STATUS_META.skipped;
   const { Icon } = meta;
+  const statusLabel = t(`automation.runStatus_${meta.label}`);
   return (
     <div className="flex items-start gap-2">
       <Icon size={14} color={meta.color} style={{ marginTop: 1, flexShrink: 0 }} aria-hidden="true" />
@@ -52,7 +54,7 @@ const ActionOutcome = ({ outcome }) => {
           className="font-body"
           style={{ fontSize: 11, color: meta.color, marginLeft: 6 }}
         >
-          {meta.label}
+          {statusLabel}
         </span>
         {outcome.error && (
           <p
@@ -71,12 +73,15 @@ const AutomationRunLog = ({
   isOpen,
   onClose,
   automationId,
-  automationName = 'Automation',
+  automationName,
   resolveTaskName,
 }) => {
+  const { t } = useTranslation();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const displayName = automationName || t('automation.automationFallback');
 
   useEffect(() => {
     if (!isOpen || !automationId) return undefined;
@@ -91,7 +96,7 @@ const AutomationRunLog = ({
         console.error('Failed to load run log:', err);
         if (active) {
           setError(
-            err?.response?.data?.error || 'Failed to load run log. Please try again.'
+            err?.response?.data?.error || t('automation.runLogLoadError')
           );
         }
       } finally {
@@ -102,7 +107,7 @@ const AutomationRunLog = ({
     return () => {
       active = false;
     };
-  }, [isOpen, automationId]);
+  }, [isOpen, automationId, t]);
 
   if (!isOpen) return null;
 
@@ -125,7 +130,7 @@ const AutomationRunLog = ({
       {/* Panel */}
       <aside
         role="dialog"
-        aria-label={`Run log for ${automationName}`}
+        aria-label={t('automation.runLogForLabel', { name: displayName })}
         style={{
           position: 'relative',
           width: 'min(420px, 100vw)',
@@ -151,20 +156,20 @@ const AutomationRunLog = ({
                 className="font-display font-semibold truncate"
                 style={{ fontSize: 14, color: 'var(--color-text-primary)' }}
               >
-                Run log
+                {t('automation.runLogTitle')}
               </p>
               <p
                 className="font-body truncate"
                 style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
               >
-                {automationName}
+                {displayName}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close run log"
+            aria-label={t('automation.closeRunLog')}
             className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
             style={{ width: 30, height: 30, border: '1.5px solid var(--color-border)', cursor: 'pointer' }}
           >
@@ -175,7 +180,7 @@ const AutomationRunLog = ({
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
           {loading ? (
             <p className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              Loading…
+              {t('automation.loading')}
             </p>
           ) : error ? (
             <p className="font-body" style={{ fontSize: 13, color: 'var(--color-status-stuck, #DC2626)' }}>
@@ -188,10 +193,10 @@ const AutomationRunLog = ({
             >
               <History size={26} aria-hidden="true" />
               <p className="font-body mt-2" style={{ fontSize: 14 }}>
-                No firings yet
+                {t('automation.noFiringsYet')}
               </p>
               <p className="font-body" style={{ fontSize: 12 }}>
-                Firings appear here once the trigger matches an event.
+                {t('automation.noFiringsHint')}
               </p>
             </div>
           ) : (
@@ -199,7 +204,9 @@ const AutomationRunLog = ({
               {rows.map((row, i) => {
                 const taskLabel =
                   (resolveTaskName && row.taskId && resolveTaskName(row.taskId)) ||
-                  (row.taskId ? `Task ${shortId(row.taskId)}` : 'No task');
+                  (row.taskId
+                    ? t('automation.runLogLead', { id: shortId(row.taskId) })
+                    : t('automation.runLogNoLead'));
                 const actions = Array.isArray(row.actionsRun) ? row.actionsRun : [];
                 return (
                   <li
@@ -239,13 +246,13 @@ const AutomationRunLog = ({
                           color: 'var(--color-text-muted)',
                         }}
                       >
-                        condition not met
+                        {t('automation.conditionNotMet')}
                       </span>
                     )}
                     {actions.length > 0 && (
                       <div className="mt-2 flex flex-col gap-1">
                         {actions.map((o, j) => (
-                          <ActionOutcome key={j} outcome={o} />
+                          <ActionOutcome key={j} outcome={o} t={t} />
                         ))}
                       </div>
                     )}

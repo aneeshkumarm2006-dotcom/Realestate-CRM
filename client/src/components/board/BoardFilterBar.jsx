@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   SlidersHorizontal,
   Search,
@@ -10,6 +11,7 @@ import {
   CircleDot,
   Tag,
   User,
+  CheckSquare,
 } from 'lucide-react';
 import {
   PRIORITY_COLORS,
@@ -17,6 +19,21 @@ import {
   getColorPair,
 } from '../../utils/priorityColors';
 import { DUE_BUCKETS, countActiveFilters, toggleValue } from '../../utils/taskFilters';
+import {
+  filterableColumns,
+  optionsForColumn,
+  selectionForColumn,
+  setColumnSelection,
+} from '../../utils/columnFilter';
+
+// Lucide icon per filterable column type.
+const ICON_FOR_TYPE = {
+  status: CircleDot,
+  dropdown: CircleDot,
+  tags: Tag,
+  person: User,
+  checkbox: CheckSquare,
+};
 
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
 const LEGACY_STATUS_ORDER = ['not_started', 'working_on_it', 'done', 'stuck'];
@@ -45,6 +62,7 @@ const BoardFilterBar = ({
   matchedCount = 0,
   totalCount = 0,
 }) => {
+  const { t } = useTranslation();
   const activeCount = countActiveFilters(filters);
   const set = (patch) => onChange?.({ ...filters, ...patch });
 
@@ -96,18 +114,30 @@ const BoardFilterBar = ({
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [allTasks]);
 
+  // Flexible boards filter by their OWN columns (Lead Status, Assigned To, …)
+  // rather than the fixed legacy task fields. Legacy boards keep the classic
+  // Status / Priority / Labels / Due / Owner chips.
+  const isFlexible =
+    !!board?.useFlexibleColumns && Array.isArray(board?.columns) && board.columns.length > 0;
+  const filterCols = useMemo(() => (isFlexible ? filterableColumns(board) : []), [isFlexible, board]);
+  const optionLabels = {
+    checked: t('boardMisc.checked'),
+    unchecked: t('boardMisc.unchecked'),
+    unassigned: t('boardMisc.unassigned'),
+  };
+
   return (
     <div
       className="mt-5 flex items-center gap-2 flex-wrap"
       role="region"
-      aria-label="Filter tasks"
+      aria-label={t('boardMisc.filterLeads')}
     >
       <span
         className="inline-flex items-center gap-1.5 font-body shrink-0"
         style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}
       >
         <SlidersHorizontal size={15} aria-hidden="true" />
-        Filter
+        {t('boardMisc.filter')}
       </span>
 
       {/* Name search */}
@@ -126,8 +156,8 @@ const BoardFilterBar = ({
           type="text"
           value={filters.search || ''}
           onChange={(e) => set({ search: e.target.value })}
-          placeholder="Search tasks…"
-          aria-label="Search tasks by name"
+          placeholder={t('boardMisc.searchLeads')}
+          aria-label={t('boardMisc.searchLeadsByName')}
           className="font-body focus:outline-none"
           style={{
             border: 'none',
@@ -141,7 +171,7 @@ const BoardFilterBar = ({
           <button
             type="button"
             onClick={() => set({ search: '' })}
-            aria-label="Clear search"
+            aria-label={t('boardMisc.clearSearch')}
             className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
             style={{ width: 18, height: 18, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)' }}
           >
@@ -150,109 +180,173 @@ const BoardFilterBar = ({
         ) : null}
       </div>
 
-      {/* Status */}
-      <FilterPopover label="Status" icon={CircleDot} activeCount={filters.statuses?.length || 0}>
-        <OptionList emptyLabel="No statuses">
-          {statusOptions.map((opt) => (
-            <OptionRow
-              key={opt.id}
-              checked={filters.statuses?.includes(opt.id)}
-              onToggle={() => set({ statuses: toggleValue(filters.statuses, opt.id) })}
-            >
-              <MiniChip bg={opt.bg} text={opt.text}>{opt.label}</MiniChip>
-            </OptionRow>
-          ))}
-        </OptionList>
-      </FilterPopover>
+      {/* Flexible boards: one chip per filterable board column. */}
+      {isFlexible &&
+        filterCols.map((col) => {
+          const sel = selectionForColumn(filters.clauses, col._id);
+          const opts = optionsForColumn(col, allTasks, optionLabels);
+          const Icon = ICON_FOR_TYPE[col.type] || CircleDot;
+          return (
+            <FilterPopover key={col._id} label={col.name} icon={Icon} activeCount={sel.length}>
+              <OptionList emptyLabel={t('boardMisc.noOptions')}>
+                {opts.map((opt) => {
+                  const pair = opt.color ? getColorPair(opt.color) : null;
+                  const isPerson = col.type === 'person' && opt.id !== '__empty__';
+                  return (
+                    <OptionRow
+                      key={opt.id}
+                      checked={sel.includes(opt.id)}
+                      onToggle={() =>
+                        set({
+                          clauses: setColumnSelection(
+                            filters.clauses,
+                            col._id,
+                            toggleValue(sel, opt.id)
+                          ),
+                        })
+                      }
+                    >
+                      {pair ? (
+                        <MiniChip bg={pair.bg} text={pair.text}>{opt.label}</MiniChip>
+                      ) : isPerson ? (
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <AssigneeDot user={{ name: opt.label, profilePic: opt.profilePic }} />
+                          <span
+                            className="font-body truncate"
+                            style={{ fontSize: 13, color: 'var(--color-text-primary)' }}
+                          >
+                            {opt.label}
+                          </span>
+                        </span>
+                      ) : (
+                        <span
+                          className={opt.italic ? 'font-body italic' : 'font-body'}
+                          style={{
+                            fontSize: 13,
+                            color: opt.italic
+                              ? 'var(--color-text-secondary)'
+                              : 'var(--color-text-primary)',
+                          }}
+                        >
+                          {opt.label}
+                        </span>
+                      )}
+                    </OptionRow>
+                  );
+                })}
+              </OptionList>
+            </FilterPopover>
+          );
+        })}
 
-      {/* Priority */}
-      <FilterPopover label="Priority" icon={Flag} activeCount={filters.priorities?.length || 0}>
-        <OptionList>
-          {PRIORITY_ORDER.map((key) => {
-            const entry = PRIORITY_COLORS[key];
-            return (
-              <OptionRow
-                key={key}
-                checked={filters.priorities?.includes(key)}
-                onToggle={() => set({ priorities: toggleValue(filters.priorities, key) })}
-              >
-                <MiniChip bg={entry.bg} text={entry.text} radius="var(--radius-sm)">
-                  {entry.label}
-                </MiniChip>
-              </OptionRow>
-            );
-          })}
-        </OptionList>
-      </FilterPopover>
-
-      {/* Labels */}
-      <FilterPopover label="Labels" icon={Tag} activeCount={filters.labels?.length || 0}>
-        <OptionList emptyLabel="No labels on this board">
-          {labelOptions.map((opt) => (
-            <OptionRow
-              key={opt.id}
-              checked={filters.labels?.includes(opt.id)}
-              onToggle={() => set({ labels: toggleValue(filters.labels, opt.id) })}
-            >
-              <MiniChip bg={opt.bg} text={opt.text}>{opt.label}</MiniChip>
-            </OptionRow>
-          ))}
-        </OptionList>
-      </FilterPopover>
-
-      {/* Due date */}
-      <FilterPopover label="Due date" icon={Calendar} activeCount={filters.due?.length || 0}>
-        <OptionList>
-          {DUE_BUCKETS.map((b) => (
-            <OptionRow
-              key={b.key}
-              checked={filters.due?.includes(b.key)}
-              onToggle={() => set({ due: toggleValue(filters.due, b.key) })}
-            >
-              <span
-                className="font-body"
-                style={{ fontSize: 13, color: 'var(--color-text-primary)' }}
-              >
-                {b.label}
-              </span>
-            </OptionRow>
-          ))}
-        </OptionList>
-      </FilterPopover>
-
-      {/* Assignee */}
-      <FilterPopover label="Owner" icon={User} activeCount={filters.assignees?.length || 0}>
-        <OptionList emptyLabel="Nobody assigned yet">
-          <OptionRow
-            checked={filters.assignees?.includes('unassigned')}
-            onToggle={() => set({ assignees: toggleValue(filters.assignees, 'unassigned') })}
-          >
-            <span
-              className="font-body italic"
-              style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}
-            >
-              Unassigned
-            </span>
-          </OptionRow>
-          {assigneeOptions.map((opt) => (
-            <OptionRow
-              key={opt.id}
-              checked={filters.assignees?.includes(opt.id)}
-              onToggle={() => set({ assignees: toggleValue(filters.assignees, opt.id) })}
-            >
-              <span className="inline-flex items-center gap-2 min-w-0">
-                <AssigneeDot user={opt} />
-                <span
-                  className="font-body truncate"
-                  style={{ fontSize: 13, color: 'var(--color-text-primary)' }}
+      {/* Legacy boards: the classic fixed task-field chips. */}
+      {!isFlexible && (
+        <>
+          {/* Status */}
+          <FilterPopover label={t('boardMisc.status')} icon={CircleDot} activeCount={filters.statuses?.length || 0}>
+            <OptionList emptyLabel={t('boardMisc.noStatuses')}>
+              {statusOptions.map((opt) => (
+                <OptionRow
+                  key={opt.id}
+                  checked={filters.statuses?.includes(opt.id)}
+                  onToggle={() => set({ statuses: toggleValue(filters.statuses, opt.id) })}
                 >
-                  {opt.name}
+                  <MiniChip bg={opt.bg} text={opt.text}>{opt.label}</MiniChip>
+                </OptionRow>
+              ))}
+            </OptionList>
+          </FilterPopover>
+
+          {/* Priority */}
+          <FilterPopover label={t('boardMisc.priority')} icon={Flag} activeCount={filters.priorities?.length || 0}>
+            <OptionList>
+              {PRIORITY_ORDER.map((key) => {
+                const entry = PRIORITY_COLORS[key];
+                return (
+                  <OptionRow
+                    key={key}
+                    checked={filters.priorities?.includes(key)}
+                    onToggle={() => set({ priorities: toggleValue(filters.priorities, key) })}
+                  >
+                    <MiniChip bg={entry.bg} text={entry.text} radius="var(--radius-sm)">
+                      {entry.label}
+                    </MiniChip>
+                  </OptionRow>
+                );
+              })}
+            </OptionList>
+          </FilterPopover>
+
+          {/* Labels */}
+          <FilterPopover label={t('boardMisc.labels')} icon={Tag} activeCount={filters.labels?.length || 0}>
+            <OptionList emptyLabel={t('boardMisc.noLabelsOnBoard')}>
+              {labelOptions.map((opt) => (
+                <OptionRow
+                  key={opt.id}
+                  checked={filters.labels?.includes(opt.id)}
+                  onToggle={() => set({ labels: toggleValue(filters.labels, opt.id) })}
+                >
+                  <MiniChip bg={opt.bg} text={opt.text}>{opt.label}</MiniChip>
+                </OptionRow>
+              ))}
+            </OptionList>
+          </FilterPopover>
+
+          {/* Due date */}
+          <FilterPopover label={t('boardMisc.dueDate')} icon={Calendar} activeCount={filters.due?.length || 0}>
+            <OptionList>
+              {DUE_BUCKETS.map((b) => (
+                <OptionRow
+                  key={b.key}
+                  checked={filters.due?.includes(b.key)}
+                  onToggle={() => set({ due: toggleValue(filters.due, b.key) })}
+                >
+                  <span
+                    className="font-body"
+                    style={{ fontSize: 13, color: 'var(--color-text-primary)' }}
+                  >
+                    {b.label}
+                  </span>
+                </OptionRow>
+              ))}
+            </OptionList>
+          </FilterPopover>
+
+          {/* Assignee */}
+          <FilterPopover label={t('boardMisc.owner')} icon={User} activeCount={filters.assignees?.length || 0}>
+            <OptionList emptyLabel={t('boardMisc.nobodyAssignedYet')}>
+              <OptionRow
+                checked={filters.assignees?.includes('unassigned')}
+                onToggle={() => set({ assignees: toggleValue(filters.assignees, 'unassigned') })}
+              >
+                <span
+                  className="font-body italic"
+                  style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}
+                >
+                  {t('boardMisc.unassigned')}
                 </span>
-              </span>
-            </OptionRow>
-          ))}
-        </OptionList>
-      </FilterPopover>
+              </OptionRow>
+              {assigneeOptions.map((opt) => (
+                <OptionRow
+                  key={opt.id}
+                  checked={filters.assignees?.includes(opt.id)}
+                  onToggle={() => set({ assignees: toggleValue(filters.assignees, opt.id) })}
+                >
+                  <span className="inline-flex items-center gap-2 min-w-0">
+                    <AssigneeDot user={opt} />
+                    <span
+                      className="font-body truncate"
+                      style={{ fontSize: 13, color: 'var(--color-text-primary)' }}
+                    >
+                      {opt.name}
+                    </span>
+                  </span>
+                </OptionRow>
+              ))}
+            </OptionList>
+          </FilterPopover>
+        </>
+      )}
 
       {/* Result count + clear all (only while filtering) */}
       {activeCount > 0 && (
@@ -261,7 +355,7 @@ const BoardFilterBar = ({
             className="font-body"
             style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
           >
-            {matchedCount} of {totalCount} {totalCount === 1 ? 'task' : 'tasks'}
+            {t('boardMisc.matchedOfTotalLeads', { matched: matchedCount, count: totalCount })}
           </span>
           <button
             type="button"
@@ -273,6 +367,7 @@ const BoardFilterBar = ({
                 labels: [],
                 due: [],
                 assignees: [],
+                clauses: [],
               })
             }
             className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
@@ -289,7 +384,7 @@ const BoardFilterBar = ({
             }}
           >
             <X size={14} aria-hidden="true" />
-            Clear all
+            {t('boardMisc.clearAll')}
           </button>
         </div>
       )}
@@ -303,6 +398,7 @@ const BoardFilterBar = ({
  * click / Escape.
  */
 const FilterPopover = ({ label, icon: Icon, activeCount = 0, children }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const isActive = activeCount > 0;
@@ -371,7 +467,7 @@ const FilterPopover = ({ label, icon: Icon, activeCount = 0, children }) => {
       {open && (
         <div
           role="listbox"
-          aria-label={`${label} filter options`}
+          aria-label={t('boardMisc.filterOptions', { label })}
           className="bg-white"
           style={{
             position: 'absolute',
@@ -404,6 +500,7 @@ const FilterPopover = ({ label, icon: Icon, activeCount = 0, children }) => {
 };
 
 const OptionList = ({ children, emptyLabel }) => {
+  const { t } = useTranslation();
   const hasChildren = Array.isArray(children)
     ? children.some(Boolean)
     : Boolean(children);
@@ -413,7 +510,7 @@ const OptionList = ({ children, emptyLabel }) => {
         className="font-body text-center"
         style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '12px 8px' }}
       >
-        {emptyLabel || 'No options'}
+        {emptyLabel || t('boardMisc.noOptions')}
       </p>
     );
   }

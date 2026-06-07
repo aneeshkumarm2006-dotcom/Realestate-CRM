@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check, X } from 'lucide-react';
 import Chip from '../ui/Chip';
 import StatusMenu from './StatusMenu';
@@ -49,6 +50,7 @@ const TaskEditRow = ({
   isAdmin = false,
   autoFocus = true,
 }) => {
+  const { t } = useTranslation();
   // Resolve initial status. If the task has one, use it; otherwise pick the
   // first board status (or the legacy `not_started` enum for boardless rows).
   const initialStatus = useMemo(() => {
@@ -131,7 +133,7 @@ const TaskEditRow = ({
       setSaving(false);
       const data = err?.response?.data;
       if (data?.field === 'status') {
-        setStatusError(data.error || 'Invalid status for this board');
+        setStatusError(data.error || t('grid.invalidStatus'));
         if (statusCellRef.current) {
           statusCellRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
@@ -186,8 +188,8 @@ const TaskEditRow = ({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Task name…"
-          aria-label="Task name"
+          placeholder={t('grid.leadNamePlaceholder')}
+          aria-label={t('grid.leadName')}
           className="w-full font-body bg-white focus:outline-none"
           style={{
             fontSize: 14,
@@ -261,7 +263,7 @@ const TaskEditRow = ({
         <DatePickerPopover
           value={dueDate}
           onChange={setDueDate}
-          placeholder="Due date"
+          placeholder={t('grid.dueDate')}
         />
       </td>
 
@@ -273,7 +275,7 @@ const TaskEditRow = ({
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            aria-label="Save task"
+            aria-label={t('grid.saveLead')}
             className="flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               width: 28,
@@ -289,7 +291,7 @@ const TaskEditRow = ({
           <button
             type="button"
             onClick={handleCancel}
-            aria-label="Cancel"
+            aria-label={t('grid.cancel')}
             className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
             style={{
               width: 28,

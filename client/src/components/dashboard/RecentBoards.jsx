@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Folder, FolderOpen, ArrowRight, Lock, Globe } from 'lucide-react';
 import { timeAgo } from '../../utils/dateUtils';
 
@@ -114,6 +115,7 @@ const EmptyBoards = () => (
 );
 
 const RecentBoards = ({ boards = [], limit = 5 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const visible = boards.slice(0, limit);
   const total = boards.length;
@@ -140,7 +142,7 @@ const RecentBoards = ({ boards = [], limit = 5 }) => {
                 lineHeight: 1.2,
               }}
             >
-              Recent Boards
+              {t('dashboard.recentBoards')}
             </h2>
             <p
               className="font-body"

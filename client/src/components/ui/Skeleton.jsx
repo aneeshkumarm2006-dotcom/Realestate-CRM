@@ -6,6 +6,7 @@
  * dimensions so the loading state looks like a ghosted version of the
  * actual content.
  */
+import { useTranslation } from 'react-i18next';
 
 /* ------------------------------------------------------------------ */
 /*  PRIMITIVES                                                         */
@@ -458,7 +459,9 @@ export const SkeletonOverdueAssignees = ({ rows = 5 }) => (
 /*  CALENDAR SKELETON                                                  */
 /* ------------------------------------------------------------------ */
 
-export const SkeletonCalendarGrid = () => (
+export const SkeletonCalendarGrid = () => {
+  const { t } = useTranslation();
+  return (
   <div
     className="bg-surface"
     style={{
@@ -468,7 +471,7 @@ export const SkeletonCalendarGrid = () => (
     }}
     role="status"
     aria-live="polite"
-    aria-label="Loading calendar"
+    aria-label={t('pages.loadingCalendar')}
   >
     {/* Day headers */}
     <div
@@ -537,7 +540,8 @@ export const SkeletonCalendarGrid = () => (
       </div>
     ))}
   </div>
-);
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /*  GREETING BANNER SKELETON (Dashboard)                               */

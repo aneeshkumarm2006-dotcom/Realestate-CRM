@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Paperclip, X, Send } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -26,6 +27,7 @@ const splitAddrs = (value) =>
     .filter(Boolean);
 
 const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) => {
+  const { t } = useTranslation();
   const toast = useToastStore.getState();
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -56,7 +58,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
         setAttachments((prev) => [...prev, att]);
       }
     } catch (err) {
-      setError(err?.response?.data?.error || 'Attachment upload failed');
+      setError(err?.response?.data?.error || t('itemTabs.attachmentUploadFailed'));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -69,12 +71,12 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
   const handleSend = async () => {
     const toList = splitAddrs(to);
     if (!toList.length) {
-      setError('Add at least one recipient');
+      setError(t('itemTabs.addAtLeastOneRecipient'));
       return;
     }
     const bodyHtml = editorRef.current?.getHTML?.() || '';
     if (bodyEmpty || !editorRef.current?.getText?.().trim()) {
-      setError('Write a message before sending');
+      setError(t('itemTabs.writeMessageBeforeSending'));
       return;
     }
     setSending(true);
@@ -93,13 +95,13 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
       const { email, via } = await emailService.sendTaskEmail(task._id, payload);
       toast.success?.(
         via === 'resend'
-          ? 'Sent via CRM (no mailbox connected)'
-          : 'Email sent'
+          ? t('itemTabs.sentViaCrm')
+          : t('itemTabs.emailSent')
       );
       onSent?.(email);
       onClose?.();
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to send email');
+      setError(err?.response?.data?.error || t('itemTabs.emailSendError'));
     } finally {
       setSending(false);
     }
@@ -115,16 +117,16 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={replyTo ? 'Reply' : 'New email'}
+      title={replyTo ? t('itemTabs.reply') : t('itemTabs.newEmail')}
       maxWidth={620}
       closeOnOverlayClick={!sending}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={sending}>
-            Cancel
+            {t('itemTabs.cancel')}
           </Button>
           <Button variant="primary" icon={Send} onClick={handleSend} disabled={sending || uploading}>
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? t('itemTabs.sending') : t('itemTabs.send')}
           </Button>
         </>
       }
@@ -132,13 +134,13 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
       <div className="flex flex-col gap-3">
         {/* To */}
         <label className="flex flex-col gap-1">
-          <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">To</span>
+          <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">{t('itemTabs.to')}</span>
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              placeholder="recipient@example.com"
+              placeholder={t('itemTabs.recipientPlaceholder')}
               className="flex-1 font-body text-[13px] px-3 focus:outline-none focus:border-[color:var(--color-accent)]"
               style={fieldStyle}
             />
@@ -149,7 +151,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
                 className="font-body text-[12px] text-[color:var(--color-accent)]"
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
               >
-                Cc/Bcc
+                {t('itemTabs.ccBcc')}
               </button>
             )}
           </div>
@@ -158,7 +160,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
         {showCcBcc && (
           <>
             <label className="flex flex-col gap-1">
-              <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">Cc</span>
+              <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">{t('itemTabs.cc')}</span>
               <input
                 type="text"
                 value={cc}
@@ -168,7 +170,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">Bcc</span>
+              <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">{t('itemTabs.bcc')}</span>
               <input
                 type="text"
                 value={bcc}
@@ -182,12 +184,12 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
 
         {/* Subject */}
         <label className="flex flex-col gap-1">
-          <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">Subject</span>
+          <span className="font-body text-[12px] font-semibold text-[color:var(--color-text-secondary)]">{t('itemTabs.subject')}</span>
           <input
             type="text"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            placeholder="Subject"
+            placeholder={t('itemTabs.subject')}
             className="font-body text-[13px] px-3 focus:outline-none focus:border-[color:var(--color-accent)]"
             style={fieldStyle}
           />
@@ -203,7 +205,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
           }}
         >
           <RichEditor
-            placeholder="Write your message…"
+            placeholder={t('itemTabs.writeYourMessagePlaceholder')}
             editorRef={editorRef}
             onChange={handleEditorChange}
           />
@@ -227,7 +229,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.url)}
-                  aria-label={`Remove ${a.name}`}
+                  aria-label={t('itemTabs.removeAttachment', { name: a.name })}
                   style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
                 >
                   <X size={12} />
@@ -246,7 +248,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
             style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
           >
             <Paperclip size={14} aria-hidden="true" />
-            {uploading ? 'Uploading…' : 'Attach files'}
+            {uploading ? t('itemTabs.uploading') : t('itemTabs.attachFiles')}
           </button>
           <input
             ref={fileInputRef}
@@ -254,7 +256,7 @@ const EmailComposeModal = ({ isOpen, onClose, task, onSent, replyTo = null }) =>
             multiple
             onChange={handlePickFiles}
             className="hidden"
-            aria-label="Attach files"
+            aria-label={t('itemTabs.attachFiles')}
           />
         </div>
 

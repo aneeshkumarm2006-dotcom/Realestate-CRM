@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"inviteCode":{"$numberInt":"1"}},"name":"inviteCode_1","unique":true}],"uuid":"1166b7a792b849f0b5365b17d80061e0","collectionName":"organisations","type":"collection"}

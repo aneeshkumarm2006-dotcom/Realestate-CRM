@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import {
   X,
   Send,
@@ -70,6 +71,7 @@ const CommentPanel = ({
   canGoBack = false,
   onCommentCountChange,
 }) => {
+  const { t } = useTranslation();
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState('');
@@ -167,7 +169,7 @@ const CommentPanel = ({
         if (!cancelled) {
           setError(
             err?.response?.data?.error ||
-              'Failed to load comments. Please try again.'
+              t('itemTabs.commentsLoadError')
           );
         }
       })
@@ -243,13 +245,13 @@ const CommentPanel = ({
         console.error('Failed to add comment:', err);
         setError(
           err?.response?.data?.error ||
-            'Failed to add comment. Please try again.'
+            t('itemTabs.commentAddError')
         );
       } finally {
         setSubmitting(false);
       }
     },
-    [text, submitting, taskId, refreshNotifications, mentionedUsers, replyingTo]
+    [text, submitting, taskId, refreshNotifications, mentionedUsers, replyingTo, t]
   );
 
   // Edit an existing comment's text. Author-only; the server enforces
@@ -267,12 +269,12 @@ const CommentPanel = ({
       } catch (err) {
         console.error('Failed to edit comment:', err);
         setError(
-          err?.response?.data?.error || 'Failed to edit comment. Please try again.'
+          err?.response?.data?.error || t('itemTabs.commentEditError')
         );
         throw err;
       }
     },
-    [taskId]
+    [taskId, t]
   );
 
   // Insert a selected mention — replace the @query with a chip
@@ -500,7 +502,7 @@ const CommentPanel = ({
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label={`Task details: ${task.name || ''}`}
+        aria-label={t('itemTabs.leadDetailsLabel', { name: task.name || '' })}
         className="macan-comment-panel bg-white flex flex-col"
         style={{
           position: 'fixed',
@@ -527,7 +529,7 @@ const CommentPanel = ({
             <button
               type="button"
               onClick={onBack}
-              aria-label="Back to parent task"
+              aria-label={t('itemTabs.backToParentLead')}
               className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
               style={{
                 height: 32,
@@ -542,7 +544,7 @@ const CommentPanel = ({
               }}
             >
               <ChevronLeft size={16} aria-hidden="true" />
-              Back
+              {t('itemTabs.back')}
             </button>
           ) : (
             <span />
@@ -550,7 +552,7 @@ const CommentPanel = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close panel"
+            aria-label={t('itemTabs.closePanel')}
             className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
             style={{ width: 32, height: 32 }}
           >
@@ -582,7 +584,7 @@ const CommentPanel = ({
                 }
               }}
               disabled={savingName}
-              aria-label="Task name"
+              aria-label={t('itemTabs.leadName')}
               className="w-full font-display focus:outline-none"
               style={{
                 fontSize: 20,
@@ -619,7 +621,7 @@ const CommentPanel = ({
                     }
                   : undefined
               }
-              title={canEditFields ? 'Click to edit name' : undefined}
+              title={canEditFields ? t('itemTabs.clickToEditName') : undefined}
               className={
                 canEditFields
                   ? 'font-display transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]'
@@ -643,7 +645,7 @@ const CommentPanel = ({
 
           <div
             className="mt-3 flex flex-wrap items-center gap-2"
-            aria-label="Task badges"
+            aria-label={t('itemTabs.leadBadges')}
           >
             {task.priority && <Chip type="priority" value={task.priority} />}
             <Chip
@@ -654,7 +656,7 @@ const CommentPanel = ({
           </div>
 
           <dl className="mt-4 flex flex-col gap-2">
-            <MetaRow label="Assigned to">
+            <MetaRow label={t('itemTabs.assignedTo')}>
               {canEditFields ? (
                 <div style={{ maxWidth: 280 }}>
                   <AssigneePicker
@@ -691,12 +693,12 @@ const CommentPanel = ({
                   className="font-body"
                   style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
                 >
-                  Unassigned
+                  {t('itemTabs.unassigned')}
                 </span>
               )}
             </MetaRow>
 
-            <MetaRow label="Due date">
+            <MetaRow label={t('itemTabs.dueDate')}>
               {canEditFields ? (
                 <div style={{ maxWidth: 180 }}>
                   <DatePickerPopover
@@ -705,7 +707,7 @@ const CommentPanel = ({
                       handleDueDateChange({ target: { value: val } })
                     }
                     disabled={savingDueDate}
-                    placeholder="Set due date"
+                    placeholder={t('itemTabs.setDueDate')}
                   />
                 </div>
               ) : (
@@ -719,14 +721,14 @@ const CommentPanel = ({
                       : 'var(--color-text-muted)',
                   }}
                 >
-                  {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
+                  {task.dueDate ? formatDate(task.dueDate) : t('itemTabs.noDueDate')}
                 </span>
               )}
             </MetaRow>
 
             {/* Labels row — only meaningful for board tasks */}
             {board && (
-              <MetaRow label="Labels">
+              <MetaRow label={t('itemTabs.labels')}>
                 <LabelsEditor
                   task={task}
                   board={board}
@@ -751,7 +753,7 @@ const CommentPanel = ({
                   marginBottom: 6,
                 }}
               >
-                Notes
+                {t('itemTabs.notes')}
               </p>
               <p
                 className="font-body"
@@ -777,18 +779,18 @@ const CommentPanel = ({
               active={activeTab}
               onChange={setActiveTab}
               tabs={[
-                { key: 'updates', label: 'Updates', count: updatesCount },
-                { key: 'comments', label: 'Comments', count: comments.length },
-                { key: 'files', label: 'Files', count: filesCount },
+                { key: 'updates', label: t('itemTabs.tabUpdates'), count: updatesCount },
+                { key: 'comments', label: t('itemTabs.tabComments'), count: comments.length },
+                { key: 'files', label: t('itemTabs.tabFiles'), count: filesCount },
                 // Emails / SMS / WhatsApp are board-task (lead) scoped — hidden on personal tasks.
                 ...(board
                   ? [
-                      { key: 'emails', label: 'Emails', count: emailsCount },
-                      { key: 'sms', label: 'SMS', count: smsCount },
-                      { key: 'whatsapp', label: 'WhatsApp', count: whatsappCount },
+                      { key: 'emails', label: t('itemTabs.tabEmails'), count: emailsCount },
+                      { key: 'sms', label: t('itemTabs.tabSms'), count: smsCount },
+                      { key: 'whatsapp', label: t('itemTabs.tabWhatsapp'), count: whatsappCount },
                     ]
                   : []),
-                { key: 'activity', label: 'Activity Log' },
+                { key: 'activity', label: t('itemTabs.tabActivityLog') },
               ]}
             />
 
@@ -887,7 +889,7 @@ const CommentPanel = ({
                 padding: '24px 0',
               }}
             >
-              Loading comments…
+              {t('itemTabs.loadingComments')}
             </p>
           ) : comments.length === 0 ? (
             <p
@@ -898,7 +900,7 @@ const CommentPanel = ({
                 padding: '32px 0',
               }}
             >
-              No comments yet. Start the conversation.
+              {t('itemTabs.noCommentsOnLead')}
             </p>
           ) : (
             <ul
@@ -965,15 +967,15 @@ const CommentPanel = ({
             >
               <CornerDownLeft size={12} style={{ color: 'var(--color-accent)', flexShrink: 0 }} aria-hidden="true" />
               <span>
-                Replying to{' '}
+                {t('itemTabs.replyingTo')}{' '}
                 <strong style={{ color: 'var(--color-text-primary)' }}>
-                  {replyingTo.author?.name || 'Unknown'}
+                  {replyingTo.author?.name || t('itemTabs.unknown')}
                 </strong>
               </span>
               <button
                 type="button"
                 onClick={() => setReplyingTo(null)}
-                aria-label="Cancel reply"
+                aria-label={t('itemTabs.cancelReply')}
                 className="ml-auto flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-border)]"
                 style={{ width: 18, height: 18, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}
               >
@@ -1015,7 +1017,7 @@ const CommentPanel = ({
                         e.stopPropagation();
                         removeMention(u._id);
                       }}
-                      title="Click to remove"
+                      title={t('itemTabs.clickToRemove')}
                     >
                       @{u.name}
                       <X size={12} style={{ opacity: 0.6 }} />
@@ -1028,7 +1030,7 @@ const CommentPanel = ({
                 value={text}
                 onChange={handleTextChange}
                 onKeyDown={handleKeyDown}
-                placeholder={mentionedUsers.length > 0 ? 'Continue typing...' : 'Add a comment... (type @ to mention)'}
+                placeholder={mentionedUsers.length > 0 ? t('itemTabs.continueTyping') : t('itemTabs.addCommentPlaceholder')}
                 rows={2}
                 disabled={submitting}
                 className="w-full font-body focus:outline-none"
@@ -1108,7 +1110,7 @@ const CommentPanel = ({
               className="font-body"
               style={{ fontSize: 11, color: 'var(--color-text-muted)' }}
             >
-              {submitting ? 'Sending…' : 'Cmd/Ctrl + Enter to send'}
+              {submitting ? t('itemTabs.sending') : t('itemTabs.cmdEnterToSend')}
             </span>
             <button
               type="submit"
@@ -1127,7 +1129,7 @@ const CommentPanel = ({
               }}
             >
               <Send size={14} aria-hidden="true" />
-              Send
+              {t('itemTabs.send')}
             </button>
           </div>
         </form>
@@ -1135,7 +1137,7 @@ const CommentPanel = ({
             )}
           </div>
 
-          <div className="macan-cp-right" role="complementary" aria-label="Task details sidebar">
+          <div className="macan-cp-right" role="complementary" aria-label={t('itemTabs.leadDetailsSidebar')}>
             <ChecklistEditor task={task} />
             <SubitemsList
               task={task}
@@ -1256,10 +1258,12 @@ const MetaRow = ({ label, children }) => (
  * Tabs — pill-underline tabs row used at the top of the panel body.
  * Each tab can carry an optional count badge.
  */
-const Tabs = ({ tabs, active, onChange }) => (
+const Tabs = ({ tabs, active, onChange }) => {
+  const { t } = useTranslation();
+  return (
   <div
     role="tablist"
-    aria-label="Task detail tabs"
+    aria-label={t('itemTabs.leadDetailTabs')}
     style={{
       display: 'flex',
       alignItems: 'center',
@@ -1326,7 +1330,8 @@ const Tabs = ({ tabs, active, onChange }) => (
       );
     })}
   </div>
-);
+  );
+};
 
 /**
  * Render comment text with @mentions highlighted.
@@ -1385,6 +1390,7 @@ const RenderCommentText = ({ text, mentions }) => {
  * reply target are immutable on edit — only the text body changes.
  */
 const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
+  const { t } = useTranslation();
   const author = comment.author || {};
   const isAuthor =
     author._id && currentUserId && author._id === currentUserId;
@@ -1457,7 +1463,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
         {comment.replyTo && (() => {
           const parentText = comment.replyTo.text || '';
           const truncated = parentText.length > 60 ? parentText.slice(0, 60).trimEnd() + '…' : parentText;
-          const parentAuthor = comment.replyTo.author?.name || 'Unknown';
+          const parentAuthor = comment.replyTo.author?.name || t('itemTabs.unknown');
           return (
             <div
               className="flex items-center gap-1 font-body"
@@ -1487,7 +1493,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
               color: 'var(--color-text-primary)',
             }}
           >
-            {author.name || 'Unknown'}
+            {author.name || t('itemTabs.unknown')}
           </span>
           <span
             className="font-body"
@@ -1500,9 +1506,9 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
             <span
               className="font-body"
               style={{ fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}
-              title={`Edited ${formatDate(comment.editedAt)}`}
+              title={t('itemTabs.editedAt', { date: formatDate(comment.editedAt) })}
             >
-              (edited)
+              {t('itemTabs.edited')}
             </span>
           ) : null}
           {!editing && (
@@ -1517,7 +1523,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
               <button
                 type="button"
                 onClick={() => onReply?.(comment)}
-                aria-label={`Reply to ${author.name || 'this comment'}`}
+                aria-label={t('itemTabs.replyToAuthor', { name: author.name || t('itemTabs.thisComment') })}
                 className="inline-flex items-center gap-1 font-body"
                 style={{
                   fontSize: 11,
@@ -1530,13 +1536,13 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
                 }}
               >
                 <CornerDownLeft size={12} aria-hidden="true" />
-                Reply
+                {t('itemTabs.reply')}
               </button>
               {isAuthor && (
                 <button
                   type="button"
                   onClick={startEdit}
-                  aria-label="Edit comment"
+                  aria-label={t('itemTabs.editComment')}
                   className="inline-flex items-center gap-1 font-body"
                   style={{
                     fontSize: 11,
@@ -1549,7 +1555,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
                   }}
                 >
                   <Pencil size={11} aria-hidden="true" />
-                  Edit
+                  {t('itemTabs.edit')}
                 </button>
               )}
             </div>
@@ -1564,7 +1570,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
               onKeyDown={handleEditKeyDown}
               disabled={savingEdit}
               rows={Math.min(8, Math.max(2, draft.split('\n').length))}
-              aria-label="Edit comment"
+              aria-label={t('itemTabs.editComment')}
               className="w-full font-body focus:outline-none"
               style={{
                 resize: 'vertical',
@@ -1583,7 +1589,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
                 className="font-body mr-auto"
                 style={{ fontSize: 11, color: 'var(--color-text-muted)' }}
               >
-                {savingEdit ? 'Saving…' : 'Cmd/Ctrl + Enter to save, Esc to cancel'}
+                {savingEdit ? t('itemTabs.saving') : t('itemTabs.cmdEnterToSaveEscCancel')}
               </span>
               <button
                 type="button"
@@ -1602,7 +1608,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
                   cursor: savingEdit ? 'not-allowed' : 'pointer',
                 }}
               >
-                Cancel
+                {t('itemTabs.cancel')}
               </button>
               <button
                 type="button"
@@ -1621,7 +1627,7 @@ const CommentItem = ({ comment, currentUserId, onReply, onEdit }) => {
                   cursor: savingEdit || !draft.trim() ? 'not-allowed' : 'pointer',
                 }}
               >
-                {savingEdit ? 'Saving…' : 'Save'}
+                {savingEdit ? t('itemTabs.saving') : t('itemTabs.save')}
               </button>
             </div>
           </div>
@@ -1695,6 +1701,7 @@ const Avatar = ({ user, size = 28 }) => {
  * see an "Edit labels" cog that opens the EditChipsModal.
  */
 const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
+  const { t } = useTranslation();
   const [pickerOpen, setPickerOpen] = useState(false);
   const taskLabels = useMemo(
     () => (Array.isArray(task.labels) ? task.labels.map((l) => l.toString()) : []),
@@ -1743,7 +1750,7 @@ const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
           className="font-body"
           style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
         >
-          No labels
+          {t('itemTabs.noLabels')}
         </span>
       )}
       {taskLabels.map((id) => {
@@ -1767,7 +1774,7 @@ const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
               <button
                 type="button"
                 onClick={() => handleRemove(id)}
-                aria-label={`Remove ${lb.name}`}
+                aria-label={t('itemTabs.removeLabel', { name: lb.name })}
                 style={{
                   width: 14,
                   height: 14,
@@ -1793,7 +1800,7 @@ const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
-            aria-label="Add label"
+            aria-label={t('itemTabs.addLabel')}
             className="inline-flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
             style={{
               width: 22,
@@ -1832,7 +1839,7 @@ const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
                     padding: '8px',
                   }}
                 >
-                  All labels applied
+                  {t('itemTabs.allLabelsApplied')}
                 </p>
               ) : (
                 available.map((lb) => {
@@ -1893,7 +1900,7 @@ const LabelsEditor = ({ task, board, isAdmin, onUpdateTask, onEditLabels }) => {
                   }}
                 >
                   <SettingsIcon size={12} aria-hidden="true" />
-                  Edit Labels
+                  {t('itemTabs.editLabels')}
                 </button>
               )}
             </div>

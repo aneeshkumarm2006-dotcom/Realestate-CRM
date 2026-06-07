@@ -1,9 +1,13 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Plus, UserPlus, Calendar, BarChart2, Zap } from 'lucide-react';
 
 /**
  * QuickActions — colored shortcut buttons stacked in the dashboard sidebar.
  * See Macan_Design.md Sections 6.10 and 7.3.
+ *
+ * Phase 0 reframe (§0.5): CRM-flavoured labels via i18n, routed to existing
+ * pages. Dedicated add-lead / log-viewing flows arrive with Phase 1 templates.
  *
  * Props:
  *   onCreateBoard — optional handler; falls back to navigating to /boards
@@ -13,32 +17,32 @@ const ACTIONS = [
   {
     id: 'create-board',
     icon: Plus,
-    title: 'Create Board',
-    subtitle: 'Start a new project',
+    titleKey: 'dashboard.qaNewBoard',
+    subtitleKey: 'dashboard.qaNewBoardSub',
     color: 'var(--color-accent)',
     to: '/boards',
   },
   {
     id: 'invite-team',
     icon: UserPlus,
-    title: 'Invite Team',
-    subtitle: 'Share your invite link',
+    titleKey: 'dashboard.qaInviteTeam',
+    subtitleKey: 'dashboard.qaInviteTeamSub',
     color: '#16A34A',
     to: '/settings',
   },
   {
     id: 'calendar',
     icon: Calendar,
-    title: 'Calendar',
-    subtitle: 'See upcoming tasks',
+    titleKey: 'dashboard.qaCalendar',
+    subtitleKey: 'dashboard.qaCalendarSub',
     color: '#EA580C',
     to: '/calendar',
   },
   {
     id: 'analytics',
     icon: BarChart2,
-    title: 'Analytics',
-    subtitle: 'View workspace insights',
+    titleKey: 'dashboard.qaReports',
+    subtitleKey: 'dashboard.qaReportsSub',
     color: '#7C3AED',
     to: '/analytics',
   },
@@ -77,6 +81,7 @@ const ActionButton = ({ icon: Icon, title, subtitle, color, onClick }) => (
 
 const QuickActions = ({ onCreateBoard }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const handleAction = (action) => {
     if (action.id === 'create-board' && typeof onCreateBoard === 'function') {
@@ -104,7 +109,7 @@ const QuickActions = ({ onCreateBoard }) => {
             color: 'var(--color-text-primary)',
           }}
         >
-          Quick Actions
+          {t('dashboard.quickActions')}
         </h2>
       </div>
 
@@ -113,8 +118,8 @@ const QuickActions = ({ onCreateBoard }) => {
           <ActionButton
             key={action.id}
             icon={action.icon}
-            title={action.title}
-            subtitle={action.subtitle}
+            title={t(action.titleKey)}
+            subtitle={t(action.subtitleKey)}
             color={action.color}
             onClick={() => handleAction(action)}
           />

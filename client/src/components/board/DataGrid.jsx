@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import {
   MoreHorizontal,
   MessageSquare,
@@ -70,6 +71,7 @@ const DataGrid = ({
   groupId = null,
   dndDisabled = false,
 }) => {
+  const { t } = useTranslation();
   const [headerMenu, setHeaderMenu] = useState(null); // { columnId, anchor }
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -125,7 +127,8 @@ const DataGrid = ({
       const updated = await setColumnValue(task._id, column._id, value);
       if (updated) updateTaskLocal(updated);
     } catch (err) {
-      const message = err?.response?.data?.errors?.[0]?.message || err?.message || 'Update failed';
+      const message =
+        err?.response?.data?.errors?.[0]?.message || err?.message || t('grid.updateFailed');
       toastError(message);
     }
   };
@@ -177,21 +180,21 @@ const DataGrid = ({
     try {
       await updateColumn(board._id, columnId, { name: next });
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Rename failed');
+      toastError(err?.response?.data?.error || t('grid.renameFailed'));
     }
     setRenamingId(null);
   };
 
   const handleDelete = async (column) => {
     if (column.isPrimary) {
-      toastError('The primary column cannot be deleted');
+      toastError(t('grid.primaryColumnCannotDelete'));
       return;
     }
-    if (!window.confirm(`Delete column "${column.name}"? Existing values will be cleared.`)) return;
+    if (!window.confirm(t('grid.deleteColumnConfirm', { name: column.name }))) return;
     try {
       await deleteColumn(board._id, column._id);
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Delete failed');
+      toastError(err?.response?.data?.error || t('grid.deleteFailed'));
     }
     setHeaderMenu(null);
   };
@@ -199,7 +202,7 @@ const DataGrid = ({
   if (columns.length === 0) {
     return (
       <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-muted)' }}>
-        No columns yet. {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
+        {t('grid.noColumnsYet')} {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
       </div>
     );
   }
@@ -218,8 +221,8 @@ const DataGrid = ({
     >
       {/* Header row */}
       <div style={sharedRowStyle}>
-        <HeaderShell pad="0 0 0 8px" />
-        <HeaderShell pad="0 0 0 16px" divider>
+        <HeaderShell pad="0 0 0 8px" stickyLeft={FROZEN_DRAG_LEFT} />
+        <HeaderShell pad="0 0 0 16px" divider stickyLeft={FROZEN_CHECK_LEFT}>
           {selectable && (
             <input
               type="checkbox"
@@ -227,14 +230,20 @@ const DataGrid = ({
               onChange={(e) =>
                 onToggleSelectAll?.(tasks.map((t) => t._id), e.target.checked)
               }
-              aria-label="Select all tasks"
+              aria-label={t('grid.selectAllLeads')}
               style={{ width: 16, height: 16, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
             />
           )}
         </HeaderShell>
 
         {columns.map((col) => (
-          <HeaderShell key={col._id} align="space-between" className="group/col-header" divider>
+          <HeaderShell
+            key={col._id}
+            align="space-between"
+            className="group/col-header"
+            divider
+            stickyLeft={col.isPrimary ? FROZEN_PRIMARY_LEFT : null}
+          >
             {renamingId === col._id ? (
               <input
                 value={renameDraft}
@@ -259,7 +268,7 @@ const DataGrid = ({
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {col.name}
                 {col.isPrimary && (
-                  <span style={{ marginLeft: 4, opacity: 0.6 }} title="Primary column">
+                  <span style={{ marginLeft: 4, opacity: 0.6 }} title={t('grid.primaryColumn')}>
                     *
                   </span>
                 )}
@@ -286,7 +295,7 @@ const DataGrid = ({
                   padding: 2,
                   color: 'var(--color-text-muted)',
                 }}
-                aria-label={`Column actions for ${col.name}`}
+                aria-label={t('grid.columnActionsFor', { name: col.name })}
               >
                 <MoreHorizontal size={12} />
               </button>
@@ -337,12 +346,12 @@ const DataGrid = ({
                     }}
                   >
                     {/* Drag handle — revealed on row hover, like the normal table */}
-                    <Cellish pad="0 0 0 8px">
+                    <Cellish pad="0 0 0 8px" stickyLeft={FROZEN_DRAG_LEFT} className={FROZEN_CELL_BG}>
                       {draggable && (
                         <button
                           ref={setActivatorNodeRef}
                           type="button"
-                          aria-label="Drag to reorder task"
+                          aria-label={t('grid.dragToReorderLead')}
                           {...listeners}
                           className="flex items-center justify-center opacity-0 group-hover/datagrid-row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
                           style={{
@@ -362,13 +371,13 @@ const DataGrid = ({
                     </Cellish>
 
                     {/* Selection checkbox */}
-                    <Cellish pad="0 0 0 16px" divider>
+                    <Cellish pad="0 0 0 16px" divider stickyLeft={FROZEN_CHECK_LEFT} className={FROZEN_CELL_BG}>
                       {selectable && (
                         <input
                           type="checkbox"
                           checked={selectedIds?.has(task._id) || false}
                           onChange={(e) => onToggleSelect?.(task._id, e.target.checked)}
-                          aria-label={`Select ${task.name}`}
+                          aria-label={t('grid.selectNamed', { name: task.name })}
                           style={{
                             width: 16,
                             height: 16,
@@ -388,6 +397,7 @@ const DataGrid = ({
                       return (
                         <div
                           key={col._id}
+                          className={col.isPrimary ? FROZEN_CELL_BG : undefined}
                           style={{
                             minHeight: ROW_HEIGHT,
                             display: 'flex',
@@ -396,13 +406,18 @@ const DataGrid = ({
                             // lands content at 16px, matching the classic table.
                             padding: '0 8px',
                             borderRight: '1px solid var(--color-border)',
+                            // The primary "Lead" column stays pinned on the left
+                            // while the rest of the columns scroll horizontally.
+                            position: col.isPrimary ? 'sticky' : undefined,
+                            left: col.isPrimary ? FROZEN_PRIMARY_LEFT : undefined,
+                            zIndex: col.isPrimary ? 2 : undefined,
                           }}
                         >
                           {col.isPrimary && task.hasSubitems && (
                             <button
                               type="button"
                               onClick={() => toggleExpand(task._id)}
-                              aria-label={isExpanded ? 'Collapse subitems' : 'Expand subitems'}
+                              aria-label={isExpanded ? t('grid.collapseSubitems') : t('grid.expandSubitems')}
                               aria-expanded={isExpanded}
                               className="flex items-center justify-center rounded hover:bg-[color:var(--color-bg-subtle)]"
                               style={{
@@ -442,8 +457,8 @@ const DataGrid = ({
                           onClick={() => onOpenTask(task)}
                           aria-label={
                             commentCount > 0
-                              ? `Open comments (${commentCount})`
-                              : 'Open comments'
+                              ? t('grid.openCommentsCount', { count: commentCount })
+                              : t('grid.openComments')
                           }
                           className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
                           style={{ ...actionBtnStyle, position: 'relative', margin: '0 auto' }}
@@ -485,8 +500,8 @@ const DataGrid = ({
                         <button
                           type="button"
                           onClick={(e) => onActionsClick(task, e)}
-                          aria-label="Task actions"
-                          title="Actions"
+                          aria-label={t('grid.leadActions')}
+                          title={t('grid.actions')}
                           className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
                           style={{ ...actionBtnStyle, marginLeft: 'auto' }}
                         >
@@ -525,7 +540,7 @@ const DataGrid = ({
             textAlign: 'center',
           }}
         >
-          No tasks in this group yet
+          {t('grid.noLeadsInGroup')}
         </div>
       )}
 
@@ -549,7 +564,7 @@ const DataGrid = ({
                   setHeaderMenu(null);
                 }}
               >
-                Rename
+                {t('grid.rename')}
               </button>
               <button
                 type="button"
@@ -561,7 +576,7 @@ const DataGrid = ({
                 }}
                 onClick={() => handleDelete(col)}
               >
-                Delete
+                {t('grid.delete')}
               </button>
             </PortalMenu>
           );
@@ -570,8 +585,27 @@ const DataGrid = ({
   );
 };
 
+// Left offsets for the frozen (pinned) region: drag handle, checkbox, and the
+// primary "Lead" column stay put while the rest of the columns scroll under.
+const FROZEN_DRAG_LEFT = 0;
+const FROZEN_CHECK_LEFT = DRAG_WIDTH;
+const FROZEN_PRIMARY_LEFT = DRAG_WIDTH + CHECK_WIDTH;
+
+// Opaque background for frozen body cells so scrolling columns pass underneath
+// them, staying in sync with the row's hover / highlight states.
+const FROZEN_CELL_BG =
+  'bg-surface group-hover/datagrid-row:bg-[color:var(--color-bg-subtle)] ' +
+  'group-[.macan-task-highlight]/datagrid-row:bg-[color:var(--color-accent-light)]';
+
 /** Header cell shell with the shared header styling (matches TaskTable). */
-const HeaderShell = ({ children, align = 'flex-start', pad = '0 16px', className, divider = false }) => (
+const HeaderShell = ({
+  children,
+  align = 'flex-start',
+  pad = '0 16px',
+  className,
+  divider = false,
+  stickyLeft = null,
+}) => (
   <div
     className={className}
     style={{
@@ -589,7 +623,9 @@ const HeaderShell = ({ children, align = 'flex-start', pad = '0 16px', className
       alignItems: 'center',
       justifyContent: align,
       gap: 4,
-      position: 'relative',
+      position: stickyLeft != null ? 'sticky' : 'relative',
+      left: stickyLeft != null ? stickyLeft : undefined,
+      zIndex: stickyLeft != null ? 3 : undefined,
     }}
   >
     {children}
@@ -597,14 +633,18 @@ const HeaderShell = ({ children, align = 'flex-start', pad = '0 16px', className
 );
 
 /** Body control cell (drag / checkbox / comments / actions). The row owns the border. */
-const Cellish = ({ children, center = false, pad = '0 4px', divider = false }) => (
+const Cellish = ({ children, center = false, pad = '0 4px', divider = false, stickyLeft = null, className }) => (
   <div
+    className={className}
     style={{
       display: 'flex',
       alignItems: 'center',
       justifyContent: center ? 'center' : 'flex-start',
       padding: pad,
       borderRight: divider ? '1px solid var(--color-border)' : undefined,
+      position: stickyLeft != null ? 'sticky' : undefined,
+      left: stickyLeft != null ? stickyLeft : undefined,
+      zIndex: stickyLeft != null ? 2 : undefined,
     }}
   >
     {children}
@@ -638,6 +678,7 @@ const actionBtnStyle = {
  * affordance. Mirrors TaskTable's SubitemsRow behavior.
  */
 const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
+  const { t } = useTranslation();
   const subitems = useTaskStore((s) => s.subitemsByParent[parent._id] || null);
   const addSubitem = useTaskStore((s) => s.addSubitem);
   const updateSubitem = useTaskStore((s) => s.updateSubitem);
@@ -659,7 +700,7 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
       const updated = await taskService.updateTask(sub._id, { status: next._id });
       updateSubitem(updated);
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to update status. Please try again.');
+      setError(err?.response?.data?.error || t('grid.failedUpdateStatus'));
     }
   };
 
@@ -672,7 +713,7 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
       setNewText('');
       setAdding(true);
     } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to add subitem. Please try again.');
+      setError(err?.response?.data?.error || t('grid.failedAddSubitem'));
     }
   };
 
@@ -694,9 +735,9 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
         </p>
       )}
       {loading ? (
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Loading subitems…</p>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('grid.loadingSubitems')}</p>
       ) : items.length === 0 ? (
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No subitems yet.</p>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('grid.noSubitems')}</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {items.map((sub) => {
@@ -706,7 +747,7 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
                 <button
                   type="button"
                   onClick={() => handleCycleStatus(sub)}
-                  aria-label={`Status: ${palette.label}. Click to change.`}
+                  aria-label={t('grid.statusClickToChange', { label: palette.label })}
                   title={palette.label}
                   style={{
                     width: 12,
@@ -741,8 +782,8 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
                 <button
                   type="button"
                   onClick={() => onOpenTask?.(sub)}
-                  aria-label={`Open ${sub.name}`}
-                  title="Open subitem"
+                  aria-label={t('grid.openNamed', { name: sub.name })}
+                  title={t('grid.openSubitem')}
                   style={{ ...iconBtnStyle, flexShrink: 0 }}
                 >
                   <ArrowRight size={12} aria-hidden="true" />
@@ -780,7 +821,7 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
                   setAdding(false);
                 }
               }}
-              placeholder="New subitem"
+              placeholder={t('grid.newSubitem')}
               autoFocus
               className="flex-1 focus:outline-none"
               style={{
@@ -808,7 +849,7 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
                 opacity: newText.trim() ? 1 : 0.4,
               }}
             >
-              Add
+              {t('grid.add')}
             </button>
           </form>
         ) : (
@@ -828,7 +869,7 @@ const SubitemsBlock = ({ parent, board, minWidth, onOpenTask, isAdmin }) => {
             }}
           >
             <Plus size={12} aria-hidden="true" />
-            Add subitem
+            {t('grid.addSubitem')}
           </button>
         ))}
     </div>
@@ -903,6 +944,7 @@ const PortalMenu = ({ anchor, onClose, children, width = 160 }) => {
  * on Enter or blur (when non-empty), then clears for the next entry.
  */
 const AddTaskRow = ({ minWidth, onSaveNew }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -940,7 +982,7 @@ const AddTaskRow = ({ minWidth, onSaveNew }) => {
       <input
         value={name}
         disabled={saving}
-        placeholder="Add task"
+        placeholder={t('grid.addLead')}
         onChange={(e) => setName(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {

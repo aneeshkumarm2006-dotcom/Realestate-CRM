@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowRight, Plus, Trash2 } from 'lucide-react';
 import useTaskStore from '../../store/taskStore';
 import * as taskService from '../../services/taskService';
@@ -28,6 +29,7 @@ const RENAME_DEBOUNCE_MS = 500;
  *                   focused-task stack so it can be edited like any task
  */
 const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
+  const { t } = useTranslation();
   const parentId = task?._id || null;
 
   const subitems = useTaskStore((s) =>
@@ -64,7 +66,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
         if (!cancelled) {
           setError(
             err?.response?.data?.error ||
-              'Failed to load subitems. Please try again.'
+              t('boardMisc.failedToLoadSubitems')
           );
         }
       })
@@ -74,7 +76,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
     return () => {
       cancelled = true;
     };
-  }, [parentId, canHaveSubitems, subitems, fetchSubitems]);
+  }, [parentId, canHaveSubitems, subitems, fetchSubitems, t]);
 
   // Sync local drafts with the latest subitem list.
   useEffect(() => {
@@ -129,12 +131,12 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
           console.error('Failed to rename subitem:', err);
           setError(
             err?.response?.data?.error ||
-              'Failed to save change. Please try again.'
+              t('boardMisc.failedToSaveChange')
           );
         }
       }, RENAME_DEBOUNCE_MS);
     },
-    [updateSubitem]
+    [updateSubitem, t]
   );
 
   const handleDraftChange = (subitemId, value) => {
@@ -159,7 +161,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
       console.error('Failed to update subitem status:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to update status. Please try again.'
+          t('boardMisc.failedToUpdateStatus')
       );
     }
   };
@@ -176,7 +178,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
       console.error('Failed to delete subitem:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to delete subitem. Please try again.'
+          t('boardMisc.failedToDeleteSubitem')
       );
     }
   };
@@ -194,7 +196,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
       console.error('Failed to add subitem:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to add subitem. Please try again.'
+          t('boardMisc.failedToAddSubitem')
       );
     }
   };
@@ -221,7 +223,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
             color: 'var(--color-text-muted)',
           }}
         >
-          Subitems
+          {t('boardMisc.subitems')}
         </p>
         {items.length > 0 && (
           <span
@@ -252,7 +254,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
           className="font-body"
           style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
         >
-          Loading subitems…
+          {t('boardMisc.loadingSubitems')}
         </p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -309,7 +311,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
                   setAdding(false);
                 }
               }}
-              placeholder="New subitem"
+              placeholder={t('boardMisc.newSubitem')}
               autoFocus
               className="flex-1 font-body focus:outline-none"
               style={{
@@ -337,7 +339,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
                 cursor: newText.trim() ? 'pointer' : 'not-allowed',
               }}
             >
-              Add
+              {t('boardMisc.add')}
             </button>
           </form>
         ) : (
@@ -360,7 +362,7 @@ const SubitemsList = ({ task, board, isAdmin = false, onOpenSubitem }) => {
             }}
           >
             <Plus size={13} aria-hidden="true" />
-            Add subitem
+            {t('boardMisc.addSubitem')}
           </button>
         )
       ) : null}
@@ -380,6 +382,7 @@ const SubitemRow = ({
   onOpen,
   onDelete,
 }) => {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   return (
     <li
@@ -391,7 +394,7 @@ const SubitemRow = ({
       <button
         type="button"
         onClick={onCycleStatus}
-        aria-label={`Status: ${palette.label}. Click to change.`}
+        aria-label={t('boardMisc.statusClickToChange', { label: palette.label })}
         title={palette.label}
         style={{
           width: 14,
@@ -409,7 +412,7 @@ const SubitemRow = ({
         type="text"
         value={draftName}
         onChange={(e) => onNameChange(e.target.value)}
-        placeholder="Subitem name"
+        placeholder={t('boardMisc.subitemName')}
         className="flex-1 font-body focus:outline-none min-w-0"
         style={{
           fontSize: 13,
@@ -431,8 +434,8 @@ const SubitemRow = ({
         <button
           type="button"
           onClick={onOpen}
-          aria-label={`Open ${subitem.name || 'subitem'}`}
-          title="Open subitem"
+          aria-label={t('boardMisc.openNamedSubitem', { name: subitem.name || t('boardMisc.subitem') })}
+          title={t('boardMisc.openSubitem')}
           className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
           style={{
             width: 24,
@@ -453,7 +456,7 @@ const SubitemRow = ({
         <button
           type="button"
           onClick={onDelete}
-          aria-label="Delete subitem"
+          aria-label={t('boardMisc.deleteSubitem')}
           className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
           style={{
             width: 24,

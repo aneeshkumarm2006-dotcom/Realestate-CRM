@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Settings as SettingsIcon, Check } from 'lucide-react';
 import { getColorPair, STATUS_COLORS } from '../../utils/priorityColors';
@@ -26,6 +27,7 @@ const VIEWPORT_MARGIN = 16;
 const LEGACY_STATUS_ORDER = ['not_started', 'working_on_it', 'done', 'stuck'];
 
 const StatusMenu = ({ anchorEl, board, value, onSelect, onEditChips, onClose }) => {
+  const { t } = useTranslation();
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ top: 0, left: 0, openUpward: false });
 
@@ -172,7 +174,7 @@ const StatusMenu = ({ anchorEl, board, value, onSelect, onEditChips, onClose }) 
           }}
         >
           <SettingsIcon size={12} aria-hidden="true" />
-          Edit Statuses
+          {t('grid.editStatuses')}
         </button>
       )}
       <style>{`

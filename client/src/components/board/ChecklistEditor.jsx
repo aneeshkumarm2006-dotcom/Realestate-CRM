@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2 } from 'lucide-react';
 import useTaskStore from '../../store/taskStore';
 
@@ -16,6 +17,7 @@ const RENAME_DEBOUNCE_MS = 500;
  * by creator instead of board membership.
  */
 const ChecklistEditor = ({ task }) => {
+  const { t } = useTranslation();
   const addChecklistItem = useTaskStore((s) => s.addChecklistItem);
   const toggleChecklistItem = useTaskStore((s) => s.toggleChecklistItem);
   const renameChecklistItem = useTaskStore((s) => s.renameChecklistItem);
@@ -85,12 +87,12 @@ const ChecklistEditor = ({ task }) => {
           console.error('Failed to rename checklist item:', err);
           setError(
             err?.response?.data?.error ||
-              'Failed to save change. Please try again.'
+              t('automation.checklistSaveError')
           );
         }
       }, RENAME_DEBOUNCE_MS);
     },
-    [taskId, renameChecklistItem]
+    [taskId, renameChecklistItem, t]
   );
 
   const handleDraftChange = (itemId, value) => {
@@ -114,7 +116,7 @@ const ChecklistEditor = ({ task }) => {
       console.error('Failed to toggle checklist item:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to save change. Please try again.'
+          t('automation.checklistSaveError')
       );
       // Revert to original task on failure.
       updateTaskLocal(task);
@@ -133,7 +135,7 @@ const ChecklistEditor = ({ task }) => {
       console.error('Failed to delete checklist item:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to delete item. Please try again.'
+          t('automation.checklistDeleteError')
       );
     }
   };
@@ -151,7 +153,7 @@ const ChecklistEditor = ({ task }) => {
       console.error('Failed to add checklist item:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to add item. Please try again.'
+          t('automation.checklistAddError')
       );
     }
   };
@@ -169,7 +171,7 @@ const ChecklistEditor = ({ task }) => {
             color: 'var(--color-text-muted)',
           }}
         >
-          Checklist
+          {t('automation.checklistTitle')}
         </p>
         {total > 0 && (
           <span
@@ -210,7 +212,15 @@ const ChecklistEditor = ({ task }) => {
                 type="checkbox"
                 checked={!!item.done}
                 onChange={(e) => handleToggle(id, e.target.checked)}
-                aria-label={`Mark ${item.text || 'item'} ${item.done ? 'incomplete' : 'complete'}`}
+                aria-label={
+                  item.done
+                    ? t('automation.checklistMarkIncomplete', {
+                        item: item.text || t('automation.checklistItemFallback'),
+                      })
+                    : t('automation.checklistMarkComplete', {
+                        item: item.text || t('automation.checklistItemFallback'),
+                      })
+                }
                 style={{
                   width: 16,
                   height: 16,
@@ -223,7 +233,7 @@ const ChecklistEditor = ({ task }) => {
                 type="text"
                 value={draftText}
                 onChange={(e) => handleDraftChange(id, e.target.value)}
-                placeholder="Item text"
+                placeholder={t('automation.checklistItemTextPlaceholder')}
                 className="flex-1 font-body focus:outline-none"
                 style={{
                   fontSize: 14,
@@ -247,7 +257,7 @@ const ChecklistEditor = ({ task }) => {
               <button
                 type="button"
                 onClick={() => handleDelete(id)}
-                aria-label="Delete checklist item"
+                aria-label={t('automation.checklistDeleteItem')}
                 className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
                 style={{
                   width: 24,
@@ -297,7 +307,7 @@ const ChecklistEditor = ({ task }) => {
                 setAdding(false);
               }
             }}
-            placeholder="New checklist item"
+            placeholder={t('automation.checklistNewItemPlaceholder')}
             autoFocus
             className="flex-1 font-body focus:outline-none"
             style={{
@@ -325,7 +335,7 @@ const ChecklistEditor = ({ task }) => {
               cursor: newText.trim() ? 'pointer' : 'not-allowed',
             }}
           >
-            Add
+            {t('automation.add')}
           </button>
         </form>
       ) : (
@@ -348,7 +358,7 @@ const ChecklistEditor = ({ task }) => {
           }}
         >
           <Plus size={13} aria-hidden="true" />
-          Add item
+          {t('automation.checklistAddItem')}
         </button>
       )}
     </div>

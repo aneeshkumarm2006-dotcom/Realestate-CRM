@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Paperclip,
   UploadCloud,
@@ -56,6 +57,7 @@ const formatBytes = (bytes) => {
  * multer middleware; the resulting URL is persisted on the task document.
  */
 const FilesTab = ({ task, onCountChange }) => {
+  const { t } = useTranslation();
   const taskId = task?._id || null;
   const toast = useToastStore.getState();
   const currentUser = useAuthStore((s) => s.user);
@@ -91,7 +93,7 @@ const FilesTab = ({ task, onCountChange }) => {
         console.error('Failed to load attachments:', err);
         if (!cancelled) {
           setError(
-            err?.response?.data?.error || 'Failed to load files. Please try again.'
+            err?.response?.data?.error || t('itemTabs.filesLoadError')
           );
         }
       })
@@ -101,7 +103,7 @@ const FilesTab = ({ task, onCountChange }) => {
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [taskId, t]);
 
   const uploadFiles = useCallback(
     async (files) => {
@@ -109,7 +111,7 @@ const FilesTab = ({ task, onCountChange }) => {
       setUploading(true);
       for (const f of files) {
         if (f.size > MAX_FILE_SIZE) {
-          toast.error(`${f.name} is larger than 25MB`);
+          toast.error(t('itemTabs.fileTooLarge', { name: f.name }));
           continue;
         }
         try {
@@ -118,13 +120,13 @@ const FilesTab = ({ task, onCountChange }) => {
         } catch (err) {
           console.error('Upload failed:', err);
           toast.error(
-            err?.response?.data?.error || `Failed to upload ${f.name}`
+            err?.response?.data?.error || t('itemTabs.uploadFailed', { name: f.name })
           );
         }
       }
       setUploading(false);
     },
-    [taskId, toast]
+    [taskId, toast, t]
   );
 
   const handleFilesSelected = useCallback(
@@ -147,12 +149,12 @@ const FilesTab = ({ task, onCountChange }) => {
       } catch (err) {
         console.error('Failed to delete attachment:', err);
         toast.error(
-          err?.response?.data?.error || 'Failed to delete file.'
+          err?.response?.data?.error || t('itemTabs.fileDeleteError')
         );
         setAttachments(prev);
       }
     },
-    [taskId, attachments, toast]
+    [taskId, attachments, toast, t]
   );
 
   const handleDrop = useCallback(
@@ -185,7 +187,7 @@ const FilesTab = ({ task, onCountChange }) => {
         onDragLeave={handleDragLeave}
         role="button"
         tabIndex={0}
-        aria-label="Upload files"
+        aria-label={t('itemTabs.uploadFiles')}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -221,10 +223,10 @@ const FilesTab = ({ task, onCountChange }) => {
           }}
         />
         <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--color-text-primary)' }}>
-          {uploading ? 'Uploading…' : 'Drop files here or click to upload'}
+          {uploading ? t('itemTabs.uploading') : t('itemTabs.dropFilesHere')}
         </p>
         <p style={{ fontSize: 11, margin: '4px 0 0 0', color: 'var(--color-text-muted)' }}>
-          Up to 25 MB per file
+          {t('itemTabs.upTo25Mb')}
         </p>
         <input
           ref={fileInputRef}
@@ -244,7 +246,7 @@ const FilesTab = ({ task, onCountChange }) => {
             className="font-body text-center"
             style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '24px 0' }}
           >
-            Loading files…
+            {t('itemTabs.loadingFiles')}
           </p>
         ) : error ? (
           <p
@@ -259,7 +261,7 @@ const FilesTab = ({ task, onCountChange }) => {
             className="font-body text-center"
             style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '24px 0' }}
           >
-            No files attached yet.
+            {t('itemTabs.noFilesAttached')}
           </p>
         ) : (
           <ul
@@ -287,6 +289,7 @@ const FilesTab = ({ task, onCountChange }) => {
 };
 
 const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
+  const { t } = useTranslation();
   const Icon = iconForMime(attachment.mime || '');
   const uploader = attachment.uploadedBy;
   const uploaderName =
@@ -324,7 +327,7 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
         >
           <img
             src={attachment.url}
-            alt={attachment.name || 'attachment'}
+            alt={attachment.name || t('itemTabs.attachment')}
             style={{
               width: 40,
               height: 40,
@@ -372,9 +375,9 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
-            title={attachment.name || 'attachment'}
+            title={attachment.name || t('itemTabs.attachment')}
           >
-            {attachment.name || 'attachment'}
+            {attachment.name || t('itemTabs.attachment')}
           </a>
         ) : (
           <button
@@ -395,9 +398,9 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
-            title={attachment.name || 'attachment'}
+            title={attachment.name || t('itemTabs.attachment')}
           >
-            {attachment.name || 'attachment'}
+            {attachment.name || t('itemTabs.attachment')}
           </button>
         )}
         <div
@@ -408,7 +411,7 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
           {uploaderName && (
             <>
               <span aria-hidden="true">•</span>
-              <span>by {uploaderName}</span>
+              <span>{t('itemTabs.byUploader', { name: uploaderName })}</span>
             </>
           )}
           {attachment.createdAt && (
@@ -425,8 +428,8 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
         <button
           type="button"
           onClick={handleDownload}
-          aria-label="Download file"
-          title="Download"
+          aria-label={t('itemTabs.downloadFile')}
+          title={t('itemTabs.download')}
           className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
           style={{
             width: 28,
@@ -458,7 +461,7 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
                   cursor: 'pointer',
                 }}
               >
-                Delete
+                {t('itemTabs.delete')}
               </button>
               <button
                 type="button"
@@ -475,15 +478,15 @@ const AttachmentRow = ({ attachment, canDelete, onDelete }) => {
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {t('itemTabs.cancel')}
               </button>
             </>
           ) : (
             <button
               type="button"
               onClick={() => setConfirmOpen(true)}
-              aria-label="Delete file"
-              title="Delete"
+              aria-label={t('itemTabs.deleteFile')}
+              title={t('itemTabs.delete')}
               className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
               style={{
                 width: 28,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ListChecks,
   TrendingUp,
@@ -23,11 +24,11 @@ import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import { getAnalytics } from '../services/analyticsService';
 
-const STATUS_LABELS = {
-  not_started: 'Not Started',
-  working_on_it: 'Working on it',
-  done: 'Done',
-  stuck: 'Stuck',
+const STATUS_LABEL_KEYS = {
+  not_started: 'pages.statusNotStarted',
+  working_on_it: 'pages.statusWorkingOnIt',
+  done: 'pages.statusDone',
+  stuck: 'pages.statusStuck',
 };
 
 const STATUS_COLORS = {
@@ -37,11 +38,11 @@ const STATUS_COLORS = {
   stuck: 'var(--color-status-stuck)',
 };
 
-const PRIORITY_LABELS = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
+const PRIORITY_LABEL_KEYS = {
+  critical: 'pages.priorityCritical',
+  high: 'pages.priorityHigh',
+  medium: 'pages.priorityMedium',
+  low: 'pages.priorityLow',
 };
 
 const PRIORITY_COLORS = {
@@ -51,10 +52,10 @@ const PRIORITY_COLORS = {
   low: 'var(--color-priority-low)',
 };
 
-const RANGE_OPTIONS = [
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: 'all', label: 'All time' },
+const RANGE_OPTION_KEYS = [
+  { value: '7d', labelKey: 'pages.last7Days' },
+  { value: '30d', labelKey: 'pages.last30Days' },
+  { value: 'all', labelKey: 'pages.allTime' },
 ];
 
 const INITIAL_SUMMARY = {
@@ -92,6 +93,7 @@ const useIsCurrentOrgAdmin = () => {
 };
 
 const AnalyticsPage = () => {
+  const { t } = useTranslation();
   const isAdmin = useIsCurrentOrgAdmin();
   const currentOrg = useOrgStore((s) => s.currentOrg);
 
@@ -135,7 +137,7 @@ const AnalyticsPage = () => {
       .catch((err) => {
         console.error('Failed to load analytics:', err);
         if (cancelled) return;
-        setError('Could not load analytics.');
+        setError(t('pages.couldNotLoadAnalytics'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -144,78 +146,81 @@ const AnalyticsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [orgId, isAdmin, boardFilter, range]);
+  }, [orgId, isAdmin, boardFilter, range, t]);
 
   const boardOptions = useMemo(
     () => [
-      { value: 'all', label: 'All Boards' },
+      { value: 'all', label: t('pages.allBoards') },
       ...orgBoards.map((b) => ({ value: b._id, label: b.name })),
     ],
-    [orgBoards]
+    [orgBoards, t]
+  );
+
+  const rangeOptions = useMemo(
+    () => RANGE_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t]
   );
 
   const statusData = useMemo(
     () =>
       statusDistribution.map((row) => ({
         key: row.status,
-        label: STATUS_LABELS[row.status] || row.status,
+        label: STATUS_LABEL_KEYS[row.status] ? t(STATUS_LABEL_KEYS[row.status]) : row.status,
         count: row.count,
         color: STATUS_COLORS[row.status] || 'var(--color-accent)',
       })),
-    [statusDistribution]
+    [statusDistribution, t]
   );
 
   const priorityData = useMemo(
     () =>
       priorityDistribution.map((row) => ({
         key: row.priority,
-        label: PRIORITY_LABELS[row.priority] || row.priority,
+        label: PRIORITY_LABEL_KEYS[row.priority] ? t(PRIORITY_LABEL_KEYS[row.priority]) : row.priority,
         count: row.count,
         color: PRIORITY_COLORS[row.priority] || 'var(--color-accent)',
       })),
-    [priorityDistribution]
+    [priorityDistribution, t]
   );
 
   const overduePriorityData = useMemo(
     () =>
       (overdue.byPriority || []).map((row) => ({
         key: row.priority,
-        label: PRIORITY_LABELS[row.priority] || row.priority,
+        label: PRIORITY_LABEL_KEYS[row.priority] ? t(PRIORITY_LABEL_KEYS[row.priority]) : row.priority,
         count: row.count,
         color: PRIORITY_COLORS[row.priority] || 'var(--color-accent)',
       })),
-    [overdue.byPriority]
+    [overdue.byPriority, t]
   );
 
   const statCards = [
     {
       icon: ListChecks,
-      label: 'Total Tasks',
+      label: t('pages.totalLeads'),
       value: summary.totalTasks,
       color: 'blue',
     },
     {
       icon: TrendingUp,
-      label: 'Completion Rate',
+      label: t('pages.completionRate'),
       value: summary.completionRate,
       suffix: '%',
       color: 'green',
     },
     {
       icon: AlertTriangle,
-      label: 'Overdue Tasks',
+      label: t('pages.overdueLeads'),
       value: summary.overdueTasks,
       color: 'red',
       subLabel:
         overdue.count > 0
-          ? `Avg ${overdue.avgDaysOverdue} day${
-              overdue.avgDaysOverdue === 1 ? '' : 's'
-            } overdue`
-          : 'No overdue tasks',
+          ? t('pages.avgDaysOverdue', { count: overdue.avgDaysOverdue })
+          : t('pages.noOverdueLeads'),
     },
     {
       icon: Folder,
-      label: 'Active Boards',
+      label: t('pages.activeBoards'),
       value: summary.activeBoards,
       color: 'purple',
     },
@@ -234,7 +239,7 @@ const AnalyticsPage = () => {
               lineHeight: 1.2,
             }}
           >
-            Analytics Dashboard
+            {t('pages.analyticsDashboard')}
           </h1>
           <p
             className="font-body mt-1"
@@ -243,7 +248,7 @@ const AnalyticsPage = () => {
               color: 'var(--color-text-secondary)',
             }}
           >
-            Insights across your workspace.
+            {t('pages.insightsAcrossWorkspace')}
           </p>
         </div>
 
@@ -253,16 +258,16 @@ const AnalyticsPage = () => {
               options={boardOptions}
               value={boardFilter}
               onChange={setBoardFilter}
-              placeholder="All Boards"
+              placeholder={t('pages.allBoards')}
               size="sm"
             />
           </div>
           <div style={{ width: 160 }}>
             <Dropdown
-              options={RANGE_OPTIONS}
+              options={rangeOptions}
               value={range}
               onChange={setRange}
-              placeholder="Last 30 days"
+              placeholder={t('pages.last30Days')}
               size="sm"
             />
           </div>
@@ -311,12 +316,12 @@ const AnalyticsPage = () => {
         ) : (
           <>
             <BarChart
-              title="Task Status Distribution"
+              title={t('pages.leadStatusDistribution')}
               icon={PieChart}
               data={statusData}
             />
             <BarChart
-              title="Priority Distribution"
+              title={t('pages.priorityDistribution')}
               icon={Flag}
               data={priorityData}
             />
@@ -334,7 +339,7 @@ const AnalyticsPage = () => {
         ) : (
           <>
             <BarChart
-              title="Overdue by Priority"
+              title={t('pages.overdueByPriority')}
               icon={AlertTriangle}
               data={overduePriorityData}
             />

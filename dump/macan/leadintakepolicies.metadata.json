@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"boardId":{"$numberInt":"1"}},"name":"boardId_1","unique":true}],"uuid":"220c1a7278a64559bfcc11063c29247b","collectionName":"leadintakepolicies","type":"collection"}

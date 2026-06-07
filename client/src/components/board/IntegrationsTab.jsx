@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -45,6 +46,7 @@ const fmtTime = (d) => {
 };
 
 const CopyButton = ({ value }) => {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -59,8 +61,8 @@ const CopyButton = ({ value }) => {
     <button
       type="button"
       onClick={copy}
-      title="Copy URL"
-      aria-label="Copy inbound URL"
+      title={t('itemTabs.copyUrl')}
+      aria-label={t('itemTabs.copyInboundUrl')}
       className="inline-flex items-center gap-1.5"
       style={{
         fontSize: 12,
@@ -73,12 +75,13 @@ const CopyButton = ({ value }) => {
       }}
     >
       {copied ? <Check size={13} /> : <Copy size={13} />}
-      {copied ? 'Copied' : 'Copy URL'}
+      {copied ? t('itemTabs.copied') : t('itemTabs.copyUrl')}
     </button>
   );
 };
 
 const DeliveryLog = ({ boardId, endpoint }) => {
+  const { t } = useTranslation();
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -97,31 +100,31 @@ const DeliveryLog = ({ boardId, endpoint }) => {
     <div style={{ marginTop: 10 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
         <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-text-secondary)' }}>
-          Delivery log
+          {t('itemTabs.deliveryLog')}
         </span>
         <button
           type="button"
           onClick={reload}
-          aria-label="Refresh delivery log"
-          title="Refresh"
+          aria-label={t('itemTabs.refreshDeliveryLog')}
+          title={t('itemTabs.refresh')}
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
         >
           <RefreshCw size={13} />
         </button>
       </div>
       {loading && !rows ? (
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('itemTabs.loading')}</p>
       ) : !rows || rows.length === 0 ? (
-        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No deliveries yet.</p>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('itemTabs.noDeliveries')}</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--color-text-muted)' }}>
-                <th style={{ padding: '4px 8px' }}>Status</th>
-                <th style={{ padding: '4px 8px' }}>Attempt</th>
-                <th style={{ padding: '4px 8px' }}>Response</th>
-                <th style={{ padding: '4px 8px' }}>When</th>
+                <th style={{ padding: '4px 8px' }}>{t('itemTabs.colStatus')}</th>
+                <th style={{ padding: '4px 8px' }}>{t('itemTabs.colAttempt')}</th>
+                <th style={{ padding: '4px 8px' }}>{t('itemTabs.colResponse')}</th>
+                <th style={{ padding: '4px 8px' }}>{t('itemTabs.colWhen')}</th>
               </tr>
             </thead>
             <tbody>
@@ -162,6 +165,7 @@ const cardStyle = {
  * board.
  */
 const FormsSection = ({ boardId }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -191,7 +195,7 @@ const FormsSection = ({ boardId }) => {
   };
 
   const remove = async (form) => {
-    if (!window.confirm(`Delete the form "${form.name}" and its public URL?`)) return;
+    if (!window.confirm(t('itemTabs.deleteFormConfirm', { name: form.name }))) return;
     setBusyId(form._id);
     try {
       await formService.deleteForm(form._id);
@@ -205,20 +209,20 @@ const FormsSection = ({ boardId }) => {
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h3 className="font-display font-semibold inline-flex items-center gap-2" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>
-          <FileText size={16} /> Public forms
+          <FileText size={16} /> {t('itemTabs.publicForms')}
         </h3>
         <Button variant="secondary" size="sm" icon={Plus} onClick={() => navigate(`/forms/new?boardId=${boardId}`)}>
-          New form
+          {t('itemTabs.newForm')}
         </Button>
       </div>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-        Brandable public forms at <code>/f/:slug</code>; each submission creates a task via the lead-intake pipeline.
+        {t('itemTabs.formsDescriptionPrefix')}<code>/f/:slug</code>{t('itemTabs.formsDescriptionSuffix')}
       </p>
 
       {loading && forms.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('itemTabs.loading')}</p>
       ) : forms.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No forms yet.</p>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('itemTabs.noForms')}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {forms.map((form) => (
@@ -227,12 +231,12 @@ const FormsSection = ({ boardId }) => {
                 <span className="font-body" style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text-primary)' }}>{form.name}</span>
                 <code style={{ fontSize: 12, color: 'var(--color-text-secondary)', wordBreak: 'break-all', flex: 1, minWidth: 180 }}>{form.publicUrl}</code>
                 <CopyButton value={form.publicUrl} />
-                <a href={`/f/${form.slug}`} target="_blank" rel="noreferrer" title="Open form" aria-label="Open form" className="inline-flex items-center" style={{ color: 'var(--color-accent)' }}>
+                <a href={`/f/${form.slug}`} target="_blank" rel="noreferrer" title={t('itemTabs.openForm')} aria-label={t('itemTabs.openForm')} className="inline-flex items-center" style={{ color: 'var(--color-accent)' }}>
                   <ExternalLink size={14} />
                 </a>
                 <Toggle checked={form.enabled} disabled={busyId === form._id} onChange={(v) => toggle(form, v)} />
-                <IconBtn label="Edit form" icon={Pencil} onClick={() => navigate(`/forms/${form._id}/edit`)} />
-                <IconBtn label="Delete" icon={Trash2} danger onClick={() => remove(form)} disabled={busyId === form._id} />
+                <IconBtn label={t('itemTabs.editForm')} icon={Pencil} onClick={() => navigate(`/forms/${form._id}/edit`)} />
+                <IconBtn label={t('itemTabs.delete')} icon={Trash2} danger onClick={() => remove(form)} disabled={busyId === form._id} />
               </div>
             </li>
           ))}
@@ -243,6 +247,7 @@ const FormsSection = ({ boardId }) => {
 };
 
 const IntegrationsTab = ({ boardId, board }) => {
+  const { t } = useTranslation();
   const [endpoints, setEndpoints] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -257,9 +262,9 @@ const IntegrationsTab = ({ boardId, board }) => {
     webhookService
       .listEndpoints(boardId)
       .then(setEndpoints)
-      .catch((e) => setError(e?.response?.data?.error || 'Failed to load webhooks.'))
+      .catch((e) => setError(e?.response?.data?.error || t('itemTabs.webhooksLoadError')))
       .finally(() => setLoading(false));
-  }, [boardId]);
+  }, [boardId, t]);
 
   useEffect(() => { if (boardId) reload(); }, [boardId, reload]);
 
@@ -272,7 +277,7 @@ const IntegrationsTab = ({ boardId, board }) => {
       const ep = await webhookService.createEndpoint(boardId, { direction: 'in', mapping: {} });
       setEndpoints((list) => [ep, ...list]);
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to create inbound endpoint.');
+      setError(e?.response?.data?.error || t('itemTabs.createInboundError'));
     } finally {
       setBusyId(null);
     }
@@ -286,7 +291,7 @@ const IntegrationsTab = ({ boardId, board }) => {
       setEndpoints((list) => [ep, ...list]);
       setNewOutUrl('');
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to create outbound endpoint.');
+      setError(e?.response?.data?.error || t('itemTabs.createOutboundError'));
     } finally {
       setBusyId(null);
     }
@@ -298,20 +303,20 @@ const IntegrationsTab = ({ boardId, board }) => {
       const updated = await webhookService.updateEndpoint(boardId, ep._id, { enabled });
       setEndpoints((list) => list.map((e) => (e._id === updated._id ? updated : e)));
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to update endpoint.');
+      setError(e?.response?.data?.error || t('itemTabs.updateEndpointError'));
     } finally {
       setBusyId(null);
     }
   };
 
   const remove = async (ep) => {
-    if (!window.confirm('Delete this webhook endpoint and its delivery history?')) return;
+    if (!window.confirm(t('itemTabs.deleteEndpointConfirm'))) return;
     setBusyId(ep._id);
     try {
       await webhookService.deleteEndpoint(boardId, ep._id);
       setEndpoints((list) => list.filter((e) => e._id !== ep._id));
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to delete endpoint.');
+      setError(e?.response?.data?.error || t('itemTabs.deleteEndpointError'));
     } finally {
       setBusyId(null);
     }
@@ -329,14 +334,14 @@ const IntegrationsTab = ({ boardId, board }) => {
 
   const sendTest = async (ep) => {
     setBusyId(ep._id);
-    setTestFeedback((f) => ({ ...f, [ep._id]: 'Sending…' }));
+    setTestFeedback((f) => ({ ...f, [ep._id]: t('itemTabs.sending') }));
     try {
       const res = await webhookService.testEndpoint(boardId, ep._id, {});
       const status = res?.delivery?.status || 'sent';
-      setTestFeedback((f) => ({ ...f, [ep._id]: `Test ${status}` }));
+      setTestFeedback((f) => ({ ...f, [ep._id]: t('itemTabs.testStatus', { status }) }));
       setExpanded((x) => ({ ...x, [ep._id]: 'log' }));
     } catch (e) {
-      setTestFeedback((f) => ({ ...f, [ep._id]: e?.response?.data?.error || 'Test failed' }));
+      setTestFeedback((f) => ({ ...f, [ep._id]: e?.response?.data?.error || t('itemTabs.testFailed') }));
     } finally {
       setBusyId(null);
       setTimeout(() => setTestFeedback((f) => ({ ...f, [ep._id]: null })), 4000);
@@ -359,20 +364,20 @@ const IntegrationsTab = ({ boardId, board }) => {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h3 className="font-display font-semibold inline-flex items-center gap-2" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>
-            <ArrowDownToLine size={16} /> Inbound webhooks
+            <ArrowDownToLine size={16} /> {t('itemTabs.inboundWebhooks')}
           </h3>
           <Button variant="secondary" size="sm" icon={Plus} onClick={addInbound} disabled={busyId === 'new-in'}>
-            New inbound
+            {t('itemTabs.newInbound')}
           </Button>
         </div>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          External systems POST JSON to the inbound URL; mapped fields become a new task.
+          {t('itemTabs.inboundDescription')}
         </p>
 
         {loading && endpoints.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('itemTabs.loading')}</p>
         ) : inbound.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No inbound endpoints yet.</p>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('itemTabs.noInboundEndpoints')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {inbound.map((ep) => (
@@ -383,9 +388,9 @@ const IntegrationsTab = ({ boardId, board }) => {
                   </code>
                   <CopyButton value={ep.inboundUrl} />
                   <Toggle checked={ep.enabled} disabled={busyId === ep._id} onChange={(v) => toggle(ep, v)} />
-                  <IconBtn label="Field mapping" icon={ListTree} onClick={() => toggleExpand(ep._id, 'map')} active={expanded[ep._id] === 'map'} />
-                  <IconBtn label="Delivery log" icon={ArrowDownToLine} onClick={() => toggleExpand(ep._id, 'log')} active={expanded[ep._id] === 'log'} />
-                  <IconBtn label="Delete" icon={Trash2} danger onClick={() => remove(ep)} disabled={busyId === ep._id} />
+                  <IconBtn label={t('itemTabs.fieldMapping')} icon={ListTree} onClick={() => toggleExpand(ep._id, 'map')} active={expanded[ep._id] === 'map'} />
+                  <IconBtn label={t('itemTabs.deliveryLog')} icon={ArrowDownToLine} onClick={() => toggleExpand(ep._id, 'log')} active={expanded[ep._id] === 'log'} />
+                  <IconBtn label={t('itemTabs.delete')} icon={Trash2} danger onClick={() => remove(ep)} disabled={busyId === ep._id} />
                 </div>
                 {expanded[ep._id] === 'map' && (
                   <WebhookMappingEditor
@@ -405,18 +410,17 @@ const IntegrationsTab = ({ boardId, board }) => {
       {/* Outbound */}
       <section className="flex flex-col gap-3">
         <h3 className="font-display font-semibold inline-flex items-center gap-2" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>
-          <ArrowUpFromLine size={16} /> Outbound webhooks
+          <ArrowUpFromLine size={16} /> {t('itemTabs.outboundWebhooks')}
         </h3>
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Use the <strong>Post to a webhook</strong> automation action to ship a signed JSON
-          envelope (header <code>X-CRM-Signature</code>) to these destinations.
+          {t('itemTabs.outboundDescriptionPrefix')}<strong>{t('itemTabs.postToWebhook')}</strong>{t('itemTabs.outboundDescriptionMiddle')}<code>X-CRM-Signature</code>{t('itemTabs.outboundDescriptionSuffix')}
         </p>
         <div className="flex items-center gap-2">
           <input
             type="url"
             value={newOutUrl}
             onChange={(e) => setNewOutUrl(e.target.value)}
-            placeholder="https://example.com/incoming-hook"
+            placeholder={t('itemTabs.webhookUrlPlaceholder')}
             style={{
               height: 34,
               padding: '0 10px',
@@ -429,12 +433,12 @@ const IntegrationsTab = ({ boardId, board }) => {
             }}
           />
           <Button variant="secondary" size="sm" icon={Plus} onClick={addOutbound} disabled={busyId === 'new-out' || !newOutUrl.trim()}>
-            Add
+            {t('itemTabs.add')}
           </Button>
         </div>
 
         {outbound.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No outbound endpoints yet.</p>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('itemTabs.noOutboundEndpoints')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {outbound.map((ep) => (
@@ -447,12 +451,12 @@ const IntegrationsTab = ({ boardId, board }) => {
                     <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{testFeedback[ep._id]}</span>
                   )}
                   <Toggle checked={ep.enabled} disabled={busyId === ep._id} onChange={(v) => toggle(ep, v)} />
-                  <IconBtn label="Send test" icon={Send} onClick={() => sendTest(ep)} disabled={busyId === ep._id} />
-                  <IconBtn label="Delivery log" icon={ArrowDownToLine} onClick={() => toggleExpand(ep._id, 'log')} active={expanded[ep._id] === 'log'} />
-                  <IconBtn label="Delete" icon={Trash2} danger onClick={() => remove(ep)} disabled={busyId === ep._id} />
+                  <IconBtn label={t('itemTabs.sendTest')} icon={Send} onClick={() => sendTest(ep)} disabled={busyId === ep._id} />
+                  <IconBtn label={t('itemTabs.deliveryLog')} icon={ArrowDownToLine} onClick={() => toggleExpand(ep._id, 'log')} active={expanded[ep._id] === 'log'} />
+                  <IconBtn label={t('itemTabs.delete')} icon={Trash2} danger onClick={() => remove(ep)} disabled={busyId === ep._id} />
                 </div>
                 <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6 }}>
-                  Signing secret: <code>{ep.secret}</code>
+                  {t('itemTabs.signingSecret')} <code>{ep.secret}</code>
                 </p>
                 {expanded[ep._id] === 'log' && <DeliveryLog boardId={boardId} endpoint={ep} />}
               </li>

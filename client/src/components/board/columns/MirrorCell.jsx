@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { GitBranch } from 'lucide-react';
 import { cellWrapperStyle } from './cellShared';
 import useBoardStore from '../../../store/boardStore';
@@ -25,6 +26,7 @@ const displayString = (value) => {
 };
 
 const MirrorCell = ({ value, column, task }) => {
+  const { t } = useTranslation();
   const mirrorValueAction = useBoardStore((s) => s.mirrorValue);
   const [display, setDisplay] = useState(() => unwrap(value));
   const [open, setOpen] = useState(false);
@@ -85,7 +87,7 @@ const MirrorCell = ({ value, column, task }) => {
       <div
         style={{ ...cellWrapperStyle, gap: 6, cursor: 'pointer' }}
         onClick={() => setOpen((v) => !v)}
-        title="Mirrored value — click for source"
+        title={t('boardMisc.mirroredValueClickForSource')}
       >
         <GitBranch size={12} color="var(--color-text-muted)" aria-hidden="true" style={{ flexShrink: 0 }} />
         <span
@@ -126,16 +128,16 @@ const MirrorCell = ({ value, column, task }) => {
               marginBottom: 6,
             }}
           >
-            Mirrored value
+            {t('boardMisc.mirroredValue')}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 8 }}>
             {text}
           </div>
           <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-            Aggregation: <strong>{aggregation}</strong>
+            {t('boardMisc.aggregationLabel')} <strong>{aggregation}</strong>
           </div>
           <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>
-            Source: {links.length} linked {links.length === 1 ? 'row' : 'rows'}
+            {t('boardMisc.sourceLinkedRows', { count: links.length })}
           </div>
         </div>
       )}

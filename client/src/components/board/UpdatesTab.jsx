@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { downloadFile } from '../../utils/fileUrl';
 import {
   AtSign,
@@ -35,6 +36,7 @@ const COMMON_EMOJIS = ['👍', '🎉', '🙌', '🔥', '❤️', '✅', '🚀', 
  *                     stays in sync as updates are added/removed
  */
 const UpdatesTab = ({ task, onCountChange }) => {
+  const { t } = useTranslation();
   const taskId = task?._id || null;
   const currentUser = useAuthStore((s) => s.user);
   const toast = useToastStore.getState();
@@ -80,7 +82,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
         if (!cancelled) {
           setError(
             err?.response?.data?.error ||
-              'Failed to load updates. Please try again.'
+              t('itemTabs.updatesLoadError')
           );
         }
       })
@@ -90,7 +92,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [taskId, t]);
 
   const handleEditorChange = useCallback(({ json, text, mentions, isEmpty }) => {
     setBodyJson(json);
@@ -126,7 +128,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
       console.error('Failed to post update:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to post update. Please try again.'
+          t('itemTabs.updatePostError')
       );
     } finally {
       setSubmitting(false);
@@ -140,12 +142,13 @@ const UpdatesTab = ({ task, onCountChange }) => {
     attachments,
     submitting,
     refreshNotifications,
+    t,
   ]);
 
   const handleDelete = useCallback(
     async (updateId) => {
       if (!taskId) return;
-      const ok = window.confirm('Delete this update?');
+      const ok = window.confirm(t('itemTabs.deleteUpdateConfirm'));
       if (!ok) return;
       try {
         await updateService.deleteUpdate(taskId, updateId);
@@ -153,11 +156,11 @@ const UpdatesTab = ({ task, onCountChange }) => {
       } catch (err) {
         console.error('Failed to delete update:', err);
         toast.error(
-          err?.response?.data?.error || 'Failed to delete update.'
+          err?.response?.data?.error || t('itemTabs.updateDeleteError')
         );
       }
     },
-    [taskId, toast]
+    [taskId, toast, t]
   );
 
   const handleEdit = useCallback(
@@ -170,12 +173,12 @@ const UpdatesTab = ({ task, onCountChange }) => {
       } catch (err) {
         console.error('Failed to edit update:', err);
         toast.error(
-          err?.response?.data?.error || 'Failed to edit update.'
+          err?.response?.data?.error || t('itemTabs.updateEditError')
         );
         throw err;
       }
     },
-    [taskId, toast]
+    [taskId, toast, t]
   );
 
   const handleFilesSelected = useCallback(
@@ -188,12 +191,12 @@ const UpdatesTab = ({ task, onCountChange }) => {
           setAttachments((prev) => [...prev, attachment]);
         } catch (err) {
           console.error('Upload failed:', err);
-          toast.error(`Failed to upload ${f.name}`);
+          toast.error(t('itemTabs.uploadFailed', { name: f.name }));
         }
       }
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
-    [taskId, toast]
+    [taskId, toast, t]
   );
 
   const handleCopyEmail = useCallback(async () => {
@@ -201,11 +204,11 @@ const UpdatesTab = ({ task, onCountChange }) => {
     const email = `task-${taskId}@updates.yourdomain.com`;
     try {
       await navigator.clipboard.writeText(email);
-      toast.success(`Copied ${email}`);
+      toast.success(t('itemTabs.copiedEmail', { email }));
     } catch {
       toast.info(email);
     }
-  }, [taskId, toast]);
+  }, [taskId, toast, t]);
 
   const insertEmoji = useCallback((emoji) => {
     const editor = editorRef.current;
@@ -234,7 +237,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
               padding: '24px 0',
             }}
           >
-            Loading updates…
+            {t('itemTabs.loadingUpdates')}
           </p>
         ) : updates.length === 0 ? (
           <p
@@ -245,7 +248,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
               padding: '32px 0',
             }}
           >
-            No updates yet. Post the first one.
+            {t('itemTabs.noUpdatesYet')}
           </p>
         ) : (
           <ul
@@ -289,10 +292,10 @@ const UpdatesTab = ({ task, onCountChange }) => {
               padding: '4px 10px',
               cursor: 'pointer',
             }}
-            title="Copy per-task email address"
+            title={t('itemTabs.copyLeadEmailAddress')}
           >
             <Mail size={12} aria-hidden="true" />
-            Update via email
+            {t('itemTabs.updateViaEmail')}
           </button>
           <a
             href="mailto:feedback@yourdomain.com?subject=Macan%20Updates%20Feedback"
@@ -310,7 +313,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
             }}
           >
             <MessageSquare size={12} aria-hidden="true" />
-            Give feedback
+            {t('itemTabs.giveFeedback')}
           </a>
         </div>
       </div>
@@ -342,7 +345,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
         ) : null}
 
         <RichEditor
-          placeholder="Write an update and mention others with @"
+          placeholder={t('itemTabs.writeUpdatePlaceholder')}
           onChange={handleEditorChange}
           editorRef={editorRef}
         />
@@ -371,7 +374,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
                 </span>
                 <button
                   type="button"
-                  aria-label={`Remove ${a.name}`}
+                  aria-label={t('itemTabs.removeAttachment', { name: a.name })}
                   onClick={() =>
                     setAttachments((prev) => prev.filter((_, idx) => idx !== i))
                   }
@@ -399,12 +402,12 @@ const UpdatesTab = ({ task, onCountChange }) => {
 
         {/* Inline composer toolbar + send */}
         <div className="mt-2 flex items-center gap-2">
-          <ToolbarIconButton onClick={focusMention} title="Mention someone">
+          <ToolbarIconButton onClick={focusMention} title={t('itemTabs.mentionSomeone')}>
             <AtSign size={14} aria-hidden="true" />
           </ToolbarIconButton>
           <ToolbarIconButton
             onClick={() => fileInputRef.current?.click()}
-            title="Attach a file"
+            title={t('itemTabs.attachAFile')}
           >
             <Paperclip size={14} aria-hidden="true" />
           </ToolbarIconButton>
@@ -419,7 +422,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
           <div style={{ position: 'relative' }}>
             <ToolbarIconButton
               onClick={() => setEmojiPickerOpen((v) => !v)}
-              title="Insert emoji"
+              title={t('itemTabs.insertEmoji')}
             >
               <Smile size={14} aria-hidden="true" />
             </ToolbarIconButton>
@@ -482,7 +485,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
             }}
           >
             <Send size={13} aria-hidden="true" />
-            {submitting ? 'Posting…' : 'Update'}
+            {submitting ? t('itemTabs.posting') : t('itemTabs.update')}
           </button>
         </div>
       </form>
@@ -498,6 +501,7 @@ const UpdatesTab = ({ task, onCountChange }) => {
  * here — they were uploaded once and stay attached.
  */
 const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
+  const { t } = useTranslation();
   const author = update.author || {};
   const isAuthor = author._id && currentUserId && author._id === currentUserId;
   const [hovered, setHovered] = useState(false);
@@ -580,7 +584,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
                 color: 'var(--color-text-primary)',
               }}
             >
-              {author.name || 'Unknown'}
+              {author.name || t('itemTabs.unknown')}
             </span>
             <span
               className="font-body"
@@ -592,10 +596,10 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
             {update.editedAt ? (
               <span
                 className="font-body"
-                title={`Edited ${formatDate(update.editedAt)}`}
+                title={t('itemTabs.editedAt', { date: formatDate(update.editedAt) })}
                 style={{ fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic' }}
               >
-                (edited)
+                {t('itemTabs.edited')}
               </span>
             ) : null}
           </div>
@@ -605,7 +609,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
             <button
               type="button"
               onClick={startEdit}
-              aria-label="Edit update"
+              aria-label={t('itemTabs.editUpdate')}
               className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
               style={{
                 width: 24,
@@ -622,7 +626,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
             <button
               type="button"
               onClick={onDelete}
-              aria-label="Delete update"
+              aria-label={t('itemTabs.deleteUpdate')}
               className="inline-flex items-center justify-center rounded transition-colors hover:bg-[color:var(--color-bg-subtle)]"
               style={{
                 width: 24,
@@ -644,7 +648,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
         {editing ? (
           <>
             <RichEditor
-              placeholder="Edit your update…"
+              placeholder={t('itemTabs.editYourUpdatePlaceholder')}
               onChange={handleEditorChange}
               editorRef={editEditorRef}
               initialContent={update.body || (update.bodyText || '')}
@@ -667,7 +671,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
                   cursor: savingEdit ? 'not-allowed' : 'pointer',
                 }}
               >
-                Cancel
+                {t('itemTabs.cancel')}
               </button>
               <button
                 type="button"
@@ -691,7 +695,7 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
                   cursor: savingEdit ? 'not-allowed' : 'pointer',
                 }}
               >
-                {savingEdit ? 'Saving…' : 'Save'}
+                {savingEdit ? t('itemTabs.saving') : t('itemTabs.save')}
               </button>
             </div>
           </>
@@ -724,11 +728,11 @@ const UpdateCard = ({ update, currentUserId, onDelete, onEdit }) => {
                   background: 'transparent',
                   cursor: 'pointer',
                 }}
-                title={a.name || 'attachment'}
+                title={a.name || t('itemTabs.attachment')}
               >
                 <Download size={11} aria-hidden="true" />
                 <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {a.name || 'attachment'}
+                  {a.name || t('itemTabs.attachment')}
                 </span>
               </button>
             </li>

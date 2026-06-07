@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"slug":{"$numberInt":"1"}},"name":"slug_1","unique":true},{"v":{"$numberInt":"2"},"key":{"boardId":{"$numberInt":"1"}},"name":"boardId_1"}],"uuid":"424f874374c241c2b43a7f58d7c0642a","collectionName":"forms","type":"collection"}

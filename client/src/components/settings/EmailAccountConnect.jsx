@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Mail, CheckCircle2, AlertTriangle, Plug } from 'lucide-react';
 import Button from '../ui/Button';
 import * as emailService from '../../services/emailService';
@@ -16,11 +17,12 @@ import useToastStore from '../../store/toastStore';
  * Props: workspaceId — the current workspace the mailbox is scoped to.
  */
 const PROVIDERS = [
-  { key: 'gmail', label: 'Gmail', blurb: 'Send & receive from your Google mailbox' },
-  { key: 'microsoft', label: 'Microsoft 365', blurb: 'Send & receive from your Outlook mailbox' },
+  { key: 'gmail', label: 'Gmail', blurbKey: 'pages.gmailBlurb' },
+  { key: 'microsoft', label: 'Microsoft 365', blurbKey: 'pages.microsoftBlurb' },
 ];
 
 const EmailAccountConnect = ({ workspaceId }) => {
+  const { t } = useTranslation();
   const toast = useToastStore.getState();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,9 +38,9 @@ const EmailAccountConnect = ({ workspaceId }) => {
     emailService
       .listAccounts(workspaceId)
       .then(setAccounts)
-      .catch((err) => setError(err?.response?.data?.error || 'Failed to load connected accounts'))
+      .catch((err) => setError(err?.response?.data?.error || t('pages.failedToLoadAccounts')))
       .finally(() => setLoading(false));
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => {
     reload();
@@ -48,7 +50,7 @@ const EmailAccountConnect = ({ workspaceId }) => {
 
   const handleConnect = async (provider) => {
     if (!workspaceId) {
-      toast.error?.('Select a workspace first');
+      toast.error?.(t('pages.selectWorkspaceFirst'));
       return;
     }
     setConnecting(provider);
@@ -62,8 +64,8 @@ const EmailAccountConnect = ({ workspaceId }) => {
       setConnecting(null);
       setError(
         err?.response?.status === 503
-          ? `${provider === 'gmail' ? 'Gmail' : 'Microsoft'} OAuth is not configured on the server.`
-          : err?.response?.data?.error || 'Could not start the connection'
+          ? t('pages.oauthNotConfigured', { provider: provider === 'gmail' ? 'Gmail' : 'Microsoft' })
+          : err?.response?.data?.error || t('pages.couldNotStartConnection')
       );
     }
   };
@@ -71,10 +73,10 @@ const EmailAccountConnect = ({ workspaceId }) => {
   const handleDisconnect = async (account) => {
     try {
       await emailService.disconnectAccount(account._id);
-      toast.success?.('Mailbox disconnected');
+      toast.success?.(t('pages.mailboxDisconnected'));
       reload();
     } catch (err) {
-      toast.error?.(err?.response?.data?.error || 'Could not disconnect');
+      toast.error?.(err?.response?.data?.error || t('pages.couldNotDisconnect'));
     }
   };
 
@@ -82,10 +84,10 @@ const EmailAccountConnect = ({ workspaceId }) => {
     <div>
       <header className="mb-6">
         <h2 className="font-display font-bold text-[color:var(--color-text-primary)]" style={{ fontSize: 20 }}>
-          Email connection
+          {t('pages.emailConnection')}
         </h2>
         <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-          Connect your mailbox so emails sent from tasks arrive from your real address.
+          {t('pages.emailConnectionDescription')}
         </p>
       </header>
 
@@ -96,7 +98,7 @@ const EmailAccountConnect = ({ workspaceId }) => {
       )}
 
       {loading ? (
-        <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>{t('pages.loading')}</p>
       ) : (
         <div className="flex flex-col gap-3" style={{ maxWidth: 560 }}>
           {PROVIDERS.map((p) => {
@@ -126,11 +128,11 @@ const EmailAccountConnect = ({ workspaceId }) => {
                   {acc ? (
                     <p className="font-body flex items-center gap-1" style={{ fontSize: 12, color: isError ? 'var(--color-status-stuck)' : 'var(--color-status-done)' }}>
                       {isError ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-                      {isError ? 'Reconnect needed' : `Connected as ${acc.defaultFrom || 'your mailbox'}`}
+                      {isError ? t('pages.reconnectNeeded') : t('pages.connectedAs', { mailbox: acc.defaultFrom || t('pages.yourMailbox') })}
                     </p>
                   ) : (
                     <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                      {p.blurb}
+                      {t(p.blurbKey)}
                     </p>
                   )}
                 </div>
@@ -138,11 +140,11 @@ const EmailAccountConnect = ({ workspaceId }) => {
                   <div className="flex items-center gap-2 shrink-0">
                     {isError && (
                       <Button variant="secondary" size="sm" onClick={() => handleConnect(p.key)} disabled={connecting === p.key}>
-                        Reconnect
+                        {t('pages.reconnect')}
                       </Button>
                     )}
                     <Button variant="danger" size="sm" onClick={() => handleDisconnect(acc)}>
-                      Disconnect
+                      {t('pages.disconnect')}
                     </Button>
                   </div>
                 ) : (
@@ -153,7 +155,7 @@ const EmailAccountConnect = ({ workspaceId }) => {
                     onClick={() => handleConnect(p.key)}
                     disabled={connecting === p.key}
                   >
-                    {connecting === p.key ? 'Connecting…' : `Connect ${p.label}`}
+                    {connecting === p.key ? t('pages.connecting') : t('pages.connectProvider', { provider: p.label })}
                   </Button>
                 )}
               </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Wand2, Check, X } from 'lucide-react';
 import Button from '../ui/Button';
 
@@ -54,6 +55,7 @@ const inputStyle = {
 };
 
 const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
+  const { t } = useTranslation();
   const columns = useMemo(
     () => (board && Array.isArray(board.columns) ? board.columns : []),
     [board]
@@ -125,7 +127,7 @@ const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
     <div className="flex flex-col gap-4" style={{ marginTop: 12 }}>
       {/* Sample payload */}
       <div className="flex flex-col gap-1.5">
-        <span style={labelStyle}>Sample payload (paste JSON)</span>
+        <span style={labelStyle}>{t('automation.webhookSamplePayloadLabel')}</span>
         <textarea
           value={sampleText}
           onChange={(e) => handleSampleChange(e.target.value)}
@@ -144,22 +146,22 @@ const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
         />
         {parseError && (
           <span style={{ fontSize: 12, color: 'var(--color-status-stuck)' }}>
-            Invalid JSON: {parseError}
+            {t('automation.webhookInvalidJson', { error: parseError })}
           </span>
         )}
         {detectedPaths.length > 0 && (
           <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-            {detectedPaths.length} field path{detectedPaths.length === 1 ? '' : 's'} detected
+            {t('automation.webhookFieldPathsDetected', { count: detectedPaths.length })}
           </span>
         )}
       </div>
 
       {/* Column → path mapping */}
       <div className="flex flex-col gap-2">
-        <span style={labelStyle}>Map fields onto columns</span>
+        <span style={labelStyle}>{t('automation.webhookMapFieldsLabel')}</span>
         {columns.length === 0 ? (
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            This board has no custom columns to map.
+            {t('automation.webhookNoColumns')}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -195,7 +197,7 @@ const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
                         onChange={(e) => setColumnPath(String(col._id), e.target.value)}
                         style={{ ...inputStyle, width: 180 }}
                       >
-                        <option value="">— pick a field —</option>
+                        <option value="">{t('automation.webhookPickField')}</option>
                         {detectedPaths.map((p) => (
                           <option key={p} value={p}>{p}</option>
                         ))}
@@ -213,12 +215,12 @@ const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
                   {testResult && (
                     <div style={{ minWidth: 80, textAlign: 'right' }}>
                       {current && isMissing ? (
-                        <span title="path resolved to nothing" style={{ color: 'var(--color-status-stuck)', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                          <X size={13} /> unset
+                        <span title={t('automation.webhookPathUnresolvedTitle')} style={{ color: 'var(--color-status-stuck)', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                          <X size={13} /> {t('automation.webhookUnset')}
                         </span>
                       ) : resolved !== undefined ? (
                         <span title={JSON.stringify(resolved)} style={{ color: 'var(--color-status-done)', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                          <Check size={13} /> ok
+                          <Check size={13} /> {t('automation.webhookOk')}
                         </span>
                       ) : null}
                     </div>
@@ -232,14 +234,15 @@ const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
 
       {testResult && Array.isArray(testResult.missing) && testResult.missing.length > 0 && (
         <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Unresolved paths leave their column unset — the task is still created
-          ({testResult.missing.map((m) => colName(m.columnId)).join(', ')}).
+          {t('automation.webhookUnresolvedNote', {
+            columns: testResult.missing.map((m) => colName(m.columnId)).join(', '),
+          })}
         </p>
       )}
 
       <div className="flex items-center gap-2">
         <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save mapping'}
+          {saving ? t('automation.savingMapping') : t('automation.saveMapping')}
         </Button>
         <Button
           variant="secondary"
@@ -248,7 +251,7 @@ const WebhookMappingEditor = ({ board, endpoint, onSave, onTest }) => {
           onClick={handleTest}
           disabled={!sampleObj || typeof sampleObj !== 'object'}
         >
-          Test mapping
+          {t('automation.testMapping')}
         </Button>
       </div>
     </div>

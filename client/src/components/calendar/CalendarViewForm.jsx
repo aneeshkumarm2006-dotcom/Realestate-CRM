@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2 } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Input from '../ui/Input';
@@ -26,18 +27,18 @@ const SOURCE_TYPES = ['date', 'timeline'];
 const COLOR_TYPES = ['status', 'dropdown', 'tags', 'person'];
 const RESOURCE_TYPES = ['status', 'dropdown', 'tags', 'person'];
 
-const LAYOUT_OPTIONS = [
-  { value: 'month', label: 'Month' },
-  { value: 'week', label: 'Week' },
-  { value: 'day', label: 'Day' },
-  { value: 'agenda', label: 'Agenda' },
-  { value: 'resource', label: 'Resource (one row per agent/option)' },
+const LAYOUT_OPTION_KEYS = [
+  { value: 'month', labelKey: 'pages.month' },
+  { value: 'week', labelKey: 'pages.week' },
+  { value: 'day', labelKey: 'pages.day' },
+  { value: 'agenda', labelKey: 'pages.agenda' },
+  { value: 'resource', labelKey: 'pages.layoutResource' },
 ];
 
-const OP_OPTIONS = [
-  { value: 'eq', label: 'is' },
-  { value: 'in', label: 'is any of' },
-  { value: 'between', label: 'between' },
+const OP_OPTION_KEYS = [
+  { value: 'eq', labelKey: 'pages.opIs' },
+  { value: 'in', labelKey: 'pages.opIsAnyOf' },
+  { value: 'between', labelKey: 'pages.opBetween' },
 ];
 
 const GLOBAL = '__global__';
@@ -68,6 +69,7 @@ const CalendarViewForm = ({
   error = '',
   onSubmit,
 }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState(initial?.name || '');
   const [boardId, setBoardId] = useState(initial?.boardId ? String(initial.boardId) : GLOBAL);
   const [sourceColumnId, setSourceColumnId] = useState(initial?.sourceColumnId || '');
@@ -92,13 +94,22 @@ const CalendarViewForm = ({
   );
   const columns = selectedBoard?.columns || [];
 
+  const layoutOptions = useMemo(
+    () => LAYOUT_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t]
+  );
+  const opOptions = useMemo(
+    () => OP_OPTION_KEYS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+    [t]
+  );
+
   const colOptions = (types) =>
     columns
       .filter((c) => types.includes(c.type))
       .map((c) => ({ value: String(c._id), label: c.name }));
 
   const boardOptions = [
-    { value: GLOBAL, label: 'Global — all tasks by due date' },
+    { value: GLOBAL, label: t('pages.globalAllLeads') },
     ...boards.map((b) => ({ value: String(b._id), label: b.name })),
   ];
 
@@ -124,15 +135,15 @@ const CalendarViewForm = ({
   const handleSubmit = () => {
     setLocalError('');
     if (!name.trim()) {
-      setLocalError('Please give the view a name.');
+      setLocalError(t('pages.giveViewName'));
       return;
     }
     if (boardId !== GLOBAL && !sourceColumnId) {
-      setLocalError('Pick a source (date or timeline) column for a board view.');
+      setLocalError(t('pages.pickSourceColumn'));
       return;
     }
     if (layout === 'resource' && (boardId === GLOBAL || !resourceColumnId)) {
-      setLocalError('A resource layout needs a board and a resource column.');
+      setLocalError(t('pages.resourceLayoutNeeds'));
       return;
     }
 
@@ -162,71 +173,71 @@ const CalendarViewForm = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={initial ? 'Edit calendar view' : 'New calendar view'}
+      title={initial ? t('pages.editCalendarView') : t('pages.newCalendarView')}
       maxWidth={560}
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose} disabled={saving}>
-            Cancel
+            {t('pages.cancel')}
           </Button>
           <Button variant="primary" size="sm" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Saving…' : initial ? 'Save changes' : 'Create view'}
+            {saving ? t('pages.saving') : initial ? t('pages.saveChanges') : t('pages.createView')}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         <Input
-          label="View name"
+          label={t('pages.viewName')}
           required
-          placeholder="e.g. Move-ins by agent"
+          placeholder={t('pages.viewNamePlaceholder')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
         />
 
         <Dropdown
-          label="Board"
+          label={t('pages.board')}
           options={boardOptions}
           value={boardId}
           onChange={onChangeBoard}
-          placeholder="Select a board"
+          placeholder={t('pages.selectABoard')}
         />
 
         {boardId !== GLOBAL && (
           <>
             <Dropdown
-              label="Source column (date / timeline)"
+              label={t('pages.sourceColumn')}
               options={colOptions(SOURCE_TYPES)}
               value={sourceColumnId}
               onChange={setSourceColumnId}
-              placeholder="Pick the column that supplies the date"
+              placeholder={t('pages.sourceColumnPlaceholder')}
             />
 
             <Dropdown
-              label="Color by (optional)"
-              options={[{ value: '', label: 'None' }, ...colOptions(COLOR_TYPES)]}
+              label={t('pages.colorBy')}
+              options={[{ value: '', label: t('pages.none') }, ...colOptions(COLOR_TYPES)]}
               value={colorByColumnId}
               onChange={setColorByColumnId}
-              placeholder="Color events by a column"
+              placeholder={t('pages.colorByPlaceholder')}
             />
           </>
         )}
 
         <Dropdown
-          label="Layout"
-          options={boardId === GLOBAL ? LAYOUT_OPTIONS.filter((o) => o.value !== 'resource') : LAYOUT_OPTIONS}
+          label={t('pages.layout')}
+          options={boardId === GLOBAL ? layoutOptions.filter((o) => o.value !== 'resource') : layoutOptions}
           value={layout}
           onChange={setLayout}
         />
 
         {layout === 'resource' && boardId !== GLOBAL && (
           <Dropdown
-            label="Resource column (one row per value)"
+            label={t('pages.resourceColumn')}
             options={colOptions(RESOURCE_TYPES)}
             value={resourceColumnId}
             onChange={setResourceColumnId}
-            placeholder="Group rows by this column"
+            placeholder={t('pages.resourceColumnPlaceholder')}
           />
         )}
 
@@ -234,7 +245,7 @@ const CalendarViewForm = ({
         {boardId !== GLOBAL && (
           <div>
             <label className="block mb-2 font-body font-medium text-[color:var(--color-text-secondary)] text-xs uppercase tracking-wide">
-              Filter (optional)
+              {t('pages.filterOptional')}
             </label>
             <div className="flex flex-col gap-2">
               {filterRows.map((row, idx) => (
@@ -245,13 +256,13 @@ const CalendarViewForm = ({
                       options={allColumnOptions}
                       value={row.columnId}
                       onChange={(v) => updateFilterRow(idx, { columnId: v })}
-                      placeholder="Column"
+                      placeholder={t('pages.column')}
                     />
                   </div>
                   <div style={{ flex: '0 0 110px' }}>
                     <Dropdown
                       size="sm"
-                      options={OP_OPTIONS}
+                      options={opOptions}
                       value={row.op}
                       onChange={(v) => updateFilterRow(idx, { op: v })}
                     />
@@ -262,10 +273,10 @@ const CalendarViewForm = ({
                       onChange={(e) => updateFilterRow(idx, { valueText: e.target.value })}
                       placeholder={
                         row.op === 'in'
-                          ? 'a, b, c'
+                          ? t('pages.filterValueIn')
                           : row.op === 'between'
-                          ? 'min, max'
-                          : 'value / option id'
+                          ? t('pages.filterValueBetween')
+                          : t('pages.filterValueDefault')
                       }
                       style={{ height: 32 }}
                     />
@@ -273,7 +284,7 @@ const CalendarViewForm = ({
                   <button
                     type="button"
                     onClick={() => removeFilterRow(idx)}
-                    aria-label="Remove filter"
+                    aria-label={t('pages.removeFilter')}
                     className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
                     style={{ width: 30, height: 30, flexShrink: 0 }}
                   >
@@ -295,11 +306,11 @@ const CalendarViewForm = ({
                 }}
               >
                 <Plus size={14} aria-hidden="true" />
-                Add filter condition
+                {t('pages.addFilterCondition')}
               </button>
             </div>
             <p className="mt-1.5 font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-              Values use option ids for status/dropdown/tags and user ids for person columns.
+              {t('pages.filterValuesHelp')}
             </p>
           </div>
         )}
@@ -313,7 +324,7 @@ const CalendarViewForm = ({
             style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }}
           />
           <span className="font-body" style={{ fontSize: 14, color: 'var(--color-text-primary)' }}>
-            Share with the whole workspace
+            {t('pages.shareWithWorkspace')}
           </span>
         </label>
 

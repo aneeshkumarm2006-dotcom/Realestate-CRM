@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -16,6 +17,7 @@ import useToastStore from '../../store/toastStore';
  * Props: workspaceId — the current workspace.
  */
 const WhatsAppConfigForm = ({ workspaceId }) => {
+  const { t } = useTranslation();
   const toast = useToastStore.getState();
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,9 +45,9 @@ const WhatsAppConfigForm = ({ workspaceId }) => {
     whatsappService
       .getConfig(workspaceId)
       .then(applyConfig)
-      .catch((err) => setError(err?.response?.data?.error || 'Failed to load WhatsApp settings'))
+      .catch((err) => setError(err?.response?.data?.error || t('pages.failedToLoadWhatsApp')))
       .finally(() => setLoading(false));
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => {
     load();
@@ -66,9 +68,9 @@ const WhatsAppConfigForm = ({ workspaceId }) => {
       applyConfig(c);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
-      toast.success?.('WhatsApp settings saved');
+      toast.success?.(t('pages.whatsAppSettingsSaved'));
     } catch (err) {
-      setError(err?.response?.data?.error || 'Could not save WhatsApp settings');
+      setError(err?.response?.data?.error || t('pages.couldNotSaveWhatsApp'));
     } finally {
       setSaving(false);
     }
@@ -78,11 +80,10 @@ const WhatsAppConfigForm = ({ workspaceId }) => {
     <div>
       <header className="mb-6">
         <h2 className="font-display font-bold text-[color:var(--color-text-primary)]" style={{ fontSize: 20 }}>
-          WhatsApp (Twilio)
+          {t('pages.whatsAppTwilio')}
         </h2>
         <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-          Connect your Twilio WhatsApp sender so the SEND_WHATSAPP automation and the task WhatsApp tab can message leads.
-          Sends outside the 24-hour window require an approved template.
+          {t('pages.whatsAppDescription')}
         </p>
       </header>
 
@@ -94,41 +95,41 @@ const WhatsAppConfigForm = ({ workspaceId }) => {
 
       {loading ? (
         <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>
-          Loading…
+          {t('pages.loading')}
         </p>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" style={{ maxWidth: 480 }}>
           <Input
-            label="Account SID"
+            label={t('pages.accountSid')}
             value={accountSid}
             onChange={(e) => setAccountSid(e.target.value)}
             placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
           />
           <Input
-            label="Auth Token"
+            label={t('pages.authToken')}
             type="password"
             value={authToken}
             onChange={(e) => setAuthToken(e.target.value)}
-            placeholder={config?.hasAuthToken ? '•••••••• stored — leave blank to keep' : 'Twilio Auth Token'}
-            helperText="Stored encrypted. Never shown again — enter a new value to replace it. Shares the Twilio account with SMS."
+            placeholder={config?.hasAuthToken ? t('pages.authTokenStoredPlaceholder') : t('pages.twilioAuthToken')}
+            helperText={t('pages.authTokenHelperWhatsApp')}
             autoComplete="off"
           />
           <Input
-            label="WhatsApp sender number"
+            label={t('pages.whatsAppSenderNumber')}
             value={whatsappSenderId}
             onChange={(e) => setWhatsappSenderId(e.target.value)}
             placeholder="+14155238886"
-            helperText="The approved WhatsApp-enabled number (E.164). The Twilio sandbox number works for testing."
+            helperText={t('pages.whatsAppSenderHelper')}
           />
 
           <div className="flex items-center gap-3 mt-2">
             <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save WhatsApp settings'}
+              {saving ? t('pages.saving') : t('pages.saveWhatsAppSettings')}
             </Button>
             {saved && (
               <span className="inline-flex items-center gap-1 font-body text-[12px] font-semibold text-[color:var(--color-status-done)]">
                 <Check size={14} aria-hidden="true" />
-                Saved
+                {t('pages.saved')}
               </span>
             )}
           </div>

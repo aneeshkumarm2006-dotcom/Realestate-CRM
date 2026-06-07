@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"order":{"$numberInt":"1"}},"name":"order_1"},{"v":{"$numberInt":"2"},"key":{"columns.key":{"$numberInt":"1"}},"name":"columns.key_1","sparse":true}],"uuid":"09362614d9564610b34bb57e42459a12","collectionName":"boards","type":"collection"}

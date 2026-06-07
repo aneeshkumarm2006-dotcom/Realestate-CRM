@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   SlidersHorizontal,
   Columns3,
@@ -179,6 +180,12 @@ const th = { padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 6
 const td = { padding: '8px 12px', fontSize: 13, color: 'var(--color-text-primary)', borderTop: '1px solid var(--color-border)', verticalAlign: 'middle' };
 
 const TableView = ({ board, tasks = [], members = [] }) => {
+  const { t } = useTranslation();
+  const opOptions = [
+    { value: 'eq', label: t('grid.opIs') },
+    { value: 'in', label: t('grid.opIsAnyOf') },
+    { value: 'between', label: t('grid.opBetween') },
+  ];
   const boardId = board?._id;
   const columns = useMemo(() => (board?.columns || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)), [board]);
   const membersById = useMemo(() => new Map((members || []).map((m) => [String(m._id), m])), [members]);

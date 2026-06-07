@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -15,6 +16,7 @@ import useToastStore from '../../store/toastStore';
  * Props: workspaceId — the current workspace.
  */
 const SmsConfigForm = ({ workspaceId }) => {
+  const { t } = useTranslation();
   const toast = useToastStore.getState();
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,9 +48,9 @@ const SmsConfigForm = ({ workspaceId }) => {
     smsService
       .getSmsConfig(workspaceId)
       .then(applyConfig)
-      .catch((err) => setError(err?.response?.data?.error || 'Failed to load SMS settings'))
+      .catch((err) => setError(err?.response?.data?.error || t('pages.failedToLoadSms')))
       .finally(() => setLoading(false));
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => {
     load();
@@ -71,9 +73,9 @@ const SmsConfigForm = ({ workspaceId }) => {
       applyConfig(c);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
-      toast.success?.('SMS settings saved');
+      toast.success?.(t('pages.smsSettingsSaved'));
     } catch (err) {
-      setError(err?.response?.data?.error || 'Could not save SMS settings');
+      setError(err?.response?.data?.error || t('pages.couldNotSaveSms'));
     } finally {
       setSaving(false);
     }
@@ -83,10 +85,10 @@ const SmsConfigForm = ({ workspaceId }) => {
     <div>
       <header className="mb-6">
         <h2 className="font-display font-bold text-[color:var(--color-text-primary)]" style={{ fontSize: 20 }}>
-          SMS (Twilio)
+          {t('pages.smsTwilio')}
         </h2>
         <p className="mt-1 font-body text-sm text-[color:var(--color-text-secondary)]">
-          Connect your Twilio account so the SEND_SMS automation and the task SMS tab can text leads.
+          {t('pages.smsDescription')}
         </p>
       </header>
 
@@ -98,34 +100,34 @@ const SmsConfigForm = ({ workspaceId }) => {
 
       {loading ? (
         <p className="font-body" style={{ color: 'var(--color-text-muted)' }}>
-          Loading…
+          {t('pages.loading')}
         </p>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" style={{ maxWidth: 480 }}>
           <Input
-            label="Account SID"
+            label={t('pages.accountSid')}
             value={accountSid}
             onChange={(e) => setAccountSid(e.target.value)}
             placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
           />
           <Input
-            label="Auth Token"
+            label={t('pages.authToken')}
             type="password"
             value={authToken}
             onChange={(e) => setAuthToken(e.target.value)}
-            placeholder={config?.hasAuthToken ? '•••••••• stored — leave blank to keep' : 'Twilio Auth Token'}
-            helperText="Stored encrypted. Never shown again — enter a new value to replace it."
+            placeholder={config?.hasAuthToken ? t('pages.authTokenStoredPlaceholder') : t('pages.twilioAuthToken')}
+            helperText={t('pages.authTokenHelperSms')}
             autoComplete="off"
           />
           <Input
-            label="Default sender number"
+            label={t('pages.defaultSenderNumber')}
             value={defaultFrom}
             onChange={(e) => setDefaultFrom(e.target.value)}
             placeholder="+15551234567"
-            helperText="E.164 format. Leave blank if you use a Messaging Service SID."
+            helperText={t('pages.defaultSenderHelper')}
           />
           <Input
-            label="Messaging Service SID (optional)"
+            label={t('pages.messagingServiceSid')}
             value={messagingServiceSid}
             onChange={(e) => setMessagingServiceSid(e.target.value)}
             placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -140,22 +142,22 @@ const SmsConfigForm = ({ workspaceId }) => {
             />
             <span>
               <span className="font-body font-semibold" style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>
-                Append opt-out footer
+                {t('pages.appendOptOutFooter')}
               </span>
               <span className="block font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                Add “Reply STOP to opt out” to outbound messages (TCPA/CASL) unless the body already mentions STOP.
+                {t('pages.optOutFooterHelper')}
               </span>
             </span>
           </label>
 
           <div className="flex items-center gap-3 mt-2">
             <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save SMS settings'}
+              {saving ? t('pages.saving') : t('pages.saveSmsSettings')}
             </Button>
             {saved && (
               <span className="inline-flex items-center gap-1 font-body text-[12px] font-semibold text-[color:var(--color-status-done)]">
                 <Check size={14} aria-hidden="true" />
-                Saved
+                {t('pages.saved')}
               </span>
             )}
           </div>

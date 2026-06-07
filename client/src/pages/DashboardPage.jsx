@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Folder, CheckCircle, Clock, TrendingUp, Activity } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import StatCard from '../components/ui/StatCard';
@@ -26,6 +27,7 @@ const INITIAL_STATS = {
 };
 
 const RecentActivity = ({ boards = [] }) => {
+  const { t } = useTranslation();
   const items = boards.slice(0, 4);
   return (
     <section
@@ -42,7 +44,7 @@ const RecentActivity = ({ boards = [] }) => {
           className="font-display font-bold"
           style={{ fontSize: 15, color: 'var(--color-text-primary)' }}
         >
-          Recent Activity
+          {t('dashboard.recentActivity')}
         </h2>
       </div>
 
@@ -56,7 +58,7 @@ const RecentActivity = ({ boards = [] }) => {
               padding: '12px 0',
             }}
           >
-            Nothing here yet. Activity will appear as your team works.
+            {t('dashboard.recentActivityEmpty')}
           </p>
         ) : (
           items.map((b, i) => (
@@ -112,6 +114,7 @@ const RecentActivity = ({ boards = [] }) => {
 };
 
 const DashboardPage = () => {
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const boards = useBoardStore((s) => s.boards);
@@ -154,25 +157,25 @@ const DashboardPage = () => {
     () => [
       {
         icon: Folder,
-        label: 'Total Boards',
+        label: t('dashboard.statTotalBoards'),
         value: stats.totalBoards,
         color: 'blue',
       },
       {
         icon: CheckCircle,
-        label: 'Completed Tasks',
+        label: t('dashboard.statCompletedLeads'),
         value: stats.completedTasks,
         color: 'green',
       },
       {
         icon: Clock,
-        label: 'Pending Tasks',
+        label: t('dashboard.statPendingLeads'),
         value: stats.pendingTasks,
         color: 'orange',
       },
       {
         icon: TrendingUp,
-        label: 'Completion Rate',
+        label: t('dashboard.statCompletionRate'),
         value: stats.completionRate,
         suffix: '%',
         color: 'purple',

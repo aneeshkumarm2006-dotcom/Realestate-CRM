@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Paperclip } from 'lucide-react';
 import { cellWrapperStyle } from './cellShared';
 
@@ -6,6 +7,7 @@ import { cellWrapperStyle } from './cellShared';
  * task detail panel). Shows a count + first filename for context.
  */
 const FileCell = ({ value }) => {
+  const { t } = useTranslation();
   const files = Array.isArray(value) ? value : [];
   return (
     <div style={{ ...cellWrapperStyle, gap: 6 }}>
@@ -17,7 +19,7 @@ const FileCell = ({ value }) => {
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {files.length === 1
               ? files[0].name || files[0].url
-              : `${files.length} files`}
+              : t('boardMisc.fileCount', { count: files.length })}
           </span>
         </>
       )}

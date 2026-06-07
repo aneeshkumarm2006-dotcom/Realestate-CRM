@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Building2, Users } from 'lucide-react';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
 
 const OnboardingPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const createOrg = useOrgStore((s) => s.createOrg);
   const joinOrg = useOrgStore((s) => s.joinOrg);
@@ -77,10 +79,10 @@ const OnboardingPage = () => {
       >
         {/* Heading */}
         <h1 className="font-display font-bold text-[26px] text-center text-[color:var(--color-text-primary)] tracking-tight">
-          Welcome to Macan 👋
+          {t('onboarding.welcomeTitle')}
         </h1>
         <p className="mt-2 text-center text-sm text-[color:var(--color-text-secondary)] font-body">
-          Get started by creating or joining your workspace
+          {t('onboarding.welcomeSubtitle')}
         </p>
 
         {/* Option cards */}

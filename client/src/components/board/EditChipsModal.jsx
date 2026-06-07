@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, Star } from 'lucide-react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
@@ -29,8 +30,9 @@ const isValidHex = (v) => typeof v === 'string' && HEX_RE.test(v.trim());
 const DEFAULT_NEW_COLOR = '#6B7280';
 
 const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
+  const { t } = useTranslation();
   const isLabels = kind === 'labels';
-  const title = isLabels ? 'Edit Labels' : 'Edit Statuses';
+  const title = isLabels ? t('boardMisc.editLabels') : t('boardMisc.editStatuses');
 
   const board = useBoardStore((s) => s.getBoardById(boardId));
   const addLabel = useBoardStore((s) => s.addLabel);
@@ -111,7 +113,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
       clearDraft(item._id, field);
     } catch (err) {
       console.error('Failed to update chip:', err);
-      toastError(err?.response?.data?.error || 'Failed to save changes');
+      toastError(err?.response?.data?.error || t('boardMisc.failedToSaveChanges'));
       clearDraft(item._id, field);
     }
   };
@@ -132,7 +134,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
       setNewColor(DEFAULT_NEW_COLOR);
     } catch (err) {
       console.error('Failed to add chip:', err);
-      toastError(err?.response?.data?.error || 'Failed to add');
+      toastError(err?.response?.data?.error || t('boardMisc.failedToAdd'));
     } finally {
       setSubmitting(false);
     }
@@ -143,7 +145,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
       await updateStatusChip(boardId, statusId, { isDefault: true });
     } catch (err) {
       console.error('Failed to mark default:', err);
-      toastError(err?.response?.data?.error || 'Failed to update default');
+      toastError(err?.response?.data?.error || t('boardMisc.failedToUpdateDefault'));
     }
   };
 
@@ -159,7 +161,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
       }
     } catch (err) {
       console.error('Failed to delete:', err);
-      toastError(err?.response?.data?.error || 'Failed to delete');
+      toastError(err?.response?.data?.error || t('boardMisc.failedToDelete'));
     }
   };
 
@@ -171,7 +173,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
       title={title}
       maxWidth={520}
       footer={
-        <Button variant="secondary" onClick={onClose}>Done</Button>
+        <Button variant="secondary" onClick={onClose}>{t('boardMisc.done')}</Button>
       }
     >
       <div className="flex flex-col gap-2">
@@ -185,7 +187,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
               padding: '12px 0',
             }}
           >
-            None yet — add one below.
+            {t('boardMisc.noneYetAddBelow')}
           </p>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
@@ -209,7 +211,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
                     value={isValidHex(displayColor) ? displayColor : DEFAULT_NEW_COLOR}
                     onChange={(e) => setDraft(item._id, 'color', e.target.value)}
                     onBlur={() => flushField(item, 'color')}
-                    aria-label={`${item.name} color`}
+                    aria-label={t('boardMisc.namedColor', { name: item.name })}
                     style={{
                       width: 32,
                       height: 28,
@@ -231,7 +233,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
                         e.currentTarget.blur();
                       }
                     }}
-                    aria-label={`${item.name} name`}
+                    aria-label={t('boardMisc.namedName', { name: item.name })}
                     className="flex-1 font-body focus:outline-none"
                     style={{
                       fontSize: 14,
@@ -247,8 +249,8 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
                       type="button"
                       onClick={() => !isDefault && handleMarkDefault(item._id)}
                       disabled={isDefault}
-                      aria-label={isDefault ? 'Default status' : 'Mark as default'}
-                      title={isDefault ? 'Default status' : 'Mark as default'}
+                      aria-label={isDefault ? t('boardMisc.defaultStatus') : t('boardMisc.markAsDefault')}
+                      title={isDefault ? t('boardMisc.defaultStatus') : t('boardMisc.markAsDefault')}
                       className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
                       style={{
                         width: 28,
@@ -268,7 +270,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
                     type="button"
                     onClick={() => setPendingDelete(item)}
                     disabled={!isLabels && item.isDefault}
-                    aria-label={`Delete ${item.name}`}
+                    aria-label={t('boardMisc.deleteNamed', { name: item.name })}
                     className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] disabled:opacity-30 disabled:cursor-not-allowed"
                     style={{
                       width: 28,
@@ -296,7 +298,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
             type="color"
             value={newColor}
             onChange={(e) => setNewColor(e.target.value)}
-            aria-label="New chip color"
+            aria-label={t('boardMisc.newChipColor')}
             style={{
               width: 32,
               height: 28,
@@ -311,8 +313,8 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder={isLabels ? 'New label name…' : 'New status name…'}
-            aria-label="New chip name"
+            placeholder={isLabels ? t('boardMisc.newLabelName') : t('boardMisc.newStatusName')}
+            aria-label={t('boardMisc.newChipName')}
             className="flex-1 font-body focus:outline-none"
             style={{
               fontSize: 14,
@@ -330,7 +332,7 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
             icon={Plus}
             disabled={!newName.trim() || submitting}
           >
-            Add
+            {t('boardMisc.add')}
           </Button>
         </form>
       </div>
@@ -339,14 +341,14 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
     <Modal
       isOpen={!!pendingDelete}
       onClose={() => setPendingDelete(null)}
-      title={isLabels ? 'Delete label?' : 'Delete status?'}
+      title={isLabels ? t('boardMisc.deleteLabelQuestion') : t('boardMisc.deleteStatusQuestion')}
       footer={
         <>
           <Button variant="secondary" onClick={() => setPendingDelete(null)}>
-            Cancel
+            {t('boardMisc.cancel')}
           </Button>
           <Button variant="danger" onClick={handleDeleteConfirmed}>
-            Delete
+            {t('boardMisc.delete')}
           </Button>
         </>
       }
@@ -357,20 +359,19 @@ const EditChipsModal = ({ isOpen, onClose, boardId, kind = 'labels' }) => {
       >
         {isLabels ? (
           <>
-            Delete the label{' '}
+            {t('boardMisc.deleteLabelPrefix')}{' '}
             <strong style={{ color: 'var(--color-text-primary)' }}>
               {pendingDelete?.name}
             </strong>
-            ? It will be removed from every task on this board.
+            {t('boardMisc.deleteLabelSuffix')}
           </>
         ) : (
           <>
-            Delete the status{' '}
+            {t('boardMisc.deleteStatusPrefix')}{' '}
             <strong style={{ color: 'var(--color-text-primary)' }}>
               {pendingDelete?.name}
             </strong>
-            ? Tasks currently using this status will be moved to the default
-            status.
+            {t('boardMisc.deleteStatusSuffix')}
           </>
         )}
       </p>

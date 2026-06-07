@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { UserPlus, Check, Mail } from 'lucide-react';
 import InviteModal from './InviteModal';
@@ -26,6 +27,7 @@ const AssigneePicker = ({
   isAdmin = false,
   showNames = false,
 }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const wrapperRef = useRef(null);
@@ -101,7 +103,7 @@ const AssigneePicker = ({
             style={{ color: 'var(--color-text-muted)' }}
           >
             <UserPlus size={14} aria-hidden="true" />
-            Assign
+            {t('grid.assign')}
           </span>
         )}
       </button>
@@ -141,7 +143,7 @@ const AssigneePicker = ({
               className="px-3 py-2 font-body text-sm"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              No members
+              {t('grid.noMembers')}
             </li>
           )}
           {members.map((m) => {
@@ -211,7 +213,7 @@ const AssigneePicker = ({
                 }}
               >
                 <Mail size={14} aria-hidden="true" />
-                Invite other member
+                {t('grid.inviteOtherMember')}
               </button>
             </li>
           )}
@@ -242,6 +244,7 @@ const AssigneePicker = ({
  * Shows up to 2 members by name; collapses the rest to "+N more".
  */
 const AssigneeAvatarsWithNames = ({ assignees }) => {
+  const { t } = useTranslation();
   const visible = assignees.slice(0, 2);
   const remaining = assignees.length - visible.length;
   return (
@@ -262,7 +265,7 @@ const AssigneeAvatarsWithNames = ({ assignees }) => {
           className="font-body"
           style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
         >
-          +{remaining} more
+          {t('grid.moreCount', { count: remaining })}
         </span>
       )}
     </div>
@@ -358,6 +361,7 @@ export default AssigneePicker;
  *   onClose   — () => void
  */
 export const InlineAssigneeMenu = ({ anchorEl, members = [], value = [], onChange, onClose }) => {
+  const { t } = useTranslation();
   const menuRef = useRef(null);
   const triggerRef = useRef(anchorEl);
   triggerRef.current = anchorEl;
@@ -414,7 +418,7 @@ export const InlineAssigneeMenu = ({ anchorEl, members = [], value = [], onChang
     >
       {members.length === 0 ? (
         <li className="px-3 py-2 font-body text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          No members
+          {t('grid.noMembers')}
         </li>
       ) : members.map((m) => {
         const isSelected = selectedIds.has(m._id);

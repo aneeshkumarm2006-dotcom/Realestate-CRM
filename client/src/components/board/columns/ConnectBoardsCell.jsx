@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Plus, X, Search, ExternalLink, AlertTriangle } from 'lucide-react';
 import { cellWrapperStyle, optionSorted, findOption, formatDate } from './cellShared';
@@ -21,7 +22,7 @@ import * as taskService from '../../../services/taskService';
  */
 
 /** Format a single column value for the read-only preview drawer. */
-const formatValueForColumn = (column, value) => {
+const formatValueForColumn = (column, value, t) => {
   if (value == null || value === '') return '—';
   switch (column.type) {
     case 'status':
@@ -36,17 +37,17 @@ const formatValueForColumn = (column, value) => {
         : '—';
     }
     case 'person':
-      return Array.isArray(value) ? `${value.length} ${value.length === 1 ? 'person' : 'people'}` : '—';
+      return Array.isArray(value) ? t('boardMisc.personCount', { count: value.length }) : '—';
     case 'date':
       return formatDate(value) || '—';
     case 'checkbox':
-      return value ? 'Yes' : 'No';
+      return value ? t('boardMisc.yes') : t('boardMisc.no');
     case 'link':
       return typeof value === 'object' ? value.label || value.url || '—' : String(value);
     case 'location':
       return typeof value === 'object' ? value.label || '—' : String(value);
     case 'connect_boards':
-      return value && Array.isArray(value.links) ? `${value.links.length} linked` : '—';
+      return value && Array.isArray(value.links) ? t('boardMisc.linkedCount', { count: value.links.length }) : '—';
     case 'mirror':
       return value && typeof value === 'object' && value.__mirror ? String(value.value ?? '—') : String(value);
     default:
@@ -55,6 +56,7 @@ const formatValueForColumn = (column, value) => {
 };
 
 const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState([]);
@@ -126,7 +128,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
       }
       setRowsLoaded(true);
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Could not load linkable rows');
+      toastError(err?.response?.data?.error || t('boardMisc.couldNotLoadLinkableRows'));
     } finally {
       setLoadingRows(false);
     }
@@ -178,7 +180,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
       setQuery('');
       if (!allowMultiple) setOpen(false);
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Could not link row');
+      toastError(err?.response?.data?.error || t('boardMisc.couldNotLinkRow'));
     }
   };
 
@@ -187,7 +189,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
       const { value: nextValue } = await unlinkTaskAction(task._id, column._id, targetTaskId);
       patchTaskLinks(nextValue);
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Could not remove link');
+      toastError(err?.response?.data?.error || t('boardMisc.couldNotRemoveLink'));
     }
   };
 
@@ -201,12 +203,12 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
         )}
         {links.map((link) => {
           const row = rowsById.get(link.taskId.toString());
-          const label = row ? row.name : 'Linked row';
+          const label = row ? row.name : t('boardMisc.linkedRow');
           return (
             <span
               key={link.taskId}
               onClick={() => row && setDrawerRow(row)}
-              title={row ? `Open ${row.name}` : 'Linked row'}
+              title={row ? t('boardMisc.openNamed', { name: row.name }) : t('boardMisc.linkedRow')}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -230,7 +232,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
                     e.stopPropagation();
                     handleRemove(link.taskId);
                   }}
-                  aria-label="Remove link"
+                  aria-label={t('boardMisc.removeLink')}
                   style={{
                     width: 14,
                     height: 14,
@@ -258,7 +260,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
               setOpen((v) => !v);
               loadData();
             }}
-            aria-label="Link a row"
+            aria-label={t('boardMisc.linkARow')}
             style={{
               width: 22,
               height: 22,
@@ -302,7 +304,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search rows…"
+              placeholder={t('boardMisc.searchRows')}
               style={{
                 flex: 1,
                 border: 'none',
@@ -328,15 +330,15 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
               }}
             >
               <AlertTriangle size={12} />
-              This column&apos;s filter references a deleted column — showing all rows.
+              {t('boardMisc.filterReferencesDeletedColumn')}
             </div>
           )}
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {loadingRows ? (
-              <div style={{ padding: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>Loading…</div>
+              <div style={{ padding: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>{t('boardMisc.loading')}</div>
             ) : filteredRows.length === 0 ? (
               <div style={{ padding: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
-                No matching rows
+                {t('boardMisc.noMatchingRows')}
               </div>
             ) : (
               filteredRows.map((row) => (
@@ -357,7 +359,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
                     color: 'var(--color-text-primary)',
                   }}
                 >
-                  {row.name || 'Untitled'}
+                  {row.name || t('boardMisc.untitled')}
                 </button>
               ))
             )}
@@ -381,6 +383,7 @@ const ConnectBoardsCell = ({ value, column, task, readOnly }) => {
  * Reuses the CommentPanel slide-out pattern (portal + backdrop + ESC close).
  */
 const LinkedRowDrawer = ({ row, board, onClose }) => {
+  const { t } = useTranslation();
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose?.();
@@ -393,7 +396,7 @@ const LinkedRowDrawer = ({ row, board, onClose }) => {
     .slice()
     .sort((a, b) => (a.order || 0) - (b.order || 0));
   const primary = columns.find((c) => c.isPrimary);
-  const title = (primary && row.columnValues && row.columnValues[primary._id.toString()]) || row.name || 'Linked row';
+  const title = (primary && row.columnValues && row.columnValues[primary._id.toString()]) || row.name || t('boardMisc.linkedRow');
 
   const panel = (
     <>
@@ -405,7 +408,7 @@ const LinkedRowDrawer = ({ row, board, onClose }) => {
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label={`Linked row: ${title}`}
+        aria-label={t('boardMisc.linkedRowNamed', { title })}
         className="bg-white flex flex-col"
         style={{
           position: 'fixed',
@@ -434,7 +437,7 @@ const LinkedRowDrawer = ({ row, board, onClose }) => {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('boardMisc.close')}
             style={{
               width: 30,
               height: 30,
@@ -453,7 +456,7 @@ const LinkedRowDrawer = ({ row, board, onClose }) => {
           {columns.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
               <ExternalLink size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-              Open the source board to see this row&apos;s full details.
+              {t('boardMisc.openSourceBoardForDetails')}
             </p>
           ) : (
             <dl style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: 0 }}>
@@ -471,7 +474,7 @@ const LinkedRowDrawer = ({ row, board, onClose }) => {
                     {col.name}
                   </dt>
                   <dd style={{ flex: 1, margin: 0, fontSize: 13, color: 'var(--color-text-primary)' }}>
-                    {formatValueForColumn(col, row.columnValues ? row.columnValues[col._id.toString()] : null)}
+                    {formatValueForColumn(col, row.columnValues ? row.columnValues[col._id.toString()] : null, t)}
                   </dd>
                 </div>
               ))}

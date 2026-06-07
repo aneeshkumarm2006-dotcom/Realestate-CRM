@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowRight, ArrowUp, ArrowDown, Plus, GripVertical } from 'lucide-react';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import TaskRow from './TaskRow';
@@ -34,16 +35,16 @@ import { getStatusPalette } from '../../utils/priorityColors';
  *   emptyLabel       — text rendered when the group has no tasks
  */
 const COLUMNS = [
-  { key: 'drag',     label: '',          width: 24,  sortable: false },
-  { key: 'check',    label: '',          width: 40,  align: 'center', sortable: false },
-  { key: 'name',     label: 'Task',      width: null, minWidth: 240, sortable: true },
-  { key: 'priority', label: 'Priority',  width: 130, sortable: true },
-  { key: 'status',   label: 'Status',    width: 160, sortable: true },
-  { key: 'labels',   label: 'Labels',    width: 180, sortable: true },
-  { key: 'owner',    label: 'Owner',     width: 160, sortable: true },
-  { key: 'due',      label: 'Due Date',  width: 140, sortable: true },
-  { key: 'comments', label: '',          width: 48,  sortable: false },
-  { key: 'actions',  label: '',          width: 48,  sortable: false },
+  { key: 'drag',     labelKey: null,            width: 24,  sortable: false },
+  { key: 'check',    labelKey: null,            width: 40,  align: 'center', sortable: false },
+  { key: 'name',     labelKey: 'grid.colLead',  width: null, minWidth: 240, sortable: true },
+  { key: 'priority', labelKey: 'grid.colPriority', width: 130, sortable: true },
+  { key: 'status',   labelKey: 'grid.colStatus',   width: 160, sortable: true },
+  { key: 'labels',   labelKey: 'grid.colLabels',   width: 180, sortable: true },
+  { key: 'owner',    labelKey: 'grid.colOwner',    width: 160, sortable: true },
+  { key: 'due',      labelKey: 'grid.colDueDate',  width: 140, sortable: true },
+  { key: 'comments', labelKey: null,            width: 48,  sortable: false },
+  { key: 'actions',  labelKey: null,            width: 48,  sortable: false },
 ];
 
 const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -112,7 +113,7 @@ const TaskTable = ({
   onSaveNew,
   onSaveEdit,
   onCancelEdit,
-  emptyLabel = 'No tasks in this group yet',
+  emptyLabel,
   groupId = null,
   dndDisabled = false,
   // Bulk selection is owned by BoardDetailPage so the floating action bar
@@ -121,6 +122,8 @@ const TaskTable = ({
   onToggleSelect,
   onToggleSelectAll,
 }) => {
+  const { t } = useTranslation();
+  const resolvedEmptyLabel = emptyLabel ?? t('grid.noLeadsInGroup');
   const [expanded, setExpanded] = useState(() => new Set());
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
@@ -222,7 +225,7 @@ const TaskTable = ({
             onOwnerClick={onOwnerClick}
             onActionsClick={onActionsClick}
             highlightedTaskId={highlightedTaskId}
-            emptyLabel={emptyLabel}
+            emptyLabel={resolvedEmptyLabel}
             groupId={groupId}
             dndDisabled={dndDisabled}
           />
@@ -254,6 +257,7 @@ const TaskTable = ({
           >
             {COLUMNS.map((col) => {
               const isActive = sortKey === col.key;
+              const colLabel = col.labelKey ? t(col.labelKey) : '';
               return (
                 <th
                   key={col.key}
@@ -274,14 +278,14 @@ const TaskTable = ({
                     whiteSpace: 'nowrap',
                   }}
                   onClick={col.sortable ? () => handleSortColumn(col.key) : undefined}
-                  title={col.sortable ? `Sort by ${col.label}` : undefined}
+                  title={col.sortable ? t('grid.sortBy', { label: colLabel }) : undefined}
                 >
                   {col.key === 'check' ? (
                     <input
                       type="checkbox"
                       checked={allSelected}
                       onChange={(e) => handleSelectAll(e.target.checked)}
-                      aria-label="Select all tasks"
+                      aria-label={t('grid.selectAllLeads')}
                       style={{
                         width: 16,
                         height: 16,
@@ -291,7 +295,7 @@ const TaskTable = ({
                     />
                   ) : col.sortable ? (
                     <span className="inline-flex items-center gap-1">
-                      {col.label}
+                      {colLabel}
                       {isActive ? (
                         sortDir === 'asc'
                           ? <ArrowUp size={11} aria-hidden="true" />
@@ -301,7 +305,7 @@ const TaskTable = ({
                       )}
                     </span>
                   ) : (
-                    col.label
+                    colLabel
                   )}
                 </th>
               );
@@ -322,7 +326,7 @@ const TaskTable = ({
                   textAlign: 'center',
                 }}
               >
-                {emptyLabel}
+                {resolvedEmptyLabel}
               </td>
             </tr>
           ) : (
@@ -427,6 +431,7 @@ const TaskTable = ({
  * name opens the CommentPanel via the standard onOpenTask flow.
  */
 const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) => {
+  const { t } = useTranslation();
   const subitems = useTaskStore(
     (s) => s.subitemsByParent[parent._id] || null
   );
@@ -458,7 +463,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
       console.error('Failed to update subitem status:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to update status. Please try again.'
+          t('grid.failedUpdateStatus')
       );
     }
   };
@@ -475,7 +480,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
       console.error('Failed to add subitem:', err);
       setError(
         err?.response?.data?.error ||
-          'Failed to add subitem. Please try again.'
+          t('grid.failedAddSubitem')
       );
     }
   };
@@ -509,14 +514,14 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
             className="font-body"
             style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
           >
-            Loading subitems…
+            {t('grid.loadingSubitems')}
           </p>
         ) : items.length === 0 ? (
           <p
             className="font-body"
             style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
           >
-            No subitems yet.
+            {t('grid.noSubitems')}
           </p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -531,7 +536,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
                   <button
                     type="button"
                     onClick={() => handleCycleStatus(sub)}
-                    aria-label={`Status: ${palette.label}. Click to change.`}
+                    aria-label={t('grid.statusClickToChange', { label: palette.label })}
                     title={palette.label}
                     style={{
                       width: 12,
@@ -566,8 +571,8 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
                   <button
                     type="button"
                     onClick={() => onOpenTask?.(sub)}
-                    aria-label={`Open ${sub.name}`}
-                    title="Open subitem"
+                    aria-label={t('grid.openNamed', { name: sub.name })}
+                    title={t('grid.openSubitem')}
                     className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)]"
                     style={{
                       width: 22,
@@ -618,7 +623,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
                     setAdding(false);
                   }
                 }}
-                placeholder="New subitem"
+                placeholder={t('grid.newSubitem')}
                 autoFocus
                 className="flex-1 font-body focus:outline-none"
                 style={{
@@ -646,7 +651,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
                   cursor: newText.trim() ? 'pointer' : 'not-allowed',
                 }}
               >
-                Add
+                {t('grid.add')}
               </button>
             </form>
           ) : (
@@ -666,7 +671,7 @@ const SubitemsRow = ({ parent, board, colSpan, onOpenTask, isLast, isAdmin }) =>
               }}
             >
               <Plus size={12} aria-hidden="true" />
-              Add subitem
+              {t('grid.addSubitem')}
             </button>
           )
         ) : null}

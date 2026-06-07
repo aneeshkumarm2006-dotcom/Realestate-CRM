@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight,
@@ -79,9 +80,9 @@ const GROUP_DOT_CYCLE = [
 // F13 — board view modes: the default grouped board, a generic table view, and
 // the per-board Insights (charts) tab.
 const VIEW_TABS = [
-  { value: 'board', label: 'Board', icon: LayoutList },
-  { value: 'table', label: 'Table view', icon: Table2 },
-  { value: 'insights', label: 'Insights', icon: BarChart3 },
+  { value: 'board', labelKey: 'board.viewBoard', icon: LayoutList },
+  { value: 'table', labelKey: 'board.viewTable', icon: Table2 },
+  { value: 'insights', labelKey: 'board.viewInsights', icon: BarChart3 },
 ];
 
 /**
@@ -105,6 +106,7 @@ const useIsCurrentOrgAdmin = () => {
 };
 
 const BoardDetailPage = () => {
+  const { t } = useTranslation();
   const { id: boardId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -491,12 +493,12 @@ const BoardDetailPage = () => {
         console.error('Failed to create task:', err);
         toastError(
           err?.response?.data?.error ||
-            'Failed to create task. Please try again.'
+            t('board.createLeadError')
         );
         throw err;
       }
     },
-    [boardId, addTaskLocal, refreshNotifications, toastError]
+    [boardId, addTaskLocal, refreshNotifications, toastError, t]
   );
 
   // --- Inline edit ------------------------------------------------------
@@ -518,13 +520,13 @@ const BoardDetailPage = () => {
         if (!err?.response?.data?.field) {
           toastError(
             err?.response?.data?.error ||
-              'Failed to update task. Please try again.'
+              t('board.updateLeadError')
           );
         }
         throw err;
       }
     },
-    [updateTaskLocal, refreshNotifications, toastError]
+    [updateTaskLocal, refreshNotifications, toastError, t]
   );
 
   const handleCancelEdit = () => {
@@ -566,7 +568,7 @@ const BoardDetailPage = () => {
       updateTaskLocal(prev);
       toastError(
         err?.response?.data?.error ||
-          'Failed to update status. Please try again.'
+          t('board.updateStatusError')
       );
     }
   };
@@ -600,7 +602,7 @@ const BoardDetailPage = () => {
       updateTaskLocal(prev);
       toastError(
         err?.response?.data?.error ||
-          'Failed to update labels. Please try again.'
+          t('board.updateLabelsError')
       );
     }
   };
@@ -630,7 +632,7 @@ const BoardDetailPage = () => {
       updateTaskLocal(prev);
       toastError(
         err?.response?.data?.error ||
-          'Failed to update priority. Please try again.'
+          t('board.updatePriorityError')
       );
     }
   };
@@ -656,7 +658,7 @@ const BoardDetailPage = () => {
     } catch (err) {
       console.error('Failed to update assignees:', err);
       updateTaskLocal(prev);
-      toastError(err?.response?.data?.error || 'Failed to update assignees. Please try again.');
+      toastError(err?.response?.data?.error || t('board.updateAssigneesError'));
     }
   };
 
@@ -693,7 +695,7 @@ const BoardDetailPage = () => {
       console.error('Failed to delete task:', err);
       toastError(
         err?.response?.data?.error ||
-          'Failed to delete task. Please try again.'
+          t('board.deleteLeadError')
       );
     }
   };
@@ -727,8 +729,8 @@ const BoardDetailPage = () => {
     if (failed > 0) {
       toastError(
         failed === ids.length
-          ? 'Failed to delete the selected tasks. Please try again.'
-          : `Failed to delete ${failed} of ${ids.length} tasks.`
+          ? t('board.bulkDeleteAllError')
+          : t('board.bulkDeletePartialError', { failed, total: ids.length })
       );
     }
   };
@@ -755,7 +757,7 @@ const BoardDetailPage = () => {
       // selectedTaskIds remains valid and the bar can keep operating on them.
     } catch (err) {
       console.error('Failed to bulk-move tasks:', err);
-      toastError('Could not move the selected tasks.');
+      toastError(t('board.bulkMoveError'));
     } finally {
       setBulkBusy(false);
     }
@@ -777,7 +779,7 @@ const BoardDetailPage = () => {
     if (enablingColumns || !board) return;
     if (
       !window.confirm(
-        'Enable custom columns on this board? Your existing tasks and their data are preserved — Name, Status, Priority, Owner and Due Date become editable columns you can add to.'
+        t('board.enableColumnsConfirm')
       )
     ) {
       return;
@@ -785,9 +787,9 @@ const BoardDetailPage = () => {
     setEnablingColumns(true);
     try {
       await enableFlexibleColumns(boardId);
-      toastSuccess('Custom columns enabled');
+      toastSuccess(t('board.enableColumnsSuccess'));
     } catch (err) {
-      toastError(err?.response?.data?.error || 'Could not enable custom columns');
+      toastError(err?.response?.data?.error || t('board.enableColumnsError'));
     } finally {
       setEnablingColumns(false);
     }
@@ -802,7 +804,7 @@ const BoardDetailPage = () => {
     e?.preventDefault?.();
     const trimmed = newGroupName.trim();
     if (!trimmed) {
-      setGroupModalError('Group name is required');
+      setGroupModalError(t('board.groupNameRequired'));
       return;
     }
     try {
@@ -816,7 +818,7 @@ const BoardDetailPage = () => {
       console.error('Failed to create group:', err);
       setGroupModalError(
         err?.response?.data?.error ||
-          'Failed to create group. Please try again.'
+          t('board.createGroupError')
       );
     } finally {
       setCreatingGroup(false);
@@ -841,7 +843,7 @@ const BoardDetailPage = () => {
       console.error('Failed to delete group:', err);
       toastError(
         err?.response?.data?.error ||
-          'Failed to delete group. Please try again.'
+          t('board.deleteGroupError')
       );
     } finally {
       setDeletingGroup(false);
@@ -885,7 +887,7 @@ const BoardDetailPage = () => {
       const next = arrayMove(groups, oldIndex, newIndex);
       reorderGroupsAction(boardId, next.map((g) => g._id)).catch((err) => {
         console.error('Failed to reorder groups:', err);
-        toastError('Could not reorder groups');
+        toastError(t('board.reorderGroupsError'));
       });
       return;
     }
@@ -913,7 +915,7 @@ const BoardDetailPage = () => {
         const next = arrayMove(sourceTasks, oldIndex, newIndex);
         reorderTasksAction(targetGroupId, next.map((t) => t._id)).catch((err) => {
           console.error('Failed to reorder tasks:', err);
-          toastError('Could not reorder tasks');
+          toastError(t('board.reorderLeadsError'));
         });
         return;
       }
@@ -931,7 +933,7 @@ const BoardDetailPage = () => {
       nextTargetIds.splice(insertAt, 0, movingTask._id);
       reorderTasksAction(targetGroupId, nextTargetIds).catch((err) => {
         console.error('Failed to move task:', err);
-        toastError('Could not move task');
+        toastError(t('board.moveLeadError'));
       });
     }
   };
@@ -940,7 +942,7 @@ const BoardDetailPage = () => {
     <PageWrapper>
       {/* Breadcrumb */}
       <nav
-        aria-label="Breadcrumb"
+        aria-label={t('board.breadcrumbAria')}
         className="flex items-center gap-1.5 font-body"
         style={{ fontSize: 13 }}
       >
@@ -949,7 +951,7 @@ const BoardDetailPage = () => {
           className="transition-colors duration-150 hover:text-[color:var(--color-accent)]"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          My Boards
+          {t('board.myBoards')}
         </Link>
         <ChevronRight
           size={14}
@@ -960,7 +962,7 @@ const BoardDetailPage = () => {
           style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}
           className="truncate"
         >
-          {board?.name || 'Loading…'}
+          {board?.name || t('board.loading')}
         </span>
       </nav>
 
@@ -995,7 +997,7 @@ const BoardDetailPage = () => {
                 }}
               >
                 <VisibilityIcon size={11} aria-hidden="true" />
-                {isPublic ? 'public' : 'private'}
+                {isPublic ? t('board.visibilityPublic') : t('board.visibilityPrivate')}
               </span>
             )}
           </div>
@@ -1004,8 +1006,8 @@ const BoardDetailPage = () => {
             style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
           >
             {board
-              ? `Created ${formatDate(board.createdAt)} · ${totalTaskCount} ${totalTaskCount === 1 ? 'task' : 'tasks'}`
-              : 'Loading board details…'}
+              ? `${t('board.createdOn', { date: formatDate(board.createdAt) })} · ${t('board.leadCount', { count: totalTaskCount })}`
+              : t('board.loadingDetails')}
           </p>
         </div>
 
@@ -1018,7 +1020,7 @@ const BoardDetailPage = () => {
                 onClick={handleEnableColumns}
                 disabled={enablingColumns}
               >
-                {enablingColumns ? 'Enabling…' : 'Enable custom columns'}
+                {enablingColumns ? t('board.enablingColumns') : t('board.enableColumns')}
               </Button>
             )}
             <Button
@@ -1026,32 +1028,32 @@ const BoardDetailPage = () => {
               icon={Zap}
               onClick={() => navigate(`/boards/${boardId}/automations`)}
             >
-              Automations
+              {t('board.automations')}
             </Button>
             <Button
               variant="secondary"
               icon={Webhook}
               onClick={() => navigate(`/boards/${boardId}/integrations`)}
             >
-              Integrations
+              {t('board.integrations')}
             </Button>
             <Button
               variant="secondary"
               icon={UserPlus}
               onClick={() => navigate(`/boards/${boardId}/intake`)}
             >
-              Lead Intake
+              {t('board.leadIntake')}
             </Button>
             <Button
               variant="primary"
               icon={Plus}
               onClick={handleOpenGroupModal}
             >
-              New Group
+              {t('board.newGroup')}
             </Button>
             <button
               type="button"
-              aria-label="Board settings"
+              aria-label={t('board.settingsAria')}
               onClick={() => navigate('/settings')}
               className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
               style={{
@@ -1076,16 +1078,16 @@ const BoardDetailPage = () => {
         role="tablist"
         style={{ borderBottom: '1px solid var(--color-border)' }}
       >
-        {VIEW_TABS.map((t) => {
-          const active = viewMode === t.value;
-          const Icon = t.icon;
+        {VIEW_TABS.map((tab) => {
+          const active = viewMode === tab.value;
+          const Icon = tab.icon;
           return (
             <button
-              key={t.value}
+              key={tab.value}
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setViewMode(t.value)}
+              onClick={() => setViewMode(tab.value)}
               className="inline-flex items-center gap-1.5 font-body whitespace-nowrap transition-colors duration-150"
               style={{
                 fontSize: 13,
@@ -1098,7 +1100,7 @@ const BoardDetailPage = () => {
               }}
             >
               <Icon size={15} aria-hidden="true" />
-              {t.label}
+              {t(tab.labelKey)}
             </button>
           );
         })}
@@ -1132,7 +1134,7 @@ const BoardDetailPage = () => {
           <div
             role="status"
             aria-live="polite"
-            aria-label="Loading board"
+            aria-label={t('board.loadingBoardAria')}
             className="flex flex-col gap-4"
           >
             <SkeletonTaskGroup rowCount={4} index={0} />
@@ -1149,13 +1151,13 @@ const BoardDetailPage = () => {
           >
             <EmptyState
               icon={Plus}
-              title="No task groups yet"
+              title={t('board.noGroupsTitle')}
               description={
                 isAdmin
-                  ? 'Create your first group to start organising tasks'
-                  : 'Nothing has been set up on this board yet'
+                  ? t('board.noGroupsAdminDesc')
+                  : t('board.noGroupsMemberDesc')
               }
-              actionLabel={isAdmin ? 'Create first group' : undefined}
+              actionLabel={isAdmin ? t('board.createFirstGroup') : undefined}
               onAction={isAdmin ? handleOpenGroupModal : undefined}
             />
           </div>
@@ -1170,9 +1172,9 @@ const BoardDetailPage = () => {
           >
             <EmptyState
               icon={SearchX}
-              title="No tasks match your filters"
-              description="Try removing or loosening a filter to see more tasks."
-              actionLabel="Clear all filters"
+              title={t('board.noLeadsMatchTitle')}
+              description={t('board.noLeadsMatchDesc')}
+              actionLabel={t('board.clearAllFilters')}
               onAction={() => setFilters(EMPTY_FILTERS)}
             />
           </div>
@@ -1259,7 +1261,7 @@ const BoardDetailPage = () => {
                               <button
                                 ref={setActivatorNodeRef}
                                 type="button"
-                                aria-label={`Drag to reorder group ${group.name}`}
+                                aria-label={t('board.dragReorderGroupAria', { name: group.name })}
                                 {...attributes}
                                 {...listeners}
                                 className="flex items-center justify-center opacity-0 group-hover/group-header:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
@@ -1427,17 +1429,17 @@ const BoardDetailPage = () => {
       <Modal
         isOpen={!!taskPendingDelete}
         onClose={() => setTaskPendingDelete(null)}
-        title="Delete task?"
+        title={t('board.deleteLeadTitle')}
         footer={
           <>
             <Button
               variant="secondary"
               onClick={() => setTaskPendingDelete(null)}
             >
-              Cancel
+              {t('board.cancel')}
             </Button>
             <Button variant="danger" onClick={handleConfirmDelete}>
-              Delete
+              {t('board.delete')}
             </Button>
           </>
         }
@@ -1446,12 +1448,11 @@ const BoardDetailPage = () => {
           className="font-body"
           style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}
         >
-          Are you sure you want to delete{' '}
+          {t('board.deleteLeadConfirmPrefix')}{' '}
           <strong style={{ color: 'var(--color-text-primary)' }}>
             {taskPendingDelete?.name}
           </strong>
-          ? This will also remove any comments attached to it. This action
-          cannot be undone.
+          {t('board.deleteLeadConfirmSuffix')}
         </p>
       </Modal>
 
@@ -1459,7 +1460,7 @@ const BoardDetailPage = () => {
       <Modal
         isOpen={!!groupPendingDelete}
         onClose={() => { if (!deletingGroup) setGroupPendingDelete(null); }}
-        title="Delete group?"
+        title={t('board.deleteGroupTitle')}
         footer={
           <>
             <Button
@@ -1467,10 +1468,10 @@ const BoardDetailPage = () => {
               onClick={() => setGroupPendingDelete(null)}
               disabled={deletingGroup}
             >
-              Cancel
+              {t('board.cancel')}
             </Button>
             <Button variant="danger" onClick={handleConfirmDeleteGroup} disabled={deletingGroup}>
-              {deletingGroup ? 'Deleting…' : 'Delete'}
+              {deletingGroup ? t('board.deleting') : t('board.delete')}
             </Button>
           </>
         }
@@ -1479,12 +1480,11 @@ const BoardDetailPage = () => {
           className="font-body"
           style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}
         >
-          Are you sure you want to delete the group{' '}
+          {t('board.deleteGroupConfirmPrefix')}{' '}
           <strong style={{ color: 'var(--color-text-primary)' }}>
             {groupPendingDelete?.name}
           </strong>
-          ? This will permanently delete all tasks and comments inside it. This
-          action cannot be undone.
+          {t('board.deleteGroupConfirmSuffix')}
         </p>
       </Modal>
 
@@ -1492,7 +1492,7 @@ const BoardDetailPage = () => {
       <Modal
         isOpen={groupModalOpen}
         onClose={handleCloseGroupModal}
-        title="New Group"
+        title={t('board.newGroup')}
         footer={
           <>
             <Button
@@ -1500,23 +1500,23 @@ const BoardDetailPage = () => {
               onClick={handleCloseGroupModal}
               disabled={creatingGroup}
             >
-              Cancel
+              {t('board.cancel')}
             </Button>
             <Button
               variant="primary"
               onClick={handleSubmitNewGroup}
               disabled={creatingGroup}
             >
-              {creatingGroup ? 'Creating…' : 'Create Group'}
+              {creatingGroup ? t('board.creating') : t('board.createGroup')}
             </Button>
           </>
         }
       >
         <form onSubmit={handleSubmitNewGroup} className="flex flex-col gap-3">
           <Input
-            label="Group Name"
+            label={t('board.groupNameLabel')}
             required
-            placeholder="e.g. To Do"
+            placeholder={t('board.groupNamePlaceholder')}
             value={newGroupName}
             onChange={(e) => setNewGroupName(e.target.value)}
             autoFocus
@@ -1558,7 +1558,7 @@ const BoardDetailPage = () => {
       <Modal
         isOpen={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
-        title={`Delete ${selectedTaskIds.size} ${selectedTaskIds.size === 1 ? 'task' : 'tasks'}?`}
+        title={t('board.bulkDeleteTitle', { count: selectedTaskIds.size })}
         footer={
           <>
             <Button
@@ -1566,14 +1566,14 @@ const BoardDetailPage = () => {
               onClick={() => setBulkDeleteOpen(false)}
               disabled={bulkBusy}
             >
-              Cancel
+              {t('board.cancel')}
             </Button>
             <Button
               variant="danger"
               onClick={handleConfirmBulkDelete}
               disabled={bulkBusy}
             >
-              {bulkBusy ? 'Deleting…' : 'Delete'}
+              {bulkBusy ? t('board.deleting') : t('board.delete')}
             </Button>
           </>
         }
@@ -1582,12 +1582,11 @@ const BoardDetailPage = () => {
           className="font-body"
           style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}
         >
-          This will permanently delete{' '}
+          {t('board.bulkDeleteConfirmPrefix')}{' '}
           <strong style={{ color: 'var(--color-text-primary)' }}>
-            {selectedTaskIds.size}{' '}
-            {selectedTaskIds.size === 1 ? 'task' : 'tasks'}
+            {t('board.leadCount', { count: selectedTaskIds.size })}
           </strong>{' '}
-          and any comments attached to them. This action cannot be undone.
+          {t('board.bulkDeleteConfirmSuffix')}
         </p>
       </Modal>
 

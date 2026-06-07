@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, Save, Workflow } from 'lucide-react';
 import Button from '../ui/Button';
 import { Toggle, FieldLabel } from './automationFields';
@@ -35,9 +36,9 @@ const cardStyle = {
 };
 
 const STRATEGIES = [
-  { value: 'round_robin', label: 'Round-robin', hint: 'Cycle a pool of agents evenly' },
-  { value: 'geo', label: 'By city / region', hint: "Route by the lead's location" },
-  { value: 'fixed', label: 'Fixed agent', hint: 'Always the same person' },
+  { value: 'round_robin', labelKey: 'strategyRoundRobin', hintKey: 'strategyRoundRobinHint' },
+  { value: 'geo', labelKey: 'strategyGeo', hintKey: 'strategyGeoHint' },
+  { value: 'fixed', labelKey: 'strategyFixed', hintKey: 'strategyFixedHint' },
 ];
 
 const Section = ({ step, title, children }) => (
@@ -59,6 +60,7 @@ const Section = ({ step, title, children }) => (
 );
 
 const IntakePolicyForm = ({ boardId, board }) => {
+  const { t } = useTranslation();
   const [policy, setPolicy] = useState(null);
   const [meta, setMeta] = useState(null);
   const [geoRows, setGeoRows] = useState([]); // [{ city, userId }]
@@ -77,9 +79,9 @@ const IntakePolicyForm = ({ boardId, board }) => {
         setMeta(m);
         setGeoRows(Object.entries(p.geoMap || {}).map(([city, userId]) => ({ city, userId })));
       })
-      .catch((e) => setError(e?.response?.data?.error || 'Failed to load intake policy.'))
+      .catch((e) => setError(e?.response?.data?.error || t('automation.intakeLoadError')))
       .finally(() => setLoading(false));
-  }, [boardId]);
+  }, [boardId, t]);
 
   useEffect(() => { if (boardId) reload(); }, [boardId, reload]);
 
@@ -143,17 +145,17 @@ const IntakePolicyForm = ({ boardId, board }) => {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setError(e?.response?.data?.error || 'Failed to save policy.');
+      setError(e?.response?.data?.error || t('automation.intakeSaveError'));
     } finally {
       setSaving(false);
     }
   };
 
   if (loading && !policy) {
-    return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>;
+    return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{t('automation.loading')}</p>;
   }
   if (!policy) {
-    return <p style={{ fontSize: 13, color: 'var(--color-status-stuck)' }}>{error || 'Unable to load policy.'}</p>;
+    return <p style={{ fontSize: 13, color: 'var(--color-status-stuck)' }}>{error || t('automation.intakeUnableToLoad')}</p>;
   }
 
   return (
@@ -164,26 +166,26 @@ const IntakePolicyForm = ({ boardId, board }) => {
       <div style={cardStyle} className="flex items-center justify-between">
         <div>
           <p className="font-display font-semibold" style={{ fontSize: 14, color: 'var(--color-text-primary)' }}>
-            Lead intake automation
+            {t('automation.intakeTitle')}
           </p>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            When a new lead arrives, run owner assignment, set the stage, send a welcome email, and create a follow-up.
+            {t('automation.intakeDescription')}
           </p>
         </div>
-        <Toggle checked={!!policy.enabled} onChange={(v) => patch({ enabled: v })} label="Enabled" />
+        <Toggle checked={!!policy.enabled} onChange={(v) => patch({ enabled: v })} label={t('automation.enabled')} />
       </div>
 
       {/* Step 1 — Owner assignment */}
-      <Section step={1} title="Assign an owner">
+      <Section step={1} title={t('automation.stepAssignOwner')}>
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Strategy</FieldLabel>
+          <FieldLabel>{t('automation.strategyLabel')}</FieldLabel>
           <div className="flex gap-2 flex-wrap">
             {STRATEGIES.map((s) => (
               <button
                 key={s.value}
                 type="button"
                 onClick={() => patch({ ownerStrategy: s.value })}
-                title={s.hint}
+                title={t(`automation.${s.hintKey}`)}
                 style={{
                   padding: '6px 12px',
                   borderRadius: 'var(--radius-md)',
@@ -196,7 +198,7 @@ const IntakePolicyForm = ({ boardId, board }) => {
                   fontWeight: policy.ownerStrategy === s.value ? 600 : 400,
                 }}
               >
-                {s.label}
+                {t(`automation.${s.labelKey}`)}
               </button>
             ))}
           </div>
@@ -204,9 +206,9 @@ const IntakePolicyForm = ({ boardId, board }) => {
 
         {policy.ownerStrategy === 'round_robin' && (
           <div className="flex flex-col gap-1.5">
-            <FieldLabel>Agent pool (cycled evenly)</FieldLabel>
+            <FieldLabel>{t('automation.agentPoolLabel')}</FieldLabel>
             {members.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No workspace members found.</p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{t('automation.noWorkspaceMembers')}</p>
             ) : (
               <div className="flex flex-col gap-1" style={{ maxHeight: 180, overflowY: 'auto' }}>
                 {members.map((m) => (
@@ -226,13 +228,13 @@ const IntakePolicyForm = ({ boardId, board }) => {
 
         {policy.ownerStrategy === 'fixed' && (
           <div className="flex flex-col gap-1.5">
-            <FieldLabel>Fixed agent</FieldLabel>
+            <FieldLabel>{t('automation.fixedAgentLabel')}</FieldLabel>
             <select
               style={inputStyle}
               value={policy.fixedOwnerId || ''}
               onChange={(e) => patch({ fixedOwnerId: e.target.value || null })}
             >
-              <option value="">Choose an agent…</option>
+              <option value="">{t('automation.chooseAgent')}</option>
               {members.map((m) => (
                 <option key={m._id} value={m._id}>{m.name || m.email}</option>
               ))}
@@ -243,25 +245,25 @@ const IntakePolicyForm = ({ boardId, board }) => {
         {policy.ownerStrategy === 'geo' && (
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-1.5">
-              <FieldLabel>City / region column on the lead</FieldLabel>
+              <FieldLabel>{t('automation.geoColumnLabel')}</FieldLabel>
               <select
                 style={inputStyle}
                 value={policy.geoColumnId || ''}
                 onChange={(e) => patch({ geoColumnId: e.target.value || null })}
               >
-                <option value="">Choose a column…</option>
+                <option value="">{t('automation.chooseColumn')}</option>
                 {(meta?.geoColumns || []).map((c) => (
                   <option key={c._id} value={c._id}>{c.name}</option>
                 ))}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <FieldLabel>City → agent</FieldLabel>
+              <FieldLabel>{t('automation.cityToAgentLabel')}</FieldLabel>
               {geoRows.map((row, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <input
                     type="text"
-                    placeholder="Edmonton"
+                    placeholder={t('automation.cityPlaceholder')}
                     value={row.city}
                     onChange={(e) => setGeoRow(idx, 'city', e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
@@ -271,7 +273,7 @@ const IntakePolicyForm = ({ boardId, board }) => {
                     onChange={(e) => setGeoRow(idx, 'userId', e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                   >
-                    <option value="">Choose agent…</option>
+                    <option value="">{t('automation.chooseAgentShort')}</option>
                     {members.map((m) => (
                       <option key={m._id} value={m._id}>{m.name || m.email}</option>
                     ))}
@@ -279,29 +281,29 @@ const IntakePolicyForm = ({ boardId, board }) => {
                   <button
                     type="button"
                     onClick={() => removeGeoRow(idx)}
-                    aria-label="Remove row"
+                    aria-label={t('automation.removeRow')}
                     style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#DC2626' }}
                   >
                     <Trash2 size={15} />
                   </button>
                 </div>
               ))}
-              <Button variant="ghost" size="sm" icon={Plus} onClick={addGeoRow}>Add city</Button>
+              <Button variant="ghost" size="sm" icon={Plus} onClick={addGeoRow}>{t('automation.addCity')}</Button>
               <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                A city not listed here falls back to round-robin across the agents above.
+                {t('automation.geoFallbackNote')}
               </p>
             </div>
           </div>
         )}
 
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Write owner to (person column)</FieldLabel>
+          <FieldLabel>{t('automation.writeOwnerToLabel')}</FieldLabel>
           <select
             style={inputStyle}
             value={policy.ownerColumnId || ''}
             onChange={(e) => patch({ ownerColumnId: e.target.value || null })}
           >
-            <option value="">Auto (assignees column)</option>
+            <option value="">{t('automation.autoAssigneesColumn')}</option>
             {(meta?.personColumns || []).map((c) => (
               <option key={c._id} value={c._id}>{c.name}</option>
             ))}
@@ -310,30 +312,30 @@ const IntakePolicyForm = ({ boardId, board }) => {
       </Section>
 
       {/* Step 2 — Initial stage */}
-      <Section step={2} title="Set the initial stage">
+      <Section step={2} title={t('automation.stepInitialStage')}>
         <div className="flex gap-2 flex-wrap">
           <div className="flex flex-col gap-1.5" style={{ flex: 1, minWidth: 200 }}>
-            <FieldLabel>Status column</FieldLabel>
+            <FieldLabel>{t('automation.statusColumnLabel')}</FieldLabel>
             <select
               style={inputStyle}
               value={policy.initialStageColumnId || ''}
               onChange={(e) => patch({ initialStageColumnId: e.target.value || null, initialStageValue: null })}
             >
-              <option value="">None</option>
+              <option value="">{t('automation.none')}</option>
               {(meta?.statusColumns || []).map((c) => (
                 <option key={c._id} value={c._id}>{c.name}</option>
               ))}
             </select>
           </div>
           <div className="flex flex-col gap-1.5" style={{ flex: 1, minWidth: 200 }}>
-            <FieldLabel>Stage</FieldLabel>
+            <FieldLabel>{t('automation.stageLabel')}</FieldLabel>
             <select
               style={inputStyle}
               value={policy.initialStageValue || ''}
               onChange={(e) => patch({ initialStageValue: e.target.value || null })}
               disabled={!stageColumn}
             >
-              <option value="">Choose…</option>
+              <option value="">{t('automation.choose')}</option>
               {(stageColumn?.options || []).map((o) => (
                 <option key={o.id} value={o.id}>{o.label}</option>
               ))}
@@ -343,15 +345,15 @@ const IntakePolicyForm = ({ boardId, board }) => {
       </Section>
 
       {/* Step 3 — Welcome email */}
-      <Section step={3} title="Send a welcome email">
+      <Section step={3} title={t('automation.stepWelcomeEmail')}>
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Start from a template</FieldLabel>
+          <FieldLabel>{t('automation.startFromTemplate')}</FieldLabel>
           <select
             style={inputStyle}
             value={policy.welcomeEmailTemplateId || ''}
             onChange={(e) => applyTemplate(e.target.value)}
           >
-            <option value="">Custom (write below)</option>
+            <option value="">{t('automation.customWriteBelow')}</option>
             {(meta?.templates || []).map((t) => (
               <option key={t._id} value={t._id}>
                 {t.name}{t.region ? ` · ${t.region}` : ''}
@@ -360,7 +362,7 @@ const IntakePolicyForm = ({ boardId, board }) => {
           </select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Subject</FieldLabel>
+          <FieldLabel>{t('automation.subjectLabel')}</FieldLabel>
           <TemplateVariableMenu
             value={policy.welcomeEmailSubject || ''}
             onChange={(v) => patch({ welcomeEmailSubject: v, welcomeEmailTemplateId: null })}
@@ -370,7 +372,7 @@ const IntakePolicyForm = ({ boardId, board }) => {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Body</FieldLabel>
+          <FieldLabel>{t('automation.bodyLabel')}</FieldLabel>
           <TemplateVariableMenu
             value={policy.welcomeEmailBody || ''}
             onChange={(v) => patch({ welcomeEmailBody: v, welcomeEmailTemplateId: null })}
@@ -380,14 +382,14 @@ const IntakePolicyForm = ({ boardId, board }) => {
           />
         </div>
         <p style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-          Sent from the assigned agent's connected mailbox. If the agent hasn't connected one, the welcome email is skipped.
+          {t('automation.welcomeMailboxNote')}
         </p>
       </Section>
 
       {/* Step 4 — Follow-up */}
-      <Section step={4} title="Create a follow-up task">
+      <Section step={4} title={t('automation.stepFollowup')}>
         <div className="flex items-center gap-2 flex-wrap">
-          <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>Create a "Call lead" subtask due</span>
+          <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>{t('automation.followupPrefix')}</span>
           <input
             type="number"
             min={0}
@@ -395,18 +397,18 @@ const IntakePolicyForm = ({ boardId, board }) => {
             onChange={(e) => patch({ followupOffsetHours: e.target.value })}
             style={{ ...inputStyle, width: 90 }}
           />
-          <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>hours later (24 = next day).</span>
+          <span style={{ fontSize: 13, color: 'var(--color-text-primary)' }}>{t('automation.followupSuffix')}</span>
         </div>
       </Section>
 
       {/* Save */}
       <div className="flex items-center gap-3">
         <Button variant="primary" icon={Save} onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save policy'}
+          {saving ? t('automation.saving') : t('automation.savePolicy')}
         </Button>
         {saved && (
           <span className="inline-flex items-center gap-1.5" style={{ fontSize: 13, color: 'var(--color-status-done)' }}>
-            <Workflow size={14} /> Saved
+            <Workflow size={14} /> {t('automation.saved')}
           </span>
         )}
       </div>

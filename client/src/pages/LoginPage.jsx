@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 const GoogleIcon = () => (
@@ -28,6 +29,7 @@ const GoogleIcon = () => (
 );
 
 const LoginPage = () => {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
 
@@ -58,7 +60,7 @@ const LoginPage = () => {
             Macan
           </h1>
           <p className="mt-2 text-[color:var(--color-text-secondary)] text-[13px] text-center">
-            Task management for Davnoot Digital
+            {t('pages.loginTagline')}
           </p>
         </div>
 
@@ -74,20 +76,20 @@ const LoginPage = () => {
             }}
           >
             <GoogleIcon />
-            Sign in with Google
+            {t('pages.signInWithGoogle')}
           </button>
         </div>
 
         {/* Error message */}
         {error && (
           <p className="mt-3 text-xs text-center text-[color:var(--color-status-stuck)]">
-            Sign-in failed. Please try again.
+            {t('pages.signInFailed')}
           </p>
         )}
 
         {/* Fine print */}
         <p className="mt-4 text-xs text-center text-[color:var(--color-text-muted)]">
-          By signing in you agree to internal usage terms.
+          {t('pages.usageTerms')}
         </p>
       </div>
     </div>

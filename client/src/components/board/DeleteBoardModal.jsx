@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 
@@ -7,6 +8,7 @@ import Button from '../ui/Button';
  * Warns the user that tasks + comments under the board will also be removed.
  */
 const DeleteBoardModal = ({ isOpen, board, onClose, onConfirm }) => {
+  const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -17,7 +19,7 @@ const DeleteBoardModal = ({ isOpen, board, onClose, onConfirm }) => {
       await onConfirm(board);
     } catch (err) {
       const msg =
-        err?.response?.data?.error || err?.message || 'Something went wrong';
+        err?.response?.data?.error || err?.message || t('boardMisc.somethingWentWrong');
       setError(msg);
       setSubmitting(false);
     }
@@ -33,7 +35,7 @@ const DeleteBoardModal = ({ isOpen, board, onClose, onConfirm }) => {
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title="Delete Board"
+      title={t('boardMisc.deleteBoard')}
       footer={
         <>
           <Button
@@ -41,14 +43,14 @@ const DeleteBoardModal = ({ isOpen, board, onClose, onConfirm }) => {
             onClick={handleClose}
             disabled={submitting}
           >
-            Cancel
+            {t('boardMisc.cancel')}
           </Button>
           <Button
             variant="danger"
             onClick={handleConfirm}
             disabled={submitting}
           >
-            {submitting ? 'Deleting…' : 'Delete Board'}
+            {submitting ? t('boardMisc.deleting') : t('boardMisc.deleteBoard')}
           </Button>
         </>
       }
@@ -57,15 +59,14 @@ const DeleteBoardModal = ({ isOpen, board, onClose, onConfirm }) => {
         className="font-body"
         style={{ fontSize: 14, color: 'var(--color-text-primary)' }}
       >
-        Are you sure you want to delete{' '}
+        {t('boardMisc.confirmDeletePrefix')}{' '}
         <span className="font-semibold">{board?.name}</span>?
       </p>
       <p
         className="mt-2 font-body"
         style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}
       >
-        All task groups, tasks, and comments under this board will be
-        permanently removed. This action cannot be undone.
+        {t('boardMisc.deleteBoardWarning')}
       </p>
 
       {error && (

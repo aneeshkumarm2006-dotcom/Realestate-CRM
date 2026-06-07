@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Plus,
   Pencil,
@@ -709,6 +710,7 @@ const ConditionRow = ({
   statuses,
   disabled,
 }) => {
+  const { t } = useTranslation();
   const valueOptions =
     condition.type === 'ITEM_IN_STATUS'
       ? (statuses || []).map((s) => ({ value: s._id, label: s.name }))
@@ -764,7 +766,7 @@ const ConditionRow = ({
           minWidth: 0,
         }}
       >
-        <option value="">{valueOptions.length === 0 ? '— none available —' : 'Select…'}</option>
+        <option value="">{valueOptions.length === 0 ? t('automation.noneAvailable') : t('automation.selectPlaceholder')}</option>
         {valueOptions.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
@@ -773,7 +775,7 @@ const ConditionRow = ({
       </select>
       <button
         type="button"
-        aria-label="Remove condition"
+        aria-label={t('automation.removeCondition')}
         onClick={onRemove}
         disabled={disabled}
         className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
@@ -810,11 +812,12 @@ const smallInputStyle = (disabled) => ({
  * picker, …).
  */
 const ColumnValueField = ({ board, columnId, value, onChange, members, disabled }) => {
+  const { t } = useTranslation();
   const col = findColumn(board, columnId);
   if (!col) {
     return (
       <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-        Choose a column first.
+        {t('automation.chooseColumnFirst')}
       </p>
     );
   }
@@ -828,7 +831,7 @@ const ColumnValueField = ({ board, columnId, value, onChange, members, disabled 
         style={selectStyle(disabled)}
         className="font-body"
       >
-        <option value="">Select value…</option>
+        <option value="">{t('automation.selectValue')}</option>
         {opts.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
@@ -836,7 +839,7 @@ const ColumnValueField = ({ board, columnId, value, onChange, members, disabled 
     );
   }
   if (col.type === 'checkbox') {
-    return <Toggle checked={!!value} onChange={onChange} disabled={disabled} label={value ? 'Checked' : 'Unchecked'} />;
+    return <Toggle checked={!!value} onChange={onChange} disabled={disabled} label={value ? t('automation.checked') : t('automation.unchecked')} />;
   }
   if (col.type === 'person') {
     return (
@@ -877,7 +880,7 @@ const ColumnValueField = ({ board, columnId, value, onChange, members, disabled 
     <input
       type="text"
       value={value ?? ''}
-      placeholder="Value"
+      placeholder={t('automation.valuePlaceholder')}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
       style={smallInputStyle(disabled)}
@@ -891,6 +894,7 @@ const ColumnValueField = ({ board, columnId, value, onChange, members, disabled 
  * `variables` contract field. Parses into an object on every change.
  */
 const KeyValueField = ({ value, onChange, disabled }) => {
+  const { t } = useTranslation();
   const [text, setText] = useState(() =>
     Object.entries(value || {}).map(([k, v]) => `${k}=${v}`).join('\n')
   );
@@ -907,7 +911,7 @@ const KeyValueField = ({ value, onChange, disabled }) => {
     <textarea
       rows={2}
       value={text}
-      placeholder="key=value (one per line)"
+      placeholder={t('automation.keyValuePlaceholder')}
       disabled={disabled}
       onChange={(e) => handle(e.target.value)}
       style={{ ...smallInputStyle(disabled), height: 'auto', padding: 8, resize: 'vertical' }}
@@ -922,6 +926,7 @@ const KeyValueField = ({ value, onChange, disabled }) => {
  * TemplateVariableMenu so `{{Column Name}}` variables can be inserted.
  */
 const ActionConfigField = ({ field, config, onPatch, board, groups, members, disabled }) => {
+  const { t } = useTranslation();
   const value = config[field.key];
   const set = (v) => onPatch(field.key, v);
 
@@ -968,7 +973,7 @@ const ActionConfigField = ({ field, config, onPatch, board, groups, members, dis
     case 'group':
       control = (
         <select value={value || ''} disabled={disabled} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
-          <option value="">Select group…</option>
+          <option value="">{t('automation.selectGroup')}</option>
           {groups.map((g) => (
             <option key={g._id} value={g._id}>{g.name}</option>
           ))}
@@ -993,7 +998,7 @@ const ActionConfigField = ({ field, config, onPatch, board, groups, members, dis
       const cols = field.columnType ? columnsOfType(board, field.columnType) : boardColumns(board);
       control = (
         <select value={value || ''} disabled={disabled || cols.length === 0} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
-          <option value="">{cols.length === 0 ? '— no matching columns —' : 'Select column…'}</option>
+          <option value="">{cols.length === 0 ? t('automation.noMatchingColumns') : t('automation.selectColumn')}</option>
           {cols.map((c) => (
             <option key={c._id} value={c._id}>{c.name}</option>
           ))}
@@ -1010,16 +1015,16 @@ const ActionConfigField = ({ field, config, onPatch, board, groups, members, dis
       const personCols = columnsOfType(board, 'person');
       control = (
         <select value={value || ''} disabled={disabled} onChange={(e) => set(e.target.value)} style={selectStyle(disabled)} className="font-body">
-          <option value="">Select recipient…</option>
+          <option value="">{t('automation.selectRecipient')}</option>
           {(members || []).length > 0 && (
-            <optgroup label="People">
+            <optgroup label={t('automation.peopleGroup')}>
               {(members || []).map((m) => (
                 <option key={m._id} value={m._id}>{m.name}</option>
               ))}
             </optgroup>
           )}
           {personCols.length > 0 && (
-            <optgroup label="From a person column">
+            <optgroup label={t('automation.fromPersonColumn')}>
               {personCols.map((c) => (
                 <option key={c._id} value={c._id}>{c.name}</option>
               ))}
@@ -1089,6 +1094,7 @@ const ActionRow = ({
   members,
   disabled,
 }) => {
+  const { t } = useTranslation();
   const types = (catalog && catalog.length ? catalog : FALLBACK_CATALOG);
   const entry = catalogEntry(catalog, action.type);
   const fields = entry?.configSchema?.fields || [];
@@ -1123,7 +1129,7 @@ const ActionRow = ({
           className="font-body"
           style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', minWidth: 60 }}
         >
-          {index === 0 ? 'Then' : 'and then'}
+          {index === 0 ? t('automation.then') : t('automation.andThen')}
         </span>
         <select
           value={action.type}
@@ -1144,13 +1150,13 @@ const ActionRow = ({
         >
           {types.map((c) => (
             <option key={c.type} value={c.type}>
-              {(c.describe || ACTION_LABELS[c.type] || c.type) + (c.disabled ? ' · Phase 3' : '')}
+              {(c.describe || ACTION_LABELS[c.type] || c.type) + (c.disabled ? t('automation.phase3Suffix') : '')}
             </option>
           ))}
         </select>
         <button
           type="button"
-          aria-label="Remove action"
+          aria-label={t('automation.removeAction')}
           onClick={onRemove}
           disabled={disabled}
           className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
@@ -1178,7 +1184,7 @@ const ActionRow = ({
         >
           <Zap size={13} aria-hidden="true" />
           <span className="font-body" style={{ fontSize: 11 }}>
-            {PHASE3_NOTE}. You can configure it now — it runs once the channel is connected.
+            {t('automation.phase3ActionNote')}
           </span>
         </div>
       )}
@@ -1218,6 +1224,7 @@ const EventDrivenBuilder = ({
   board,
   catalog,
 }) => {
+  const { t } = useTranslation();
   const conditions = form.conditions || [];
   const actions = form.actions || [];
 
@@ -1278,7 +1285,7 @@ const EventDrivenBuilder = ({
             color: 'var(--color-text-primary)',
           }}
         >
-          When an item is created
+          {t('automation.whenItemCreated')}
         </p>
         {conditions.length > 0 && (
           <div className="mt-2 flex flex-col gap-2">
@@ -1310,7 +1317,7 @@ const EventDrivenBuilder = ({
           }}
         >
           <Plus size={12} aria-hidden="true" />
-          Add condition
+          {t('automation.addCondition')}
         </button>
       </div>
 
@@ -1354,7 +1361,7 @@ const EventDrivenBuilder = ({
           }}
         >
           <Plus size={14} aria-hidden="true" />
-          Add action
+          {t('automation.addAction')}
         </button>
       </div>
     </div>
@@ -1367,6 +1374,7 @@ const EventDrivenBuilder = ({
  * channel contracts / …). Mirrors the actions block inside EventDrivenBuilder.
  */
 const ActionsSection = ({ form, setForm, groups, board, members, catalog, saving }) => {
+  const { t } = useTranslation();
   const actions = form.actions || [];
   const updateAction = (idx, next) =>
     setForm((f) => ({
@@ -1412,7 +1420,7 @@ const ActionsSection = ({ form, setForm, groups, board, members, catalog, saving
         }}
       >
         <Plus size={14} aria-hidden="true" />
-        Add action
+        {t('automation.addAction')}
       </button>
     </div>
   );
@@ -1447,6 +1455,7 @@ const FieldLabel = ({ children }) => (
  * notice but still save (so the automation is ready when the emitter ships).
  */
 const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
+  const { t } = useTranslation();
   const tc = form.triggerConfig || {};
   const setTc = (patch) =>
     setForm((f) => ({ ...f, triggerConfig: { ...(f.triggerConfig || {}), ...patch } }));
@@ -1472,14 +1481,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
     const cols = boardColumns(board);
     return wrap(
       <div>
-        <FieldLabel>Column to watch</FieldLabel>
+        <FieldLabel>{t('automation.columnToWatch')}</FieldLabel>
         <select
           value={tc.columnId || ''}
           disabled={saving}
           onChange={(e) => setTc({ columnId: e.target.value })}
           style={selectStyle(saving)}
         >
-          <option value="">Any column</option>
+          <option value="">{t('automation.anyColumn')}</option>
           {cols.map((c) => (
             <option key={c._id} value={c._id}>
               {c.name}
@@ -1487,7 +1496,7 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
           ))}
         </select>
         <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-          Leave as "Any column" to fire on every column change.
+          {t('automation.anyColumnHint')}
         </p>
       </div>
     );
@@ -1500,14 +1509,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
     return wrap(
       <>
         <div>
-          <FieldLabel>Status column</FieldLabel>
+          <FieldLabel>{t('automation.statusColumn')}</FieldLabel>
           <select
             value={tc.columnId || ''}
             disabled={saving || statusCols.length === 0}
             onChange={(e) => setTc({ columnId: e.target.value, toValue: '', fromValue: '' })}
             style={selectStyle(saving || statusCols.length === 0)}
           >
-            <option value="">{statusCols.length === 0 ? '— no status columns —' : 'Select column…'}</option>
+            <option value="">{statusCols.length === 0 ? t('automation.noStatusColumns') : t('automation.selectColumn')}</option>
             {statusCols.map((c) => (
               <option key={c._id} value={c._id}>
                 {c.name}
@@ -1517,14 +1526,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <FieldLabel>From (optional)</FieldLabel>
+            <FieldLabel>{t('automation.fromOptional')}</FieldLabel>
             <select
               value={tc.fromValue || ''}
               disabled={saving || !tc.columnId}
               onChange={(e) => setTc({ fromValue: e.target.value })}
               style={selectStyle(saving || !tc.columnId)}
             >
-              <option value="">Any value</option>
+              <option value="">{t('automation.anyValue')}</option>
               {valueOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -1533,14 +1542,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
             </select>
           </div>
           <div>
-            <FieldLabel>Becomes</FieldLabel>
+            <FieldLabel>{t('automation.becomes')}</FieldLabel>
             <select
               value={tc.toValue || ''}
               disabled={saving || !tc.columnId}
               onChange={(e) => setTc({ toValue: e.target.value })}
               style={selectStyle(saving || !tc.columnId)}
             >
-              <option value="">Select value…</option>
+              <option value="">{t('automation.selectValue')}</option>
               {valueOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -1559,14 +1568,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
     return wrap(
       <>
         <div>
-          <FieldLabel>Date column</FieldLabel>
+          <FieldLabel>{t('automation.dateColumn')}</FieldLabel>
           <select
             value={tc.columnId || ''}
             disabled={saving || dateCols.length === 0}
             onChange={(e) => setTc({ columnId: e.target.value })}
             style={selectStyle(saving || dateCols.length === 0)}
           >
-            <option value="">{dateCols.length === 0 ? '— no date columns —' : 'Select column…'}</option>
+            <option value="">{dateCols.length === 0 ? t('automation.noDateColumns') : t('automation.selectColumn')}</option>
             {dateCols.map((c) => (
               <option key={c._id} value={c._id}>
                 {c.name}
@@ -1576,7 +1585,7 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <FieldLabel>Days offset</FieldLabel>
+            <FieldLabel>{t('automation.daysOffset')}</FieldLabel>
             <input
               type="number"
               value={Number.isFinite(offset) ? offset : ''}
@@ -1588,7 +1597,7 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
             />
           </div>
           <div>
-            <FieldLabel>Relative to date</FieldLabel>
+            <FieldLabel>{t('automation.relativeToDate')}</FieldLabel>
             <SegmentedControl
               options={DATE_COMPARISONS}
               value={tc.comparison || 'on'}
@@ -1598,8 +1607,7 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
           </div>
         </div>
         <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-          The before / on / after selector sets the direction; the number is how many days
-          (e.g. 7 days before the date). Runs hourly in the workspace timezone.
+          {t('automation.dateArrivedHint')}
         </p>
       </>
     );
@@ -1610,14 +1618,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
     return wrap(
       <>
         <div>
-          <FieldLabel>Person column</FieldLabel>
+          <FieldLabel>{t('automation.personColumn')}</FieldLabel>
           <select
             value={tc.columnId || ''}
             disabled={saving || personCols.length === 0}
             onChange={(e) => setTc({ columnId: e.target.value })}
             style={selectStyle(saving || personCols.length === 0)}
           >
-            <option value="">{personCols.length === 0 ? '— no person columns —' : 'Select column…'}</option>
+            <option value="">{personCols.length === 0 ? t('automation.noPersonColumns') : t('automation.selectColumn')}</option>
             {personCols.map((c) => (
               <option key={c._id} value={c._id}>
                 {c.name}
@@ -1626,14 +1634,14 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
           </select>
         </div>
         <div>
-          <FieldLabel>Specific user (optional)</FieldLabel>
+          <FieldLabel>{t('automation.specificUserOptional')}</FieldLabel>
           <select
             value={tc.userId || ''}
             disabled={saving}
             onChange={(e) => setTc({ userId: e.target.value })}
             style={selectStyle(saving)}
           >
-            <option value="">Any user</option>
+            <option value="">{t('automation.anyUser')}</option>
             {(members || []).map((m) => (
               <option key={m._id} value={m._id}>
                 {m.name}
@@ -1647,7 +1655,7 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
 
   // Dormant triggers — FORM_SUBMITTED / WEBHOOK_RECEIVED.
   const idKey = type === 'FORM_SUBMITTED' ? 'formId' : 'endpointId';
-  const idLabel = type === 'FORM_SUBMITTED' ? 'Form' : 'Endpoint';
+  const idLabel = type === 'FORM_SUBMITTED' ? t('automation.formLabel') : t('automation.endpointLabel');
   return wrap(
     <>
       <div
@@ -1661,17 +1669,16 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
       >
         <Zap size={14} aria-hidden="true" />
         <span className="font-body" style={{ fontSize: 12 }}>
-          {DORMANT_TRIGGER_NOTE[type]}. You can save this automation now — it will start firing
-          once the feature ships.
+          {t('automation.dormantTriggerNote', { note: DORMANT_TRIGGER_NOTE[type] })}
         </span>
       </div>
       <div>
-        <FieldLabel>{idLabel} (optional)</FieldLabel>
+        <FieldLabel>{t('automation.idOptional', { label: idLabel })}</FieldLabel>
         <input
           type="text"
           value={tc[idKey] || ''}
           disabled
-          placeholder={`Specific ${idLabel.toLowerCase()} id — available later`}
+          placeholder={t('automation.idAvailableLater', { label: idLabel.toLowerCase() })}
           style={{ ...selectStyle(true), cursor: 'not-allowed' }}
         />
       </div>
@@ -1716,7 +1723,9 @@ const GroupCreatedTemplateRow = ({
   onRemove,
   members,
   disabled,
-}) => (
+}) => {
+  const { t } = useTranslation();
+  return (
   <div
     className="flex flex-col gap-2"
     style={{
@@ -1736,11 +1745,11 @@ const GroupCreatedTemplateRow = ({
           minWidth: 60,
         }}
       >
-        {index === 0 ? 'Task' : `Task ${index + 1}`}
+        {index === 0 ? t('automation.taskWord') : t('automation.taskNumbered', { index: index + 1 })}
       </span>
       <input
         type="text"
-        placeholder="Task name"
+        placeholder={t('automation.taskNamePlaceholder')}
         value={template.name}
         disabled={disabled}
         onChange={(e) => onChange({ ...template, name: e.target.value })}
@@ -1759,7 +1768,7 @@ const GroupCreatedTemplateRow = ({
       />
       <button
         type="button"
-        aria-label="Remove task"
+        aria-label={t('automation.removeTask')}
         onClick={onRemove}
         disabled={disabled}
         className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]"
@@ -1799,7 +1808,7 @@ const GroupCreatedTemplateRow = ({
       <input
         type="number"
         min={0}
-        placeholder="Due in N days"
+        placeholder={t('automation.dueInDaysShort')}
         value={template.dueInDays}
         disabled={disabled}
         onChange={(e) => onChange({ ...template, dueInDays: e.target.value })}
@@ -1823,7 +1832,7 @@ const GroupCreatedTemplateRow = ({
     />
     <input
       type="text"
-      placeholder="Note (optional)"
+      placeholder={t('automation.noteOptional')}
       value={template.note}
       disabled={disabled}
       onChange={(e) => onChange({ ...template, note: e.target.value })}
@@ -1839,7 +1848,8 @@ const GroupCreatedTemplateRow = ({
       }}
     />
   </div>
-);
+  );
+};
 
 /**
  * Trigger + actions builder shown when triggerType is GROUP_CREATED.
@@ -1853,6 +1863,7 @@ const GroupCreatedBuilder = ({
   saving,
   members,
 }) => {
+  const { t } = useTranslation();
   const templates = form.groupCreatedTemplates || [];
 
   const updateTemplate = (idx, next) => {
@@ -1898,17 +1909,17 @@ const GroupCreatedBuilder = ({
             color: 'var(--color-text-primary)',
           }}
         >
-          When a group is created
+          {t('automation.whenGroupCreated')}
         </p>
         <p
           className="font-body mt-2"
           style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
         >
-          Only when group name matches (regex, optional)
+          {t('automation.groupNameMatchHint')}
         </p>
         <input
           type="text"
-          placeholder="e.g. ^Deux"
+          placeholder={t('automation.groupPatternPlaceholder')}
           value={form.groupNamePattern || ''}
           disabled={saving}
           onChange={(e) =>
@@ -1941,7 +1952,7 @@ const GroupCreatedBuilder = ({
         className="font-body"
         style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
       >
-        Then create the following tasks in the new group:
+        {t('automation.thenCreateTasks')}
       </p>
       <div className="flex flex-col gap-2">
         {templates.map((t, i) => (
@@ -1970,7 +1981,7 @@ const GroupCreatedBuilder = ({
           }}
         >
           <Plus size={14} aria-hidden="true" />
-          Add task
+          {t('automation.addTask')}
         </button>
       </div>
     </div>
@@ -1993,6 +2004,7 @@ const AutomationsModal = ({
   // In embedded mode, the automation to edit (null → create a new one).
   editAutomation = null,
 }) => {
+  const { t } = useTranslation();
   const boardStatuses = useMemo(
     () => (board && Array.isArray(board.statuses) ? board.statuses : []),
     [board]
@@ -2038,7 +2050,7 @@ const AutomationsModal = ({
         console.error('Failed to load automations:', err);
         setListError(
           err?.response?.data?.error ||
-            'Failed to load automations. Please try again.'
+            t('automation.loadAutomationsError')
         );
       })
       .finally(() => setLoading(false));
@@ -2224,21 +2236,21 @@ const AutomationsModal = ({
   const validateActions = () => validateActionList(form.actions, actionCatalog);
 
   const validateLocal = () => {
-    if (!form.name.trim()) return 'Automation name is required';
+    if (!form.name.trim()) return t('automation.errorNameRequired');
 
     if (NEW_EVENT_TRIGGERS.includes(form.triggerType)) {
       const tc = form.triggerConfig || {};
       if (form.triggerType === 'STATUS_BECAME') {
-        if (!tc.columnId) return 'Choose a status column';
-        if (!tc.toValue) return 'Choose the value the status should become';
+        if (!tc.columnId) return t('automation.errorChooseStatusColumn');
+        if (!tc.toValue) return t('automation.errorChooseStatusValue');
       }
       if (form.triggerType === 'DATE_ARRIVED') {
-        if (!tc.columnId) return 'Choose a date column';
+        if (!tc.columnId) return t('automation.errorChooseDateColumn');
         const n = Number(tc.offsetDays);
-        if (!Number.isInteger(n)) return 'Days offset must be a whole number';
+        if (!Number.isInteger(n)) return t('automation.errorOffsetWholeNumber');
       }
       if (form.triggerType === 'PERSON_ASSIGNED' && !tc.columnId) {
-        return 'Choose a person column';
+        return t('automation.errorChoosePersonColumn');
       }
       // COLUMN_VALUE_CHANGED: columnId optional. FORM/WEBHOOK: no config needed.
       return validateActions();
@@ -2246,14 +2258,14 @@ const AutomationsModal = ({
 
     if (form.triggerType === 'GROUP_CREATED') {
       const templates = form.groupCreatedTemplates || [];
-      if (templates.length === 0) return 'Add at least one task template';
+      if (templates.length === 0) return t('automation.errorAddTaskTemplate');
       for (let i = 0; i < templates.length; i++) {
-        const t = templates[i];
-        if (!t.name?.trim()) return `Task ${i + 1}: name is required`;
-        if (t.dueInDays !== '' && t.dueInDays !== null && t.dueInDays !== undefined) {
-          const n = Number(t.dueInDays);
+        const tpl = templates[i];
+        if (!tpl.name?.trim()) return t('automation.errorTaskNameRequired', { index: i + 1 });
+        if (tpl.dueInDays !== '' && tpl.dueInDays !== null && tpl.dueInDays !== undefined) {
+          const n = Number(tpl.dueInDays);
           if (!Number.isFinite(n) || n < 0) {
-            return `Task ${i + 1}: due in days must be a non-negative number`;
+            return t('automation.errorTaskDueNonNegative', { index: i + 1 });
           }
         }
       }
@@ -2262,7 +2274,7 @@ const AutomationsModal = ({
         try {
           new RegExp(pattern);
         } catch (err) {
-          return `Group name pattern is not a valid regex: ${err.message}`;
+          return t('automation.errorInvalidRegex', { error: err.message });
         }
       }
       return null;
@@ -2273,27 +2285,27 @@ const AutomationsModal = ({
       if (actionsError) return actionsError;
       const conds = form.conditions || [];
       for (let i = 0; i < conds.length; i++) {
-        if (!conds[i].type) return `Condition ${i + 1}: choose a type`;
-        if (!conds[i].value) return `Condition ${i + 1}: choose a value`;
+        if (!conds[i].type) return t('automation.errorConditionType', { index: i + 1 });
+        if (!conds[i].value) return t('automation.errorConditionValue', { index: i + 1 });
       }
       return null;
     }
 
-    if (!form.templateName.trim()) return 'Task title is required';
-    if (!form.group) return 'Please choose a group';
+    if (!form.templateName.trim()) return t('automation.errorTaskTitleRequired');
+    if (!form.group) return t('automation.errorChooseGroup');
     if (form.frequency === 'weekly' && (!form.daysOfWeek || form.daysOfWeek.length === 0)) {
-      return 'Pick at least one day of the week';
+      return t('automation.errorPickWeekday');
     }
     if (form.frequency === 'monthly' && !form.useLastDayOfMonth) {
       const d = Number(form.dayOfMonth);
       if (!Number.isInteger(d) || d < 1 || d > 28) {
-        return 'Day of month must be between 1 and 28 (or use "Last day of the month")';
+        return t('automation.errorDayOfMonthRange');
       }
     }
     if (form.dueInDays !== '' && form.dueInDays !== null) {
       const n = Number(form.dueInDays);
       if (!Number.isFinite(n) || n < 0) {
-        return 'Due in days must be a non-negative number';
+        return t('automation.errorDueNonNegative');
       }
     }
     return null;
@@ -2327,7 +2339,7 @@ const AutomationsModal = ({
       setEditingId(null);
     } catch (e) {
       setFormError(
-        e?.response?.data?.error || 'Failed to save automation. Please try again.'
+        e?.response?.data?.error || t('automation.saveAutomationError')
       );
     } finally {
       setSaving(false);
@@ -2335,14 +2347,14 @@ const AutomationsModal = ({
   };
 
   const handleDelete = async (automation) => {
-    if (!window.confirm(`Delete automation "${automation.name}"?`)) return;
+    if (!window.confirm(t('automation.confirmDelete', { name: automation.name }))) return;
     setBusyId(automation._id);
     try {
       await automationService.deleteAutomation(automation._id);
       setAutomations((list) => list.filter((a) => a._id !== automation._id));
     } catch (e) {
       setListError(
-        e?.response?.data?.error || 'Failed to delete automation.'
+        e?.response?.data?.error || t('automation.deleteAutomationError')
       );
     } finally {
       setBusyId(null);
@@ -2360,7 +2372,7 @@ const AutomationsModal = ({
       );
     } catch (e) {
       setListError(
-        e?.response?.data?.error || 'Failed to update automation.'
+        e?.response?.data?.error || t('automation.updateAutomationError')
       );
     } finally {
       setBusyId(null);
@@ -2378,7 +2390,7 @@ const AutomationsModal = ({
       }
     } catch (e) {
       setListError(
-        e?.response?.data?.error || 'Failed to run automation.'
+        e?.response?.data?.error || t('automation.runAutomationError')
       );
     } finally {
       setBusyId(null);
@@ -2398,7 +2410,7 @@ const AutomationsModal = ({
       }
     } catch (e) {
       setFormError(
-        e?.response?.data?.error || 'Failed to run automation.'
+        e?.response?.data?.error || t('automation.runAutomationError')
       );
     } finally {
       setSaving(false);
@@ -2412,11 +2424,11 @@ const AutomationsModal = ({
           className="font-body"
           style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
         >
-          Automatically create tasks on a recurring schedule, or when an item is created.
+          {t('automation.listIntro')}
         </p>
         {isAdmin && (
           <Button variant="primary" size="sm" icon={Plus} onClick={openCreate}>
-            New Automation
+            {t('automation.newAutomation')}
           </Button>
         )}
       </div>
@@ -2435,7 +2447,7 @@ const AutomationsModal = ({
           className="font-body"
           style={{ fontSize: 13, color: 'var(--color-text-muted)' }}
         >
-          Loading…
+          {t('automation.loading')}
         </p>
       ) : automations.length === 0 ? (
         <div
@@ -2444,10 +2456,10 @@ const AutomationsModal = ({
         >
           <Zap size={28} aria-hidden="true" />
           <p className="font-body mt-2" style={{ fontSize: 14 }}>
-            No automations yet
+            {t('automation.noAutomationsYet')}
           </p>
           <p className="font-body" style={{ fontSize: 12 }}>
-            Create one to spawn tasks on a schedule or when items are created.
+            {t('automation.noAutomationsHint')}
           </p>
         </div>
       ) : (
@@ -2490,7 +2502,7 @@ const AutomationsModal = ({
                             color: 'var(--color-text-muted)',
                           }}
                         >
-                          paused
+                          {t('automation.paused')}
                         </span>
                       )}
                     </div>
@@ -2517,20 +2529,20 @@ const AutomationsModal = ({
                     >
                       {a.triggerType === 'ITEM_CREATED'
                         ? a.enabled
-                          ? 'Runs on item creation'
-                          : 'paused'
+                          ? t('automation.runsOnItemCreation')
+                          : t('automation.paused')
                         : a.triggerType === 'GROUP_CREATED'
                           ? a.enabled
-                            ? 'Runs on group creation'
-                            : 'paused'
+                            ? t('automation.runsOnGroupCreation')
+                            : t('automation.paused')
                           : NEW_EVENT_TRIGGERS.includes(a.triggerType)
                             ? a.enabled
                               ? DORMANT_TRIGGERS.includes(a.triggerType)
-                                ? 'Ready (fires once feature ships)'
-                                : 'Runs on trigger'
-                              : 'paused'
-                            : `Next run: ${a.enabled ? formatNextRun(a.nextRunAt) : 'paused'}`}
-                      {a.lastRunAt && ` · Last: ${formatNextRun(a.lastRunAt)}`}
+                                ? t('automation.readyFiresOnceShips')
+                                : t('automation.runsOnTrigger')
+                              : t('automation.paused')
+                            : t('automation.nextRun', { value: a.enabled ? formatNextRun(a.nextRunAt) : t('automation.paused') })}
+                      {a.lastRunAt && ` · ${t('automation.lastRun', { value: formatNextRun(a.lastRunAt) })}`}
                     </p>
                   </div>
 
@@ -2544,8 +2556,8 @@ const AutomationsModal = ({
                       type="button"
                       onClick={() => handleRunNow(a)}
                       disabled={isBusy}
-                      aria-label="Run now"
-                      title="Run now"
+                      aria-label={t('automation.runNow')}
+                      title={t('automation.runNow')}
                       className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
                       style={{
                         width: 30,
@@ -2561,8 +2573,8 @@ const AutomationsModal = ({
                       type="button"
                       onClick={() => setRunLogFor(a)}
                       disabled={isBusy}
-                      aria-label="Run log"
-                      title="Run log"
+                      aria-label={t('automation.runLog')}
+                      title={t('automation.runLog')}
                       className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
                       style={{
                         width: 30,
@@ -2578,8 +2590,8 @@ const AutomationsModal = ({
                       type="button"
                       onClick={() => openEdit(a)}
                       disabled={isBusy}
-                      aria-label="Edit"
-                      title="Edit"
+                      aria-label={t('automation.edit')}
+                      title={t('automation.edit')}
                       className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
                       style={{
                         width: 30,
@@ -2595,8 +2607,8 @@ const AutomationsModal = ({
                       type="button"
                       onClick={() => handleDelete(a)}
                       disabled={isBusy}
-                      aria-label="Delete"
-                      title="Delete"
+                      aria-label={t('automation.delete')}
+                      title={t('automation.delete')}
                       className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)]"
                       style={{
                         width: 30,
@@ -2640,13 +2652,13 @@ const AutomationsModal = ({
           }}
         >
           <ChevronLeft size={14} aria-hidden="true" />
-          Back to list
+          {t('automation.backToList')}
         </button>
       )}
 
       <Input
-        label="Automation Name"
-        placeholder="e.g. Weekly standup task"
+        label={t('automation.nameLabel')}
+        placeholder={t('automation.namePlaceholder')}
         value={form.name}
         onChange={setField('name')}
         required
@@ -2659,7 +2671,7 @@ const AutomationsModal = ({
           className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          Trigger
+          {t('automation.triggerLabel')}
         </label>
         <SegmentedControl
           options={TRIGGER_OPTIONS}
@@ -2675,7 +2687,7 @@ const AutomationsModal = ({
           className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          Frequency
+          {t('automation.frequencyLabel')}
         </label>
         <SegmentedControl
           options={FREQUENCIES}
@@ -2692,7 +2704,7 @@ const AutomationsModal = ({
             className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            Days of week
+            {t('automation.daysOfWeekLabel')}
           </label>
           <WeekdayChips
             value={form.daysOfWeek}
@@ -2708,7 +2720,7 @@ const AutomationsModal = ({
             className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            Day of month
+            {t('automation.dayOfMonthLabel')}
           </label>
           <select
             value={form.useLastDayOfMonth ? 'last' : String(form.dayOfMonth)}
@@ -2743,7 +2755,7 @@ const AutomationsModal = ({
                 {d}
               </option>
             ))}
-            <option value="last">Last day of the month</option>
+            <option value="last">{t('automation.lastDayOfMonth')}</option>
           </select>
         </div>
       )}
@@ -2751,7 +2763,7 @@ const AutomationsModal = ({
       {form.triggerType === 'SCHEDULE' && (
       <div className="grid grid-cols-2 gap-4">
         <SelectField
-          label="Time of day"
+          label={t('automation.timeOfDayLabel')}
           value={form.hour}
           onChange={(e) =>
             setForm((f) => ({ ...f, hour: Number(e.target.value) }))
@@ -2764,7 +2776,7 @@ const AutomationsModal = ({
             className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            Timezone
+            {t('automation.timezoneLabel')}
           </label>
           {tzList ? (
             <select
@@ -2797,7 +2809,7 @@ const AutomationsModal = ({
                 setForm((f) => ({ ...f, timezone: e.target.value }))
               }
               disabled={saving}
-              placeholder="e.g. Europe/Paris"
+              placeholder={t('automation.timezonePlaceholder')}
             />
           )}
         </div>
@@ -2816,8 +2828,8 @@ const AutomationsModal = ({
 
       {form.triggerType === 'SCHEDULE' && (
       <Input
-        label="Task Title"
-        placeholder="e.g. Daily standup"
+        label={t('automation.taskTitleLabel')}
+        placeholder={t('automation.taskTitlePlaceholder')}
         value={form.templateName}
         onChange={setField('templateName')}
         required
@@ -2828,14 +2840,14 @@ const AutomationsModal = ({
       {form.triggerType === 'SCHEDULE' && (
       <div className="grid grid-cols-2 gap-4">
         <SelectField
-          label="Group"
+          label={t('automation.groupLabel')}
           value={form.group}
           onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
-          options={groupOptions.length > 0 ? groupOptions : [{ value: '', label: 'No groups' }]}
+          options={groupOptions.length > 0 ? groupOptions : [{ value: '', label: t('automation.noGroups') }]}
           disabled={saving || groupOptions.length === 0}
         />
         <SelectField
-          label="Priority"
+          label={t('automation.priorityLabel')}
           value={form.priority}
           onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
           options={PRIORITIES}
@@ -2850,7 +2862,7 @@ const AutomationsModal = ({
           className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          Assignees
+          {t('automation.assigneesLabel')}
         </label>
         <AssigneePicker
           members={members}
@@ -2863,10 +2875,10 @@ const AutomationsModal = ({
 
       {form.triggerType === 'SCHEDULE' && (
       <Input
-        label="Due in N days (optional)"
+        label={t('automation.dueInDaysLabel')}
         type="number"
         min={0}
-        placeholder="e.g. 3"
+        placeholder={t('automation.dueInDaysPlaceholder')}
         value={form.dueInDays}
         onChange={setField('dueInDays')}
         disabled={saving}
@@ -2875,8 +2887,8 @@ const AutomationsModal = ({
 
       {form.triggerType === 'SCHEDULE' && (
       <Input
-        label="Note (optional)"
-        placeholder="Any additional context…"
+        label={t('automation.noteLabel')}
+        placeholder={t('automation.notePlaceholder')}
         value={form.note}
         onChange={setField('note')}
         disabled={saving}
@@ -2923,7 +2935,7 @@ const AutomationsModal = ({
         checked={form.enabled}
         onChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
         disabled={saving}
-        label="Enabled"
+        label={t('automation.enabled')}
       />
 
       {formError && (
@@ -2939,7 +2951,7 @@ const AutomationsModal = ({
 
   const footer = view === 'list' ? (
     <Button variant="secondary" onClick={handleClose}>
-      Close
+      {t('automation.close')}
     </Button>
   ) : (
     <>
@@ -2949,14 +2961,14 @@ const AutomationsModal = ({
           onClick={handleRunNowFromForm}
           disabled={saving}
         >
-          Run now
+          {t('automation.runNow')}
         </Button>
       )}
       <Button variant="secondary" onClick={backToList} disabled={saving}>
-        Cancel
+        {t('automation.cancel')}
       </Button>
       <Button variant="primary" onClick={handleSave} disabled={saving}>
-        {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Create Automation'}
+        {saving ? t('automation.saving') : editingId ? t('automation.saveChanges') : t('automation.createAutomation')}
       </Button>
     </>
   );
@@ -2985,7 +2997,7 @@ const AutomationsModal = ({
               className="font-display font-semibold"
               style={{ fontSize: 16, color: 'var(--color-text-primary)' }}
             >
-              {editingId ? 'Edit Automation' : 'New Automation'}
+              {editingId ? t('automation.editAutomation') : t('automation.newAutomation')}
             </h2>
           </div>
           <div style={{ padding: '18px' }}>{renderFormView()}</div>
@@ -3014,7 +3026,7 @@ const AutomationsModal = ({
       <Modal
         isOpen={isOpen}
         onClose={handleClose}
-        title={view === 'list' ? 'Automations' : editingId ? 'Edit Automation' : 'New Automation'}
+        title={view === 'list' ? t('automation.automationsTitle') : editingId ? t('automation.editAutomation') : t('automation.newAutomation')}
         maxWidth={620}
         footer={footer}
       >

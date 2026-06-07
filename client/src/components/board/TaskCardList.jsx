@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 
 const NAVBAR_HEIGHT = 56;
@@ -25,10 +26,11 @@ const TaskCardList = ({
   onLabelsClick,
   onActionsClick,
   highlightedTaskId,
-  emptyLabel = 'No tasks in this group yet',
+  emptyLabel,
   groupId = null,
   dndDisabled = false,
 }) => {
+  const { t } = useTranslation();
   if (tasks.length === 0) {
     return (
       <div
@@ -39,7 +41,7 @@ const TaskCardList = ({
           padding: '20px 16px',
         }}
       >
-        {emptyLabel}
+        {emptyLabel ?? t('grid.noLeadsInGroup')}
       </div>
     );
   }
@@ -124,6 +126,7 @@ const TaskCardItem = ({
  * admins) opens the corresponding menu.
  */
 const TaskCard = ({ task, board, onOpen, onStatusClick, onPriorityClick, onLabelsClick, onActionsClick }) => {
+  const { t } = useTranslation();
   const assignees = Array.isArray(task.assignedTo) ? task.assignedTo : [];
   const statusIsDone = (() => {
     if (board && Array.isArray(board.statuses) && task.status != null) {
@@ -168,7 +171,7 @@ const TaskCard = ({ task, board, onOpen, onStatusClick, onPriorityClick, onLabel
           <button
             type="button"
             onClick={(e) => onActionsClick(task, e)}
-            aria-label="Task actions"
+            aria-label={t('grid.leadActions')}
             className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] shrink-0"
             style={{ width: 28, height: 28 }}
           >
@@ -240,7 +243,7 @@ const TaskCard = ({ task, board, onOpen, onStatusClick, onPriorityClick, onLabel
               className="font-body"
               style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
             >
-              Unassigned
+              {t('grid.unassigned')}
             </span>
           )}
         </div>
@@ -265,7 +268,7 @@ const TaskCard = ({ task, board, onOpen, onStatusClick, onPriorityClick, onLabel
             className="font-body shrink-0"
             style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
           >
-            No due date
+            {t('grid.noDueDate')}
           </span>
         )}
       </div>

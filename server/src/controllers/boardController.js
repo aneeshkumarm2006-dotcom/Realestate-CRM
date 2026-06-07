@@ -9,7 +9,9 @@ const {
   boardTemplates,
   getBoardTemplate,
   materializeTemplateColumns,
+  materializeTemplateGroups,
   buildDefaultColumns,
+  buildPrimaryOnlyColumns,
 } = require('../utils/boardTemplates');
 const { grantedBoardAccessForUser } = require('../middleware/roleCheck');
 
@@ -225,10 +227,11 @@ const createBoard = async (req, res) => {
     // template and seed `board.columns` from it. Flips `useFlexibleColumns`
     // on so the new board uses the F1 code path from the first request.
     const templateId = req.query.template || req.body.template;
+    let template = null;
     let templateColumns = [];
     let useFlexibleColumns = false;
     if (templateId) {
-      const template = getBoardTemplate(templateId);
+      template = getBoardTemplate(templateId);
       if (!template) {
         return res.status(400).json({ error: `Unknown template id: ${templateId}` });
       }
@@ -249,14 +252,25 @@ const createBoard = async (req, res) => {
       useFlexibleColumns,
     });
 
-    // Non-template boards default to the flexible-columns engine too. The
-    // board now has real status `_id`s, so seed default columns that mirror
-    // the legacy fields (Name/Status/Priority/Owner/Due) and flip the flag.
-    // A fresh board has no tasks, so no value backfill is needed.
+    // Non-template boards start blank on the flexible-columns engine: only the
+    // primary "Name" column. The user adds the columns they actually want
+    // (Status, Priority, etc.) on the spot via "+ Add column" — we no longer
+    // force a preset Status/Priority/Owner/Due set onto every new board.
     if (!templateId) {
-      board.columns = buildDefaultColumns(board);
+      board.columns = buildPrimaryOnlyColumns();
       board.useFlexibleColumns = true;
       await board.save();
+    }
+
+    // Seed the template's pipeline-stage groups (e.g. New Lead → Contacted → …)
+    // so a CRM board opens with its pipeline ready, not a blank board.
+    if (template) {
+      const groups = materializeTemplateGroups(template);
+      if (groups.length > 0) {
+        await TaskGroup.insertMany(
+          groups.map((g) => ({ name: g.name, board: board._id, order: g.order }))
+        );
+      }
     }
 
     return res.status(201).json({ board });
@@ -819,6 +833,7 @@ const listBoardTemplates = async (req, res) => {
         name: t.name,
         description: t.description,
         columns: t.columns,
+        groups: Array.isArray(t.groups) ? t.groups : [],
       })),
     });
   } catch (err) {

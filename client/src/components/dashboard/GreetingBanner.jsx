@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ArrowRight } from 'lucide-react';
 import Button from '../ui/Button';
 
@@ -8,14 +9,14 @@ import Button from '../ui/Button';
  *
  * Props:
  *   name            — user's display name
- *   pendingCount    — number of pending tasks for the user
+ *   pendingCount    — number of leads waiting for the user
  */
 
-const timeOfDayGreeting = () => {
+const greetingKeyForNow = () => {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return 'dashboard.greetingMorning';
+  if (h < 18) return 'dashboard.greetingAfternoon';
+  return 'dashboard.greetingEvening';
 };
 
 const MacanIcon = () => (
@@ -36,13 +37,10 @@ const MacanIcon = () => (
 
 const GreetingBanner = ({ name = 'there', pendingCount = 0 }) => {
   const navigate = useNavigate();
-  const greeting = timeOfDayGreeting();
+  const { t } = useTranslation();
   const firstName = (name || '').split(' ')[0] || 'there';
-
-  const tasksLabel =
-    pendingCount === 1
-      ? 'You have 1 task waiting.'
-      : `You have ${pendingCount} tasks waiting.`;
+  const greeting = t(greetingKeyForNow(), { name: firstName });
+  const tasksLabel = t('dashboard.leadsWaiting', { count: pendingCount });
 
   return (
     <div
@@ -64,7 +62,7 @@ const GreetingBanner = ({ name = 'there', pendingCount = 0 }) => {
               letterSpacing: 'var(--tracking-tight)',
             }}
           >
-            {greeting}, {firstName}!
+            {greeting}
           </h1>
           <p
             className="font-body mt-1"
@@ -85,10 +83,10 @@ const GreetingBanner = ({ name = 'there', pendingCount = 0 }) => {
           iconPosition="right"
           onClick={() => navigate('/boards')}
         >
-          View All Boards
+          {t('dashboard.viewBoards')}
         </Button>
         <Button variant="secondary" onClick={() => navigate('/analytics')}>
-          View Analytics
+          {t('dashboard.viewReports')}
         </Button>
       </div>
     </div>

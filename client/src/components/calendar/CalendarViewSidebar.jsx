@@ -1,4 +1,5 @@
 import { CalendarDays, Plus, Pencil, Trash2, Users, Globe } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * CalendarViewSidebar — lists saved calendar views (own + shared) plus a
@@ -25,6 +26,7 @@ const CalendarViewSidebar = ({
   onEdit,
   onDelete,
 }) => {
+  const { t } = useTranslation();
   const canManage = (view) =>
     String(view.userId) === String(currentUserId) || (view.isShared && isAdmin);
 
@@ -57,12 +59,12 @@ const CalendarViewSidebar = ({
             color: 'var(--color-text-secondary)',
           }}
         >
-          Views
+          {t('pages.views')}
         </span>
         <button
           type="button"
           onClick={onNew}
-          aria-label="New calendar view"
+          aria-label={t('pages.newCalendarView')}
           className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
           style={{ width: 26, height: 26 }}
         >
@@ -74,7 +76,7 @@ const CalendarViewSidebar = ({
         {/* Built-in default — all tasks across the workspace by due date. */}
         <ViewRow
           icon={CalendarDays}
-          label="All tasks"
+          label={t('pages.allLeads')}
           active={!activeViewId}
           onClick={() => onSelect?.(null)}
         />
@@ -84,7 +86,7 @@ const CalendarViewSidebar = ({
             key={view._id}
             icon={view.boardId ? CalendarDays : Globe}
             label={view.name}
-            badge={view.isShared ? 'shared' : null}
+            badge={view.isShared ? t('pages.shared') : null}
             active={String(activeViewId) === String(view._id)}
             onClick={() => onSelect?.(view._id)}
             actions={
@@ -92,7 +94,7 @@ const CalendarViewSidebar = ({
                 <>
                   <RowAction
                     icon={Pencil}
-                    label={`Edit ${view.name}`}
+                    label={t('pages.editNamed', { name: view.name })}
                     onClick={(e) => {
                       e.stopPropagation();
                       onEdit?.(view);
@@ -100,7 +102,7 @@ const CalendarViewSidebar = ({
                   />
                   <RowAction
                     icon={Trash2}
-                    label={`Delete ${view.name}`}
+                    label={t('pages.deleteNamed', { name: view.name })}
                     onClick={(e) => {
                       e.stopPropagation();
                       onDelete?.(view);
@@ -121,7 +123,7 @@ const CalendarViewSidebar = ({
               padding: '8px 14px',
             }}
           >
-            No saved views yet.
+            {t('pages.noSavedViews')}
           </p>
         )}
       </div>
@@ -142,7 +144,7 @@ const CalendarViewSidebar = ({
           }}
         >
           <Plus size={14} aria-hidden="true" />
-          New view
+          {t('pages.newView')}
         </button>
       </div>
     </aside>
