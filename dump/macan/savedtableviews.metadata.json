@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"userId":{"$numberInt":"1"},"boardId":{"$numberInt":"1"}},"name":"userId_1_boardId_1"}],"uuid":"6e3cf347090c4374b626f06c4da835ad","collectionName":"savedtableviews","type":"collection"}
