@@ -60,6 +60,36 @@ const sanitizeFieldMap = (raw) => {
   }));
 };
 
+/** Hex color guard (#rgb or #rrggbb). */
+const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * Sanitise the public-form branding payload (Phase 1.7). Image fields must be
+ * http(s) URLs; accentColor must be a hex string; headline is length-capped.
+ * Anything invalid falls back to empty → default styling.
+ */
+const sanitizeBranding = (b) => {
+  const x = b && typeof b === 'object' ? b : {};
+  const url = (v) =>
+    typeof v === 'string' && /^https?:\/\//i.test(v.trim()) ? v.trim() : '';
+  return {
+    logoUrl: url(x.logoUrl),
+    coverUrl: url(x.coverUrl),
+    accentColor:
+      typeof x.accentColor === 'string' && HEX_RE.test(x.accentColor.trim())
+        ? x.accentColor.trim()
+        : '',
+    headline: typeof x.headline === 'string' ? x.headline.slice(0, 120) : '',
+  };
+};
+
+const brandingOut = (f) => ({
+  logoUrl: f.branding?.logoUrl || '',
+  coverUrl: f.branding?.coverUrl || '',
+  accentColor: f.branding?.accentColor || '',
+  headline: f.branding?.headline || '',
+});
+
 /** Full admin-facing form shape (includes the composed public URL). */
 const serializeForm = (f) => ({
   _id: f._id,
@@ -71,6 +101,7 @@ const serializeForm = (f) => ({
   postSubmitRedirectUrl: f.postSubmitRedirectUrl || '',
   captchaEnabled: !!f.captchaEnabled,
   enabled: !!f.enabled,
+  branding: brandingOut(f),
   publicUrl: `${PUBLIC_BASE_URL()}/f/${f.slug}`,
   createdAt: f.createdAt,
   updatedAt: f.updatedAt,
@@ -88,6 +119,7 @@ const serializePublicForm = (f) => ({
     options: field.options || [],
   })),
   welcomeMessage: f.welcomeMessage || '',
+  branding: brandingOut(f),
   captchaEnabled: !!f.captchaEnabled,
   captchaSiteKey: f.captchaEnabled ? process.env.TURNSTILE_SITE_KEY || null : null,
 });
@@ -169,6 +201,7 @@ const createForm = async (req, res) => {
       postSubmitRedirectUrl: typeof body.postSubmitRedirectUrl === 'string' ? body.postSubmitRedirectUrl : '',
       captchaEnabled: body.captchaEnabled === true || body.captchaEnabled === 'true',
       enabled: body.enabled === undefined ? true : !!body.enabled,
+      branding: sanitizeBranding(body.branding),
     });
     return res.status(201).json({ form: serializeForm(form) });
   } catch (err) {
@@ -217,6 +250,7 @@ const updateForm = async (req, res) => {
     if (body.postSubmitRedirectUrl !== undefined) form.postSubmitRedirectUrl = String(body.postSubmitRedirectUrl || '');
     if (body.captchaEnabled !== undefined) form.captchaEnabled = body.captchaEnabled === true || body.captchaEnabled === 'true';
     if (body.enabled !== undefined) form.enabled = !!body.enabled;
+    if (body.branding !== undefined) form.branding = sanitizeBranding(body.branding);
 
     await form.save();
     return res.json({ form: serializeForm(form) });

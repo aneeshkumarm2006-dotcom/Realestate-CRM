@@ -70,25 +70,42 @@
   `TaskGroup`s.)
 - ✅ **1.2 Listings / Inventory template** — buildings as groups, units as rows,
   with Availability, Bedrooms, Bathrooms, Sqft, Price, Floor, Notes.
+- ✅ **1.3 Starter RE automation recipes** — 3 new recipes that bind cleanly to the
+  Real Estate CRM template: intake form → assign agent + welcome email; Lead Status
+  → Interested → notify agent; visit-date − 1 day → SMS reminder. (13 recipes total
+  now; `server/src/seeds/automationRecipes.js`.)
 - ✅ **1.4 View-tab switcher** — already shipped (verified in audit).
+- ✅ **1.6 Group summaries** — per-group footer with clickable numeric
+  SUM/AVG/COUNT/MIN/MAX + status/dropdown distribution ("battery") bar, frozen
+  first column. (`client/src/utils/columnSummary.js`, `DataGrid.jsx`.)
+- ✅ **1.7 Form branding** — logo, cover image, accent color, custom headline on
+  public intake forms (`Form.branding`, FormBuilder branding section,
+  PublicFormPage renders it).
+- ✅ **1.5 Advanced filter builder** — Monday-style two-mode filter. **Quick
+  filters** (column chips) + **Advanced builder**: `Where [Column][Condition]
+  [Value]` rows with **AND/OR**, **nested groups**, live "Showing X of Y" count,
+  Clear all, and a **Quick ↔ Advanced** toggle. Full per-type operator set
+  (is/contains/between/before/after/empty/…) on a recursive `{conjunction, rules}`
+  tree. ⛔ No "Filter with AI". (`columnFilter.js`, `AdvancedFilterPanel.jsx`,
+  `BoardFilterBar.jsx`, `taskFilters.js`.)
+- ✅ **1.1 starter form** — creating a Real Estate CRM board now auto-seeds a
+  **"Lead Intake"** public form (Lead/Email/Phone/Building/Visit Type/Language,
+  bilingual thank-you), which appears as a board **form tab**. (`boardTemplates.js
+  buildStarterForm`, `boardController.createBoard`.)
+- ✅ **Forms as board tabs** — public forms render as tabs next to Board · Table
+  view · Insights, with a live preview + copy/open/edit. (`FormBoardView.jsx`.)
 - ✅ Templates picker shows a **stages** line; templates API exposes `groups`.
+- **Phase 1 — Core CRM parity: ✅ COMPLETE.**
 
 ---
 
 ## 🔴 Remaining
 
-### Phase 1 — Core CRM parity (finish)
-- 🔴 **1.3 Starter RE automation recipes** — form→create lead+assign agent,
-  status→notify, visit-date→reminder. Extend `server/src/seeds/automationRecipes.js`.
-- 🔴 **1.5 Advanced filter builder** — Monday-style `Where [Column][Condition]
-  [Value]` + **AND/OR groups** + nested groups + live count + Save-to-view +
-  "Switch to quick filters" toggle. Per-type operator sets + group-tree shape.
-  Spec detailed in [FEATURES.md §1.5](FEATURES.md). (Quick filters already ✅.)
-  ⛔ No "Filter with AI".
-- 🟡 **1.6 Group summaries** — numeric SUM/AVG footer + status battery bar per group.
-- 🟡 **1.7 Form branding** — logo, cover, colors on public intake forms.
-- 🟡 **1.1 (remainder)** — bilingual public intake form + starter automations wired
-  to the CRM template seed.
+### Phase 1 — Core CRM parity — ✅ COMPLETE (nothing left)
+> Optional polish: per-field **bilingual** form labels on the public form
+> (currently labels come from column names; thank-you copy is bilingual), and
+> **Save-to-view** for the advanced filter (persist the tree to a SavedTableView +
+> mirror the evaluator server-side). Neither blocks Phase 1.
 
 ### Phase 1b — Automations Hub & general-purpose library — 🔴
 - 🔴 Automations Hub page (Health · Usage · Workflows · Connections), general

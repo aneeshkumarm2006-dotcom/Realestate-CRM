@@ -184,10 +184,36 @@ const PublicFormPage = () => {
     );
   }
 
+  const brand = form.branding || {};
+  const accent = brand.accentColor || '#2563EB';
+
   return (
     <div style={page}>
       <div style={card}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', marginBottom: 24 }}>{form.name}</h1>
+        {/* Branding (Phase 1.7): cover image, logo, custom headline */}
+        {brand.coverUrl && (
+          <img
+            src={brand.coverUrl}
+            alt=""
+            style={{
+              width: '100%',
+              height: 120,
+              objectFit: 'cover',
+              borderRadius: 8,
+              marginBottom: 16,
+            }}
+          />
+        )}
+        {brand.logoUrl && (
+          <img
+            src={brand.logoUrl}
+            alt=""
+            style={{ height: 44, width: 'auto', objectFit: 'contain', marginBottom: 12, display: 'block' }}
+          />
+        )}
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', marginBottom: 24 }}>
+          {brand.headline || form.name}
+        </h1>
         <form onSubmit={handleSubmit} className="flex flex-col" style={{ gap: 18 }}>
           {(form.fieldMap || []).map((field) => {
             const id = field.formFieldId;
@@ -233,7 +259,7 @@ const PublicFormPage = () => {
               height: 44,
               borderRadius: 8,
               border: 'none',
-              background: submitting ? '#93B4F5' : '#2563EB',
+              background: submitting ? '#93B4F5' : accent,
               color: '#fff',
               fontSize: 15,
               fontWeight: 600,

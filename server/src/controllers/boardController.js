@@ -10,9 +10,11 @@ const {
   getBoardTemplate,
   materializeTemplateColumns,
   materializeTemplateGroups,
+  buildStarterForm,
   buildDefaultColumns,
   buildPrimaryOnlyColumns,
 } = require('../utils/boardTemplates');
+const Form = require('../models/Form');
 const { grantedBoardAccessForUser } = require('../middleware/roleCheck');
 
 const VALID_VISIBILITIES = ['public', 'private'];
@@ -270,6 +272,23 @@ const createBoard = async (req, res) => {
         await TaskGroup.insertMany(
           groups.map((g) => ({ name: g.name, board: board._id, order: g.order }))
         );
+      }
+
+      // Auto-create the template's starter public intake form (PLAN.md §1.1),
+      // mapping its fields to the board's real column ids. Non-fatal on error.
+      const starter = buildStarterForm(template, board);
+      if (starter) {
+        try {
+          await Form.create({
+            boardId: board._id,
+            name: starter.name,
+            welcomeMessage: starter.welcomeMessage,
+            fieldMap: starter.fieldMap,
+            enabled: true,
+          });
+        } catch (formErr) {
+          console.error('createBoard: starter form seed failed:', formErr?.message || formErr);
+        }
       }
     }
 

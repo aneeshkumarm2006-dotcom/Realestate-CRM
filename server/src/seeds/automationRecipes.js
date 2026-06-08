@@ -259,6 +259,80 @@ const RECIPES = [
     region: ['Edmonton'],
     iconName: 'MapPin',
   },
+
+  // --- Leasing CRM starters (bind cleanly to the "Real Estate CRM" template,
+  //     PLAN.md §1.3): form→lead+assign, status→notify, visit-date→reminder ---
+
+  // 11 ★ — public intake form → assign an agent + welcome the lead by email.
+  {
+    slug: 'leasing-form-assign-and-welcome',
+    name: 'Intake form → assign agent + welcome',
+    description:
+      'When a lead arrives from a public intake form, auto-assign an agent and email the lead a welcome.',
+    triggerType: 'FORM_SUBMITTED',
+    triggerConfig: {},
+    conditions: [],
+    actions: [
+      { type: 'ASSIGN_LEAD_AGENT', config: {} },
+      {
+        type: 'SEND_EMAIL',
+        config: {
+          to: 'email',
+          subject: 'Welcome, {{Lead}}!',
+          body: 'Hi {{Lead}}, thanks for your interest — your agent will reach out shortly.',
+          template: '',
+        },
+      },
+    ],
+    region: null,
+    iconName: 'UserPlus',
+  },
+
+  // 12 ★ — Lead Status → Interested → notify the assigned agent.
+  {
+    slug: 'leasing-status-interested-notify-agent',
+    name: 'Lead Status → Interested → notify agent',
+    description:
+      "When Lead Status becomes 'Interested', notify the assigned agent to follow up.",
+    triggerType: 'STATUS_BECAME',
+    triggerConfig: { columnId: 'lead_status', toValue: 'interested' },
+    conditions: [],
+    actions: [
+      {
+        type: 'NOTIFY_PERSON',
+        config: {
+          userIdOrColumnRef: 'agent',
+          message: '{{Lead}} is now Interested — time to reach out.',
+          sendEmailDigest: false,
+        },
+      },
+    ],
+    region: null,
+    iconName: 'BadgeCheck',
+  },
+
+  // 13 ★ — one day before a visit → SMS the lead a reminder.
+  {
+    slug: 'leasing-visit-reminder-1-day',
+    name: 'Visit tomorrow → SMS reminder',
+    description:
+      'One day before a scheduled visit, send the lead an SMS reminder.',
+    triggerType: 'DATE_ARRIVED',
+    triggerConfig: { columnId: 'visit_date', offsetDays: 1, comparison: 'before' },
+    conditions: [],
+    actions: [
+      {
+        type: 'SEND_SMS',
+        config: {
+          to: 'phone',
+          template:
+            'Reminder: your visit is scheduled for {{Visit Date}}. Reply to reschedule.',
+        },
+      },
+    ],
+    region: null,
+    iconName: 'CalendarClock',
+  },
 ];
 
 /**

@@ -52,6 +52,9 @@ import BulkActionBar from '../components/board/BulkActionBar';
 import BoardFilterBar from '../components/board/BoardFilterBar';
 import TableView from '../components/board/TableView';
 import InsightsTab from '../components/board/InsightsTab';
+import FormBoardView from '../components/board/FormBoardView';
+import { FileText } from 'lucide-react';
+import * as formService from '../services/formService';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
@@ -65,6 +68,7 @@ import {
   hasActiveFilters,
   taskMatchesFilters,
 } from '../utils/taskFilters';
+import { columnsById } from '../utils/columnFilter';
 
 /**
  * Group color cycle — reuses the stat-card palette so groups are visually
@@ -265,6 +269,25 @@ const BoardDetailPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
 
+  // The board's public forms — surfaced as extra view tabs (Board · Table view ·
+  // Insights · <form>…). Refetched when the board changes.
+  const [forms, setForms] = useState([]);
+  useEffect(() => {
+    if (!boardId) {
+      setForms([]);
+      return;
+    }
+    formService
+      .listForms(boardId)
+      .then((list) => setForms(Array.isArray(list) ? list : []))
+      .catch(() => setForms([]));
+  }, [boardId]);
+
+  const activeForm =
+    typeof viewMode === 'string' && viewMode.startsWith('form:')
+      ? forms.find((f) => `form:${f._id}` === viewMode) || null
+      : null;
+
   // --- Handle highlightTask query param from notification click -----------
   useEffect(() => {
     const taskId = searchParams.get('highlightTask');
@@ -332,6 +355,8 @@ const BoardDetailPage = () => {
   }, [tasksByGroup]);
 
   const filtersActive = hasActiveFilters(filters);
+  // Column lookup for the advanced filter tree evaluator (per-column-type ops).
+  const colsById = useMemo(() => columnsById(board), [board]);
 
   // Apply the active filters per group. When nothing is active we hand back
   // the original buckets untouched so unfiltered boards skip the work.
@@ -340,10 +365,10 @@ const BoardDetailPage = () => {
     const now = new Date();
     const out = {};
     for (const [gid, list] of Object.entries(tasksByGroup)) {
-      out[gid] = (list || []).filter((t) => taskMatchesFilters(t, filters, now));
+      out[gid] = (list || []).filter((t) => taskMatchesFilters(t, filters, now, colsById));
     }
     return out;
-  }, [tasksByGroup, filters, filtersActive]);
+  }, [tasksByGroup, filters, filtersActive, colsById]);
 
   const matchedTaskCount = useMemo(
     () =>
@@ -1104,6 +1129,34 @@ const BoardDetailPage = () => {
             </button>
           );
         })}
+
+        {/* Form tabs — one per public form on this board (like Monday). */}
+        {forms.map((form) => {
+          const value = `form:${form._id}`;
+          const active = viewMode === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setViewMode(value)}
+              className="inline-flex items-center gap-1.5 font-body whitespace-nowrap transition-colors duration-150"
+              style={{
+                fontSize: 13,
+                fontWeight: active ? 600 : 500,
+                padding: '8px 14px',
+                color: active ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                borderBottom: active ? '2px solid var(--color-accent)' : '2px solid transparent',
+                background: 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              <FileText size={15} aria-hidden="true" />
+              {form.name}
+            </button>
+          );
+        })}
       </div>
 
       {viewMode === 'table' ? (
@@ -1114,6 +1167,8 @@ const BoardDetailPage = () => {
         <div className="mt-5">
           <InsightsTab boardId={boardId} board={board} isAdmin={isAdmin} />
         </div>
+      ) : activeForm ? (
+        <FormBoardView form={activeForm} isAdmin={isAdmin} />
       ) : (
         <>
       {/* Filter bar */}

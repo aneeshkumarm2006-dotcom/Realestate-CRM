@@ -24,7 +24,10 @@ import {
   optionsForColumn,
   selectionForColumn,
   setColumnSelection,
+  emptyTree,
+  countTreeConditions,
 } from '../../utils/columnFilter';
+import AdvancedFilterPanel from './AdvancedFilterPanel';
 
 // Lucide icon per filterable column type.
 const ICON_FOR_TYPE = {
@@ -65,6 +68,25 @@ const BoardFilterBar = ({
   const { t } = useTranslation();
   const activeCount = countActiveFilters(filters);
   const set = (patch) => onChange?.({ ...filters, ...patch });
+
+  // Advanced-mode (Phase 1.5): the builder popover lives here; quick chips hide
+  // while it's the active mode.
+  const isAdvanced = filters?.mode === 'advanced';
+  const [advOpen, setAdvOpen] = useState(false);
+  const advRef = useRef(null);
+  useEffect(() => {
+    if (!advOpen) return undefined;
+    const onDown = (e) => { if (advRef.current && !advRef.current.contains(e.target)) setAdvOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setAdvOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [advOpen]);
+  const openAdvanced = () => {
+    if (!isAdvanced) set({ mode: 'advanced', tree: filters.tree || emptyTree() });
+    setAdvOpen(true);
+  };
+  const advCount = isAdvanced ? countTreeConditions(filters.tree) : 0;
 
   // --- Derived option lists ------------------------------------------------
 
@@ -180,8 +202,65 @@ const BoardFilterBar = ({
         ) : null}
       </div>
 
-      {/* Flexible boards: one chip per filterable board column. */}
-      {isFlexible &&
+      {/* Advanced filter builder (Phase 1.5) — toggle + popover panel. */}
+      <div ref={advRef} style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onClick={() => (advOpen ? setAdvOpen(false) : openAdvanced())}
+          aria-expanded={advOpen}
+          className="inline-flex items-center gap-1.5 font-body transition-colors duration-150"
+          style={{
+            height: 34,
+            padding: '0 12px',
+            fontSize: 13,
+            fontWeight: 600,
+            borderRadius: 'var(--radius-md)',
+            border: '1.5px solid var(--color-border-strong)',
+            background: isAdvanced ? 'var(--color-accent-light)' : 'var(--color-bg-surface, #FFFFFF)',
+            color: isAdvanced ? 'var(--color-accent-text)' : 'var(--color-text-secondary)',
+            cursor: 'pointer',
+          }}
+        >
+          <SlidersHorizontal size={14} aria-hidden="true" />
+          {t('filter.advanced')}
+          {advCount > 0 && (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                minWidth: 16,
+                height: 16,
+                padding: '0 4px',
+                borderRadius: 9999,
+                background: 'var(--color-accent)',
+                color: '#fff',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {advCount}
+            </span>
+          )}
+        </button>
+        {advOpen && (
+          <div className="absolute left-0 mt-2" style={{ top: '100%', zIndex: 60 }}>
+            <AdvancedFilterPanel
+              board={board}
+              allTasks={allTasks}
+              tree={filters.tree}
+              matchedCount={matchedCount}
+              totalCount={totalCount}
+              onChange={(tree) => set({ mode: 'advanced', tree })}
+              onClear={() => set({ tree: emptyTree() })}
+              onSwitchToQuick={() => { set({ mode: 'quick' }); setAdvOpen(false); }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Flexible boards: one chip per filterable board column (Quick mode). */}
+      {!isAdvanced && isFlexible &&
         filterCols.map((col) => {
           const sel = selectionForColumn(filters.clauses, col._id);
           const opts = optionsForColumn(col, allTasks, optionLabels);
@@ -239,8 +318,8 @@ const BoardFilterBar = ({
           );
         })}
 
-      {/* Legacy boards: the classic fixed task-field chips. */}
-      {!isFlexible && (
+      {/* Legacy boards: the classic fixed task-field chips (Quick mode). */}
+      {!isAdvanced && !isFlexible && (
         <>
           {/* Status */}
           <FilterPopover label={t('boardMisc.status')} icon={CircleDot} activeCount={filters.statuses?.length || 0}>
@@ -368,6 +447,8 @@ const BoardFilterBar = ({
                 due: [],
                 assignees: [],
                 clauses: [],
+                tree: null,
+                mode: 'quick',
               })
             }
             className="inline-flex items-center gap-1 font-body transition-colors duration-150 hover:bg-[color:var(--color-bg-subtle)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"

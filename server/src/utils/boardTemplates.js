@@ -145,6 +145,15 @@ const realEstateCrm = {
   description:
     'Leasing lead pipeline (Rakotta-style): stages as groups, with building, agent, visit-type, language and contact fields.',
   groups: leasingPipelineGroups,
+  // A public intake form is auto-created with the board (PLAN.md §1.1). Field
+  // keys map to the columns above; `required` marks must-fill fields. Bilingual
+  // thank-you copy below (full per-field FR/EN labels are a later enhancement).
+  starterForm: {
+    name: 'Lead Intake',
+    welcomeMessage: "Merci! Nous vous contacterons bientôt. / Thanks! We'll be in touch shortly.",
+    fieldKeys: ['lead_name', 'email', 'phone', 'building', 'visit_type', 'language'],
+    requiredKeys: ['lead_name'],
+  },
   columns: [
     { key: 'lead_name',       name: 'Lead',           type: 'text',      isPrimary: true },
     { key: 'lead_status',     name: 'Lead Status',    type: 'status',    settings: { options: leadStatusOptions } },
@@ -302,6 +311,53 @@ const materializeTemplateGroups = (template) => {
   return names.map((name, order) => ({ name, order }));
 };
 
+// Map a board column type → a public form field type the builder understands.
+const FORM_FIELD_TYPE = {
+  text: 'text',
+  long_text: 'long_text',
+  email: 'email',
+  phone: 'phone',
+  number: 'number',
+  date: 'date',
+  dropdown: 'dropdown',
+  status: 'dropdown',
+  checkbox: 'checkbox',
+};
+
+/**
+ * Build the starter public intake form (PLAN.md §1.1) for a freshly-created
+ * template board. Resolves the template's `starterForm.fieldKeys` against the
+ * board's real column ids and returns `{ name, welcomeMessage, fieldMap }`, or
+ * null when the template defines no starter form. The caller persists it.
+ */
+const buildStarterForm = (template, board) => {
+  const spec = template && template.starterForm;
+  if (!spec || !Array.isArray(spec.fieldKeys)) return null;
+  const byKey = {};
+  for (const c of board.columns || []) byKey[c.key] = c;
+  const required = new Set(spec.requiredKeys || []);
+  const fieldMap = [];
+  let i = 0;
+  for (const key of spec.fieldKeys) {
+    const col = byKey[key];
+    if (!col) continue;
+    const options = Array.isArray(col.settings && col.settings.options)
+      ? col.settings.options.map((o) => o.label)
+      : [];
+    fieldMap.push({
+      formFieldId: `f${i}`,
+      label: col.name,
+      type: FORM_FIELD_TYPE[col.type] || 'text',
+      required: required.has(key),
+      columnId: col._id.toString(),
+      options,
+    });
+    i += 1;
+  }
+  if (fieldMap.length === 0) return null;
+  return { name: spec.name || 'Lead Intake', welcomeMessage: spec.welcomeMessage || '', fieldMap };
+};
+
 /**
  * Columns for a brand-new, blank board: just the primary "Name" column.
  * New boards start empty so the user adds the columns they actually want
@@ -317,6 +373,7 @@ module.exports = {
   shapeColumns,
   materializeTemplateColumns,
   materializeTemplateGroups,
+  buildStarterForm,
   buildPrimaryOnlyColumns,
   buildDefaultColumns,
 };

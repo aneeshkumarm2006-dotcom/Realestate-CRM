@@ -18,6 +18,13 @@ import useTaskStore from '../../store/taskStore';
 import useToastStore from '../../store/toastStore';
 import * as taskService from '../../services/taskService';
 import { getStatusPalette } from '../../utils/priorityColors';
+import {
+  AGG_CYCLE,
+  summarizeNumber,
+  summarizeStatus,
+  formatAgg,
+  hasSummarisableColumn,
+} from '../../utils/columnSummary';
 
 // Uniform column sizing — every data column is the same width and stretches
 // to fill the grid; the control tracks (drag handle, checkbox, row actions)
@@ -76,6 +83,16 @@ const DataGrid = ({
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [expanded, setExpanded] = useState(() => new Set());
+  // Per-column aggregation mode for the summary footer (columnId → agg).
+  const [numAgg, setNumAgg] = useState(() => new Map());
+  const cycleAgg = (columnId) =>
+    setNumAgg((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(columnId) || 'sum';
+      const idx = AGG_CYCLE.indexOf(cur);
+      next.set(columnId, AGG_CYCLE[(idx + 1) % AGG_CYCLE.length]);
+      return next;
+    });
   const setColumnValue = useBoardStore((s) => s.setColumnValue);
   const updateColumn = useBoardStore((s) => s.updateColumn);
   const deleteColumn = useBoardStore((s) => s.deleteColumn);
@@ -547,6 +564,17 @@ const DataGrid = ({
       {/* Inline "+ Add task" row */}
       {!readOnly && onSaveNew && <AddTaskRow minWidth={minRowWidth} onSaveNew={onSaveNew} />}
 
+      {/* Per-group summary footer — numeric SUM/AVG and status distribution. */}
+      {tasks.length > 0 && hasSummarisableColumn(columns) && (
+        <GroupSummaryRow
+          columns={columns}
+          tasks={tasks}
+          sharedRowStyle={sharedRowStyle}
+          numAgg={numAgg}
+          onCycleAgg={cycleAgg}
+        />
+      )}
+
       {/* Column actions menu (rename / delete) — portaled so it escapes the
           grid's scroll/overflow clipping. */}
       {headerMenu &&
@@ -650,6 +678,119 @@ const Cellish = ({ children, center = false, pad = '0 4px', divider = false, sti
     {children}
   </div>
 );
+
+/**
+ * GroupSummaryRow — footer beneath a group's rows. Numeric columns show a
+ * clickable SUM/AVG/COUNT/MIN/MAX aggregate; status & dropdown columns show a
+ * "battery" distribution bar of their options. (Phase 1.6.)
+ */
+const GroupSummaryRow = ({ columns, tasks, sharedRowStyle, numAgg, onCycleAgg }) => {
+  const { t, i18n } = useTranslation();
+  const AGG_LABEL = {
+    sum: t('grid.aggSum'),
+    avg: t('grid.aggAvg'),
+    count: t('grid.aggCount'),
+    min: t('grid.aggMin'),
+    max: t('grid.aggMax'),
+  };
+  const footerBg = 'var(--color-bg-subtle)';
+  const frozen = (left) => ({ position: 'sticky', left, zIndex: 2, background: footerBg });
+  const cellBase = {
+    display: 'flex',
+    alignItems: 'center',
+    minHeight: 38,
+    padding: '0 8px',
+    borderRight: '1px solid var(--color-border)',
+  };
+
+  return (
+    <div
+      style={{
+        ...sharedRowStyle,
+        background: footerBg,
+        borderTop: '2px solid var(--color-border-strong)',
+      }}
+    >
+      <div style={frozen(FROZEN_DRAG_LEFT)} />
+      <div style={frozen(FROZEN_CHECK_LEFT)} />
+      {columns.map((col) => {
+        if (col.isPrimary) {
+          return <div key={col._id} style={{ ...cellBase, ...frozen(FROZEN_PRIMARY_LEFT) }} />;
+        }
+        if (col.type === 'number') {
+          const agg = numAgg.get(col._id) || 'sum';
+          const { value } = summarizeNumber(tasks, col._id, agg);
+          return (
+            <button
+              key={col._id}
+              type="button"
+              onClick={() => onCycleAgg(col._id)}
+              title={AGG_LABEL[agg]}
+              style={{
+                ...cellBase,
+                justifyContent: 'flex-end',
+                gap: 6,
+                background: 'transparent',
+                border: 'none',
+                borderRight: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                {AGG_LABEL[agg]}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                {formatAgg(value, agg, i18n.resolvedLanguage)}
+              </span>
+            </button>
+          );
+        }
+        if (col.type === 'status' || col.type === 'dropdown') {
+          const { segments, total } = summarizeStatus(tasks, col);
+          return (
+            <div key={col._id} style={cellBase}>
+              {total > 0 ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    width: '100%',
+                    height: 14,
+                    borderRadius: 7,
+                    overflow: 'hidden',
+                    background: 'var(--color-border)',
+                  }}
+                >
+                  {segments.map((s) => (
+                    <div
+                      key={s.id}
+                      title={t('grid.summaryDistribution', { label: s.label, count: s.count })}
+                      style={{
+                        width: `${(s.count / total) * 100}%`,
+                        background: s.color || 'var(--color-border-strong)',
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        }
+        return <div key={col._id} style={cellBase} />;
+      })}
+      {/* Trailing comments / actions / add-column tracks (empty). */}
+      <div />
+      <div />
+      <div />
+    </div>
+  );
+};
 
 const iconBtnStyle = {
   background: 'transparent',

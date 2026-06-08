@@ -217,7 +217,13 @@
     "status": "Statut",
     "statusClickToChange": "Statut : {{label}}. Cliquer pour changer.",
     "unassigned": "Non assigné",
-    "updateFailed": "Échec de la mise à jour"
+    "updateFailed": "Échec de la mise à jour",
+    "aggSum": "Somme",
+    "aggAvg": "Moy.",
+    "aggCount": "Nombre",
+    "aggMin": "Min",
+    "aggMax": "Max",
+    "summaryDistribution": "{{label}} : {{count}}"
   },
   "boardMisc": {
     "filter": "Filtrer",
@@ -980,7 +986,14 @@
     "connectProvider": "Connecter {{provider}}",
     "loadingCalendar": "Chargement du calendrier",
     "templateStages_one": "{{count}} étape :",
-    "templateStages_other": "{{count}} étapes :"
+    "templateStages_other": "{{count}} étapes :",
+    "branding": "Image de marque",
+    "brandLogoUrl": "URL du logo",
+    "brandCoverUrl": "URL de l'image de couverture",
+    "brandAccentColor": "Couleur d'accent",
+    "brandHeadline": "Titre (facultatif)",
+    "brandHeadlinePlaceholder": "Remplace le nom du formulaire sur la page publique",
+    "brandImageHint": "Collez une URL d'image https"
   },
   "navbar": {
     "searchPlaceholder": "Rechercher des prospects et des tableaux…",
@@ -994,5 +1007,50 @@
     "markAllRead": "Tout marquer comme lu",
     "allCaughtUp": "Vous êtes à jour.",
     "loading": "Chargement…"
+  },
+  "filter": {
+    "advanced": "Avancé",
+    "advancedTitle": "Filtres avancés",
+    "quick": "Filtres rapides",
+    "switchToQuick": "Passer aux filtres rapides",
+    "switchToAdvanced": "Passer au mode avancé",
+    "where": "Où",
+    "and": "Et",
+    "or": "Ou",
+    "newFilter": "Nouveau filtre",
+    "newGroup": "Nouveau groupe",
+    "clearAll": "Tout effacer",
+    "showing": "Affichage de {{matched}} sur {{count}}",
+    "column": "Colonne",
+    "condition": "Condition",
+    "value": "Valeur",
+    "pickColumn": "Colonne",
+    "removeCondition": "Supprimer la condition",
+    "removeGroup": "Supprimer le groupe",
+    "noConditions": "Aucune condition — ajoutez-en une pour filtrer.",
+    "op": {
+      "any_of": "est l'un de",
+      "none_of": "n'est aucun de",
+      "is_empty": "est vide",
+      "is_not_empty": "n'est pas vide",
+      "contains": "contient",
+      "not_contains": "ne contient pas",
+      "is": "est",
+      "is_not": "n'est pas",
+      "starts_with": "commence par",
+      "ends_with": "se termine par",
+      "eq": "=",
+      "neq": "≠",
+      "gt": ">",
+      "lt": "<",
+      "gte": "≥",
+      "lte": "≤",
+      "between": "est entre",
+      "on": "est le",
+      "before": "est avant",
+      "after": "est après",
+      "is_checked": "est coché",
+      "is_unchecked": "n'est pas coché"
+    }
   }
 }

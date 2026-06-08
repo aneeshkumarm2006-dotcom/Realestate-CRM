@@ -135,6 +135,12 @@ const FormBuilderPage = () => {
   const [postSubmitRedirectUrl, setPostSubmitRedirectUrl] = useState('');
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [enabled, setEnabled] = useState(true);
+  const [branding, setBranding] = useState({
+    logoUrl: '',
+    coverUrl: '',
+    accentColor: '',
+    headline: '',
+  });
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -163,6 +169,12 @@ const FormBuilderPage = () => {
         setPostSubmitRedirectUrl(f.postSubmitRedirectUrl || '');
         setCaptchaEnabled(!!f.captchaEnabled);
         setEnabled(!!f.enabled);
+        setBranding({
+          logoUrl: f.branding?.logoUrl || '',
+          coverUrl: f.branding?.coverUrl || '',
+          accentColor: f.branding?.accentColor || '',
+          headline: f.branding?.headline || '',
+        });
         setSavedForm({ publicUrl: f.publicUrl, slug: f.slug });
       })
       .catch(() => setError(t('pages.couldNotLoadForm')))
@@ -238,6 +250,7 @@ const FormBuilderPage = () => {
     postSubmitRedirectUrl,
     captchaEnabled,
     enabled,
+    branding,
   });
 
   const handleSave = useCallback(async () => {
@@ -268,7 +281,9 @@ const FormBuilderPage = () => {
       setSaving(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardId, name, fields, welcomeMessage, postSubmitRedirectUrl, captchaEnabled, enabled, isEdit, formId]);
+  }, [boardId, name, fields, welcomeMessage, postSubmitRedirectUrl, captchaEnabled, enabled, branding, isEdit, formId]);
+
+  const setBrand = (patch) => setBranding((b) => ({ ...b, ...patch }));
 
   const copyUrl = async () => {
     if (!savedForm?.publicUrl) return;
@@ -368,6 +383,38 @@ const FormBuilderPage = () => {
                 <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--color-accent)' }} />
                 {t('pages.published')}
               </label>
+            </div>
+
+            {/* Branding (Phase 1.7) */}
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 16, marginTop: 4 }}>
+              <p className="font-display" style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 10 }}>
+                {t('pages.branding')}
+              </p>
+              <div className="flex flex-col gap-3">
+                <Input label={t('pages.brandHeadline')} placeholder={t('pages.brandHeadlinePlaceholder')} value={branding.headline} onChange={(e) => setBrand({ headline: e.target.value })} />
+                <Input label={t('pages.brandLogoUrl')} placeholder={t('pages.brandImageHint')} value={branding.logoUrl} onChange={(e) => setBrand({ logoUrl: e.target.value })} />
+                <Input label={t('pages.brandCoverUrl')} placeholder={t('pages.brandImageHint')} value={branding.coverUrl} onChange={(e) => setBrand({ coverUrl: e.target.value })} />
+                <label className="font-body" style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+                  {t('pages.brandAccentColor')}
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="color"
+                      value={branding.accentColor || '#2563EB'}
+                      onChange={(e) => setBrand({ accentColor: e.target.value })}
+                      style={{ width: 40, height: 32, padding: 0, border: '1px solid var(--color-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}
+                      aria-label={t('pages.brandAccentColor')}
+                    />
+                    <span className="font-body" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                      {branding.accentColor || '—'}
+                    </span>
+                    {branding.accentColor && (
+                      <button type="button" onClick={() => setBrand({ accentColor: '' })} className="font-body" style={{ fontSize: 12, color: 'var(--color-accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        {t('pages.none')}
+                      </button>
+                    )}
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
 

@@ -11,7 +11,12 @@
  * imposes no constraint.
  */
 
-import { taskMatchesColumnFilter, countColumnClauses } from './columnFilter';
+import {
+  taskMatchesColumnFilter,
+  countColumnClauses,
+  evaluateTree,
+  countTreeConditions,
+} from './columnFilter';
 
 export const EMPTY_FILTERS = {
   search: '',
@@ -20,10 +25,12 @@ export const EMPTY_FILTERS = {
   labels: [],     // label _id strings
   due: [],        // DUE_BUCKETS keys
   assignees: [],  // user _id strings, plus the synthetic 'unassigned'
-  // Column-aware clauses for flexible boards: [{ columnId, op:'in', value:[] }].
-  // Legacy boards leave this empty (they use the categories above); flexible
-  // boards leave the categories empty and drive everything through clauses.
+  // Column-aware clauses for flexible boards (Quick filter): [{ columnId, op:'in', value:[] }].
   clauses: [],
+  // Advanced filter builder tree (Phase 1.5): { conjunction, rules:[...] } | null.
+  tree: null,
+  // 'quick' | 'advanced' — which filter UI the board shows.
+  mode: 'quick',
 };
 
 /**
@@ -86,7 +93,12 @@ export const countActiveFilters = (filters) => {
   if (filters.labels?.length) n += 1;
   if (filters.due?.length) n += 1;
   if (filters.assignees?.length) n += 1;
-  n += countColumnClauses(filters.clauses);
+  // Quick and Advanced are a toggle — only the active mode's filter counts.
+  if (filters.mode === 'advanced') {
+    if (filters.tree) n += countTreeConditions(filters.tree);
+  } else {
+    n += countColumnClauses(filters.clauses);
+  }
   return n;
 };
 
@@ -96,7 +108,7 @@ export const hasActiveFilters = (filters) => countActiveFilters(filters) > 0;
  * Does a single task satisfy the active filters?
  * `now` defaults to the current time; injectable for deterministic tests.
  */
-export const taskMatchesFilters = (task, filters, now = new Date()) => {
+export const taskMatchesFilters = (task, filters, now = new Date(), colsById = null) => {
   if (!filters || !task) return true;
 
   // Name search
@@ -138,9 +150,10 @@ export const taskMatchesFilters = (task, filters, now = new Date()) => {
     if (!matchesUnassigned && !matchesMember) return false;
   }
 
-  // Column-aware clauses (flexible boards) — AND with the above. Empty on
-  // legacy boards, so this is a no-op there.
-  if (filters.clauses?.length && !taskMatchesColumnFilter(task, filters.clauses)) {
+  // Quick vs Advanced are a toggle (filters.mode) — evaluate only the active one.
+  if (filters.mode === 'advanced') {
+    if (filters.tree && !evaluateTree(task, filters.tree, colsById)) return false;
+  } else if (filters.clauses?.length && !taskMatchesColumnFilter(task, filters.clauses)) {
     return false;
   }
 

@@ -217,7 +217,13 @@
     "status": "Status",
     "statusClickToChange": "Status: {{label}}. Click to change.",
     "unassigned": "Unassigned",
-    "updateFailed": "Update failed"
+    "updateFailed": "Update failed",
+    "aggSum": "Sum",
+    "aggAvg": "Avg",
+    "aggCount": "Count",
+    "aggMin": "Min",
+    "aggMax": "Max",
+    "summaryDistribution": "{{label}}: {{count}}"
   },
   "boardMisc": {
     "filter": "Filter",
@@ -980,7 +986,14 @@
     "connectProvider": "Connect {{provider}}",
     "loadingCalendar": "Loading calendar",
     "templateStages_one": "{{count}} stage:",
-    "templateStages_other": "{{count}} stages:"
+    "templateStages_other": "{{count}} stages:",
+    "branding": "Branding",
+    "brandLogoUrl": "Logo URL",
+    "brandCoverUrl": "Cover image URL",
+    "brandAccentColor": "Accent color",
+    "brandHeadline": "Headline (optional)",
+    "brandHeadlinePlaceholder": "Overrides the form name on the public page",
+    "brandImageHint": "Paste an https image URL"
   },
   "navbar": {
     "searchPlaceholder": "Search leads and boards…",
@@ -994,5 +1007,50 @@
     "markAllRead": "Mark all read",
     "allCaughtUp": "You're all caught up.",
     "loading": "Loading…"
+  },
+  "filter": {
+    "advanced": "Advanced",
+    "advancedTitle": "Advanced filters",
+    "quick": "Quick filters",
+    "switchToQuick": "Switch to quick filters",
+    "switchToAdvanced": "Switch to advanced",
+    "where": "Where",
+    "and": "And",
+    "or": "Or",
+    "newFilter": "New filter",
+    "newGroup": "New group",
+    "clearAll": "Clear all",
+    "showing": "Showing {{matched}} of {{count}}",
+    "column": "Column",
+    "condition": "Condition",
+    "value": "Value",
+    "pickColumn": "Column",
+    "removeCondition": "Remove condition",
+    "removeGroup": "Remove group",
+    "noConditions": "No conditions yet — add one to start filtering.",
+    "op": {
+      "any_of": "is any of",
+      "none_of": "is none of",
+      "is_empty": "is empty",
+      "is_not_empty": "is not empty",
+      "contains": "contains",
+      "not_contains": "doesn't contain",
+      "is": "is",
+      "is_not": "is not",
+      "starts_with": "starts with",
+      "ends_with": "ends with",
+      "eq": "=",
+      "neq": "≠",
+      "gt": ">",
+      "lt": "<",
+      "gte": "≥",
+      "lte": "≤",
+      "between": "is between",
+      "on": "is on",
+      "before": "is before",
+      "after": "is after",
+      "is_checked": "is checked",
+      "is_unchecked": "is unchecked"
+    }
   }
 }

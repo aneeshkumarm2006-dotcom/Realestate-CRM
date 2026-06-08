@@ -52,6 +52,21 @@ const formSchema = new mongoose.Schema(
     postSubmitRedirectUrl: { type: String, default: '' },
     captchaEnabled: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true },
+    // Branding for the public form (Phase 1.7). All optional; empty values fall
+    // back to the default app styling. `accentColor` is a hex string used for
+    // the submit button / accents; `headline` overrides the form name heading.
+    branding: {
+      type: new mongoose.Schema(
+        {
+          logoUrl: { type: String, default: '' },
+          coverUrl: { type: String, default: '' },
+          accentColor: { type: String, default: '' },
+          headline: { type: String, default: '' },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
   },
   { timestamps: true }
 );
