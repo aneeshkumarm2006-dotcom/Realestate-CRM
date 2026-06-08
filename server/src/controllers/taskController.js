@@ -1058,6 +1058,20 @@ const updateTask = async (req, res) => {
     // F2: signal that a board task changed so mirrorRefresh can invalidate any
     // mirrors on boards that link to it.
     eventBus.emit('task.updated', { taskId: task._id, boardId: task.board });
+    // Phase 1b: ITEM_MOVED_TO_GROUP trigger — fire when the group changed.
+    if (
+      body.group !== undefined &&
+      body.group !== null &&
+      prevGroup !== body.group.toString()
+    ) {
+      eventBus.emit('task.moved_to_group', {
+        taskId: task._id,
+        boardId: task.board,
+        fromGroupId: prevGroup,
+        toGroupId: body.group.toString(),
+        actorId: userId,
+      });
+    }
     await Board.updateOne(
       { _id: task.board },
       { $set: { updatedAt: new Date() } }
@@ -1341,7 +1355,9 @@ const reorderTasks = async (req, res) => {
     if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
 
     // Load every supplied task and validate same board, top-level, etc.
-    const tasks = await Task.find({ _id: { $in: orderedIds } }).select('_id board parent');
+    // `group` is selected so we can detect which tasks actually crossed groups
+    // (vs. a same-group reorder) and fire the ITEM_MOVED_TO_GROUP trigger.
+    const tasks = await Task.find({ _id: { $in: orderedIds } }).select('_id board parent group');
     if (tasks.length !== orderedIds.length) {
       return res.status(400).json({ error: 'One or more task ids were not found' });
     }
@@ -1362,6 +1378,22 @@ const reorderTasks = async (req, res) => {
       },
     }));
     if (ops.length > 0) await Task.bulkWrite(ops);
+
+    // Phase 1b: ITEM_MOVED_TO_GROUP trigger — emit for each task that actually
+    // crossed into the target group (drag-and-drop between groups).
+    const targetGroupStr = targetGroupId.toString();
+    for (const t of tasks) {
+      const prior = t.group ? t.group.toString() : null;
+      if (prior !== targetGroupStr) {
+        eventBus.emit('task.moved_to_group', {
+          taskId: t._id,
+          boardId: targetGroup.board,
+          fromGroupId: prior,
+          toGroupId: targetGroupStr,
+          actorId: userId,
+        });
+      }
+    }
 
     await Board.updateOne({ _id: targetGroup.board }, { $set: { updatedAt: new Date() } });
 

@@ -58,6 +58,9 @@ const columnSchema = new mongoose.Schema(
     settings: { type: mongoose.Schema.Types.Mixed, default: {} },
     order: { type: Number, default: 0 },
     width: { type: Number, default: 160 },
+    // Optional column accent colour (hex). Shown on the header; lets boards
+    // differentiate columns visually, Monday-style.
+    color: { type: String, default: null },
     isPrimary: { type: Boolean, default: false },
   },
   { _id: true, timestamps: false }
@@ -76,6 +79,14 @@ const boardSchema = new mongoose.Schema(
     organisation: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Organisation',
+    },
+    // Phase 3.0 — the workspace this board belongs to (within `organisation`).
+    // Null only briefly before the default-workspace migration assigns it.
+    workspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Workspace',
+      default: null,
+      index: true,
     },
     visibility: {
       type: String,

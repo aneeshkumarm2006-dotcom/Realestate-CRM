@@ -97,7 +97,7 @@ Legend: ✅ have · 🟡 partial (finish) · 🔴 build new · ♻️ repurpose/
 | Quotes & Invoices | — | 🔴 | (none) |
 | Mass email tracking | — | 🔴 | (none) |
 | Docs / Workdocs | — | 🔴 | (none) |
-| Commission / agent salary | — | 🔴 | (none) |
+| Commission / agent salary | **dropped** — out of scope per stakeholder (2026-06-08); no salary/commission tracking | ⛔ | — |
 | Marketing ROI analytics | — | 🔴 | (none) |
 | Per-widget permissions | — | 🔴 | (none) |
 | Self-serve signup / billing | **dropped** — single-tenant direct deploy, no Stripe (see §2.5) | ⛔ | — |
@@ -212,9 +212,9 @@ trigger / action set to match Monday's **general-purpose** automation library
 - 🟡 **M** — Roles/permissions polish (Org admin / Team lead / Agent);
   workspace **home UI** (banner, Content/Collaborators tabs); 🔴 workspace
   **folders** (live *inside* a workspace, per §3.3).
-- 🔴 **L** — **Agent performance + commission / salary module** (your edge):
-  base salary + commission rules → auto-compute earnings on deal close → team/agent
-  reports. New: `server/src/models/Compensation.js` + reports.
+- ⛔ **Agent performance + commission / salary module — DROPPED** (stakeholder
+  decision 2026-06-08). No salary/commission tracking. Team/agent *activity*
+  reporting still comes via Phase 2 dashboards, but no compensation math.
 
 ### Phase 4 — Comms & sales tooling
 **Build**
@@ -223,6 +223,44 @@ trigger / action set to match Monday's **general-purpose** automation library
 - 🔴 **M** — **Mass email tracking** (campaign send + open/click stats).
 - 🔴 **L** — **Quotes & Invoices** (lease offers / deposits) with PDF + e-sign
   hook; deliver via native email/SMS/WhatsApp.
+
+### Phase 4b — Visit Booking System (Calendly-style)
+*Our own booking engine for property visits — one shareable link per building,
+wired to a board's calendar. No Calendly dependency.*
+
+**Decisions (locked with stakeholder):**
+- **One link = one building.** During creation you pick the **target Board** (its
+  calendar) and the **target Group** new bookings land in (e.g. "Visit Booked").
+- **Availability is set manually** at link-creation time (Calendly-style weekly
+  hours + date overrides). No Google Calendar sync for MVP.
+- **On booking:** create a **lead** in the chosen group + a **calendar event** on
+  that board's Calendar view + **confirmation email** (visitor & agent) + **auto-
+  assign agent** (fixed or round-robin).
+- **Entry point:** a new **"Booking Links"** button in the board toolbar (next to
+  Automations / Integrations / Lead Intake).
+- **Reschedule:** cancel-link + rebook (MVP). True in-place reschedule = later.
+
+**Build**
+- 🔴 **L** — `BookingLink` + `Booking` models + slot engine (open slots =
+  weeklyHours − dateOverrides − minNotice/dateRange − already-booked slots, in the
+  visitor's timezone). New: `server/src/models/BookingLink.js`,
+  `server/src/models/Booking.js`, `server/src/services/slotEngine.js`,
+  `bookingController.js`, `routes/bookings.js`.
+- 🔴 **M** — Public booking page `/book/:slug` (frontend-served like `/f/:slug`
+  forms): building/branding header → day picker → free slots → form → confirm.
+  Full EN/FR + any-language.
+- 🔴 **M** — Creation wizard (board toolbar → Booking Links): pick group, duration,
+  location, draw weekly availability + overrides, buffers / daily cap / min-notice,
+  booking questions, agent assignment (fixed | round-robin), branding.
+- 🔴 **S** — On-booking actions: lead → chosen group (reuse Forms intake path),
+  stamp date column (→ board Calendar), auto-assign agent, send `.ics`
+  confirmation + cancel/rebook links.
+- 🔴 **S** — Manage list (a board's links: copy URL, edit, deactivate) + bookings
+  list.
+
+**Reuses:** board Calendar view (Phase 3.0), Person/Assigned-to column, public-form
+intake pattern, i18n. **Later (not MVP):** reminder emails (24h/1h), Google busy-
+sync, payments, embed widget, no-show tracking, follow-ups, true reschedule.
 
 ### Phase 5 — Knowledge base
 **Build**

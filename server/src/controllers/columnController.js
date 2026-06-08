@@ -209,7 +209,7 @@ const addColumn = async (req, res) => {
     if (!ctx.isAdmin) return res.status(403).json({ error: 'Admin access required' });
 
     const { board } = ctx;
-    const { name, type, settings = {}, width, after, key, isPrimary } = req.body || {};
+    const { name, type, settings = {}, width, after, key, isPrimary, color } = req.body || {};
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'Column name is required' });
     }
@@ -270,6 +270,7 @@ const addColumn = async (req, res) => {
       settings: settings || {},
       order,
       width: typeof width === 'number' && width > 40 ? width : 160,
+      color: typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color) ? color : null,
       isPrimary:
         isPrimary === true && cols.every((c) => c.isPrimary !== true),
     };
@@ -326,7 +327,7 @@ const updateColumn = async (req, res) => {
     const column = board.columns.id(cid);
     if (!column) return res.status(404).json({ error: 'Column not found' });
 
-    const { name, settings, width } = req.body || {};
+    const { name, settings, width, color } = req.body || {};
 
     if (name !== undefined) {
       if (typeof name !== 'string' || !name.trim()) {
@@ -368,6 +369,12 @@ const updateColumn = async (req, res) => {
         return res.status(400).json({ error: 'width must be between 40 and 1000' });
       }
       column.width = width;
+    }
+    if (color !== undefined) {
+      if (color !== null && !(typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color))) {
+        return res.status(400).json({ error: 'color must be a hex string like #RRGGBB or null' });
+      }
+      column.color = color;
     }
 
     await board.save();

@@ -48,9 +48,21 @@ const cardStyle = {
   padding: 16,
 };
 
-/** Widget create/edit modal. Adapts visible fields to the chosen type. */
-const ChartWidgetForm = ({ isOpen, onClose, board, initial, saving, error, onSubmit }) => {
-  const columns = useMemo(() => board?.columns || [], [board]);
+/**
+ * Widget create/edit modal. Adapts visible fields to the chosen type.
+ *
+ * Two modes:
+ *   - board-scoped (InsightsTab): pass `board` (with columns).
+ *   - workspace dashboard: pass `boards` (array, each with columns) → a board
+ *     picker appears and the payload carries the chosen `boardId`.
+ */
+export const ChartWidgetForm = ({ isOpen, onClose, board, boards, initial, saving, error, onSubmit }) => {
+  const pickBoard = Array.isArray(boards) && boards.length > 0;
+  const [boardId, setBoardId] = useState(
+    initial?.boardId ? String(initial.boardId) : pickBoard ? String(boards[0]._id) : ''
+  );
+  const activeBoard = pickBoard ? boards.find((b) => String(b._id) === String(boardId)) || null : board;
+  const columns = useMemo(() => activeBoard?.columns || [], [activeBoard]);
   const [type, setType] = useState(initial?.type || 'bar');
   const [title, setTitle] = useState(initial?.title || '');
   const q = initial?.query || {};
@@ -83,7 +95,12 @@ const ChartWidgetForm = ({ isOpen, onClose, board, initial, saving, error, onSub
       setLocalError('Pick a second column to split by.');
       return;
     }
+    if (pickBoard && !boardId) {
+      setLocalError('Pick a board for this widget.');
+      return;
+    }
     onSubmit?.({
+      ...(pickBoard ? { boardId } : {}),
       type,
       title: title.trim(),
       query: {
@@ -95,6 +112,14 @@ const ChartWidgetForm = ({ isOpen, onClose, board, initial, saving, error, onSub
         filter: Array.isArray(initial?.query?.filter) ? initial.query.filter : [],
       },
     });
+  };
+
+  // Switching boards invalidates column-based selections.
+  const changeBoard = (id) => {
+    setBoardId(id);
+    setColumnId('');
+    setAggregateColumnId('');
+    setSplitBy('');
   };
 
   const shownError = localError || error;
@@ -117,6 +142,15 @@ const ChartWidgetForm = ({ isOpen, onClose, board, initial, saving, error, onSub
       }
     >
       <div className="flex flex-col gap-4">
+        {pickBoard && (
+          <Dropdown
+            label="Board"
+            options={boards.map((b) => ({ value: String(b._id), label: b.name }))}
+            value={boardId}
+            onChange={changeBoard}
+            placeholder="Pick a board"
+          />
+        )}
         <Input label="Title" placeholder="e.g. Stage funnel" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         <Dropdown label="Chart type" options={TYPE_OPTIONS} value={type} onChange={setType} />
 
@@ -166,7 +200,7 @@ const ChartWidgetForm = ({ isOpen, onClose, board, initial, saving, error, onSub
   );
 };
 
-const WidgetCard = ({ widget, data, loading, error, isAdmin, onEdit, onDelete, onRefresh }) => (
+export const WidgetCard = ({ widget, data, loading, error, isAdmin, onEdit, onDelete, onRefresh }) => (
   <div style={cardStyle} className="flex flex-col">
     <div className="flex items-start justify-between gap-2 mb-3">
       <h3 className="font-display font-semibold" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>

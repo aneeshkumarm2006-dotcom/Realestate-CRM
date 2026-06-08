@@ -19,6 +19,7 @@
 - [Phase 2 — Reporting & dashboards](#phase-2--reporting--dashboards)
 - [Phase 3 — Org structure & differentiator](#phase-3--org-structure--differentiator)
 - [Phase 4 — Comms & sales tooling](#phase-4--comms--sales-tooling)
+- [Phase 4b — Visit Booking System (Calendly-style)](#phase-4b--visit-booking-system-calendly-style)
 - [Phase 5 — Knowledge base (Docs)](#phase-5--knowledge-base-docs)
 - [Phase 6 — Internal deployment & onboarding](#phase-6--internal-deployment--onboarding)
 - [Later / Optional — PM integration](#later--optional--pm-integration)
@@ -282,22 +283,27 @@ Full reference in [PLAN.md §9](PLAN.md).*
 
 ## Phase 3 — Org structure & differentiator
 
-### 3.0 Workspaces under the Organisation — 🔴 L
-- **What we build:** A real **Workspace** layer inside the single organisation,
-  giving the Monday hierarchy **Organisation → Workspace → Folder → Board**. Today
-  `Workspace` is just an alias for `Organisation` (the same entity), so there's no
-  workspace level *within* an org. New: a real `server/src/models/Workspace.js`
-  (owned by an org), a `board.workspace` reference, a sidebar **workspace switcher**
-  (replacing the "Organisations" list, per single-tenant [PLAN.md §2.5](PLAN.md)),
-  and a migration nesting each existing org's boards under a default workspace.
-- **What it does:** One company (organisation) holds many workspaces (e.g.
-  *Opérations*, *Rakotta CRM*), each with its own boards and folders — instead of
-  spreading work across separate organisations.
-- **How to use:** In your org, **+ New workspace** → it appears in the left sidebar →
-  create boards (and folders) inside it; switch workspaces from the sidebar.
-- **Status note (2026-06-07):** Direction confirmed (workspaces under the org).
-  Existing data stays **as-is for now** — no migration this cycle; implemented when
-  Phase 3 runs. Current multi-org plumbing is retained until then.
+### 3.0 Workspaces under the Organisation + access control — 🔴 L  (IN PROGRESS)
+> **Decision (2026-06-08): Option 2 — per-workspace/per-board access control.**
+> A new real `Workspace` model lives inside the org; boards belong to a workspace
+> (board keeps `organisation` = the company for tenant scoping, **adds** `workspace`
+> for grouping + access). Built in two stages.
+- **Stage 1 — Hierarchy (non-destructive):** real `server/src/models/Workspace.js`
+  (`{ organisation, name, order }`), `board.workspace` ref, workspace CRUD endpoints,
+  sidebar **Organisation → Workspaces → Boards**, board created inside a workspace.
+  Migration: a default **"General"** workspace per org holds existing boards. No
+  access change yet (admins/members see boards as before, just grouped).
+- **Stage 2 — Granular access control (the requested feature):** an admin can grant
+  a member access to a **whole workspace** (all its boards) or a **single board**,
+  each as **Viewer** (read) or **Editor** (read+write), with optional **expiry** and
+  **revoke** — built on the existing `WorkspaceGrant` + `roleCheck`. Non-admins see
+  only granted workspaces/boards everywhere (sidebar, board list, search, dashboards,
+  calendar); org **owner/admins see everything**. An admin **Access** screen lists
+  each member and their grants.
+- ⛔ **Row/item-level access is NOT in scope** (no per-lead/per-group restriction) —
+  stakeholder decision 2026-06-08. Access is **workspace + board level only**.
+- **How to use:** **+ New workspace** in the sidebar → create boards inside it →
+  **Access** screen → grant a member a workspace/board as Viewer/Editor (± expiry).
 
 ### 3.1 Teams & team dashboards — 🔴 M
 - **What we build:** **Teams** under the organisation with membership, plus
@@ -314,9 +320,12 @@ Full reference in [PLAN.md §9](PLAN.md).*
 - **How to use:** Admin assigns roles per member; users browse the workspace home and
   drop boards into folders.
 
-### 3.3 Agent performance & commission/salary module — 🔴 L
-- **What we build:** Base salary + **commission rules** → auto-compute earnings on
-  deal close → team/agent reports. New: `server/src/models/Compensation.js` +
+### 3.3 Agent performance & commission/salary module — ⛔ DROPPED
+> Stakeholder decision (2026-06-08): **no salary or commission tracking.** Agent
+> *activity* performance still surfaces through Phase 2 dashboards (leads per
+> agent, conversions, etc.) — but the app computes **no compensation**.
+- **What we build:** ~~Base salary + **commission rules** → auto-compute earnings on
+  deal close → team/agent reports. New: `server/src/models/Compensation.js` +~~
   reports. *(This is our edge over Monday.)*
 - **What it does:** When a deal closes, the system computes each agent's commission
   and rolls earnings into performance reports.
@@ -348,6 +357,72 @@ Full reference in [PLAN.md §9](PLAN.md).*
   signature/acceptance.
 - **How to use:** On a deal → **Create quote** → fill terms → send → recipient signs;
   status updates back on the deal.
+
+---
+
+## Phase 4b — Visit Booking System (Calendly-style)
+
+> Our own booking engine for **property visits** — a Calendly clone scoped to real
+> estate. **One shareable link per building**, wired to a **board's calendar**.
+> Visitors self-book a visit slot; a lead + calendar event are created and an agent
+> is assigned automatically. No third-party (Calendly) dependency.
+
+**Locked scope (stakeholder):** one link = one building; pick the **target Board**
+and **target Group** at creation; **availability set manually** (weekly hours +
+date overrides) like Calendly; on booking → calendar event + confirmation email +
+auto-assign agent + lead into the chosen group; entry point is a new **"Booking
+Links"** button in the board toolbar; reschedule = **cancel + rebook** link (MVP).
+
+### 4b.1 Booking link + slot engine — 🔴 L
+- **What we build:** `BookingLink` and `Booking` models + a **slot engine**. New:
+  `server/src/models/BookingLink.js`, `server/src/models/Booking.js`,
+  `server/src/services/slotEngine.js`, `bookingController.js`, `routes/bookings.js`.
+  - `BookingLink`: `{ board, group (target), title/building, slug, duration,
+    location, timezone, availability { weeklyHours[], dateOverrides[] },
+    bufferBefore, bufferAfter, dailyCap, minNotice, dateRangeDays, questions[],
+    assignMode (fixed | round-robin), agents[], branding {logo, accent, headline},
+    active }`.
+  - `Booking`: `{ link, board, slotStart, slotEnd, visitor {name,email,phone},
+    answers[], status (confirmed | cancelled), leadId, agent, cancelToken }`.
+- **What it does:** Open slots = `weeklyHours` − `dateOverrides` − `minNotice` /
+  `dateRangeDays` − slots already booked on that board, returned in the **visitor's
+  timezone**. Prevents double-booking against the board's calendar.
+- **How to use (admin):** Board toolbar → **Booking Links** → **New link** →
+  building name, **pick target Group**, duration, location, **draw weekly hours +
+  date overrides**, buffers / daily cap / min-notice, booking questions, agent
+  assignment → get a shareable `/book/:slug` URL.
+
+### 4b.2 Public booking page — 🔴 M
+- **What we build:** Frontend-served public page at **`/book/:slug`** (same pattern
+  as public Forms `/f/:slug`).
+- **What it does:** Branding/building header → **day picker** → **free slots** →
+  visitor form (name/email/phone + questions) → confirmation screen. Fully **EN/FR
+  + any-language**, visitor timezone auto-detected.
+- **How to use (visitor):** Open the link → pick a day → pick a free slot → fill the
+  form → confirm → receive a confirmation email with calendar invite + cancel/rebook
+  links.
+
+### 4b.3 On-booking actions — 🔴 S
+- **What we build:** The booking-creation side effects.
+- **What it does:** On confirm → (1) **create a lead** in the link's chosen group
+  (reuse the Forms intake path), (2) **stamp its date column** so it appears on the
+  **board Calendar view**, (3) **auto-assign an agent** (fixed or round-robin via
+  the Person column), (4) **send confirmation emails** to visitor + agent with an
+  **`.ics`** invite and **cancel/rebook** links.
+- **How to use:** Automatic; the new visit shows up as a lead in "Visit Booked" (or
+  whichever group was chosen) and on the board's Calendar.
+
+### 4b.4 Manage links & bookings — 🔴 S
+- **What we build:** A board's **Booking Links** manager + bookings list.
+- **What it does:** List/copy-URL/edit/deactivate links; view bookings (who booked,
+  when, status) and cancel from the admin side.
+- **How to use:** Board toolbar → **Booking Links** → manage existing links and see
+  their bookings.
+
+**Reuses:** board Calendar view (Phase 3.0), Person/Assigned-to column, public-form
+intake pattern, i18n EN/FR. **Later (not MVP):** reminder emails (24h/1h), Google
+Calendar busy-sync, payments, embed widget, no-show tracking, follow-up emails, and
+a true in-place reschedule flow.
 
 ---
 

@@ -1,14 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Plus,
   Users,
   Check,
   ArrowLeft,
+  Home,
+  LayoutGrid,
+  UserCheck,
+  Calendar,
+  BarChart3,
+  LayoutList,
+  ChevronDown,
+  Zap,
 } from 'lucide-react';
 import Navbar from './Navbar';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
+import useBoardStore from '../../store/boardStore';
+
+/** A single left-sidebar nav row (icon + label) with active highlight. */
+const SidebarLink = ({ icon: Icon, label, active, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
+    style={{
+      background: active ? 'var(--color-accent-light)' : undefined,
+      color: active ? 'var(--color-accent-text)' : 'var(--color-text-secondary)',
+      fontWeight: active ? 600 : 500,
+    }}
+  >
+    <Icon size={16} aria-hidden="true" />
+    <span className="font-body text-[13px] truncate">{label}</span>
+  </button>
+);
 
 const AVATAR_COLORS = ['#2563EB', '#16A34A', '#EA580C', '#7C3AED', '#D97706', '#DC2626'];
 
@@ -30,17 +57,45 @@ const OrgSidebar = () => {
   const createOrg = useOrgStore((s) => s.createOrg);
   const joinOrg = useOrgStore((s) => s.joinOrg);
   const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
+  const user = useAuthStore((s) => s.user);
+  const boards = useBoardStore((s) => s.boards);
+  const fetchBoards = useBoardStore((s) => s.fetchBoards);
+  const { t } = useTranslation();
+  const { pathname } = useLocation();
 
   const [mode, setMode] = useState(null); // null | 'create' | 'join'
   const [orgName, setOrgName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+
+  // Keep the sidebar board list in sync with the current workspace.
+  useEffect(() => {
+    if (currentOrg?._id) fetchBoards(currentOrg._id).catch(() => {});
+  }, [currentOrg?._id, fetchBoards]);
+
+  const adminId =
+    typeof currentOrg?.admin === 'object' && currentOrg?.admin !== null
+      ? currentOrg.admin._id || currentOrg.admin
+      : currentOrg?.admin;
+  const isAdmin =
+    (!!user && !!adminId && String(adminId) === String(user._id)) ||
+    (!!user &&
+      Array.isArray(currentOrg?.admins) &&
+      currentOrg.admins.some((a) => String(typeof a === 'object' && a ? a._id || a : a) === String(user._id)));
+
+  // Sidebar = navigation only. Workspace-level things (Dashboard/Reports/Members)
+  // live as Workspace-Home tabs; board-level things (Calendar) are board views.
+  // "My Leads" stays here as the personal, cross-board view.
+  const navItems = [
+    { to: '/workspace', label: t('workspace.home'), icon: Home },
+    { to: '/my-tasks', label: t('nav.myLeads'), icon: UserCheck },
+  ];
 
   const handleSwitch = (orgId) => {
-    if (orgId === currentOrg?._id) return;
-    setCurrentOrg(orgId);
-    navigate('/dashboard');
+    if (orgId !== currentOrg?._id) setCurrentOrg(orgId);
+    navigate('/workspace');
   };
 
   const handleCreate = async (e) => {
@@ -53,9 +108,9 @@ const OrgSidebar = () => {
       await fetchCurrentUser();
       setOrgName('');
       setMode(null);
-      navigate('/dashboard');
+      navigate('/workspace');
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not create organisation');
+      setError(err.response?.data?.error || 'Could not create workspace');
     } finally {
       setSubmitting(false);
     }
@@ -71,7 +126,7 @@ const OrgSidebar = () => {
       await fetchCurrentUser();
       setInviteCode('');
       setMode(null);
-      navigate('/dashboard');
+      navigate('/workspace');
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid invite code');
     } finally {
@@ -86,105 +141,128 @@ const OrgSidebar = () => {
         width: 240,
         borderRight: '1px solid var(--color-border)',
         background: 'var(--color-bg-surface)',
-        minHeight: '100%',
+        // Stay put while the main content scrolls (sticky under the 56px navbar).
+        position: 'sticky',
+        top: 56,
+        alignSelf: 'flex-start',
+        height: 'calc(100vh - 56px)',
       }}
     >
-      {/* Sidebar header */}
-      <div
-        className="px-4 py-3 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)' }}
-      >
-        <span className="font-body font-semibold text-[11px] uppercase tracking-wide text-[color:var(--color-text-muted)]">
-          Organisations
-        </span>
+      {/* Workspace switcher (Monday-style) */}
+      <div className="px-3 py-3 shrink-0 relative" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <button
+          type="button"
+          onClick={() => setSwitcherOpen((v) => !v)}
+          aria-expanded={switcherOpen}
+          className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+        >
+          <div
+            className="flex items-center justify-center font-display font-bold text-white shrink-0"
+            style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', background: getAvatarColor(currentOrg?.name || ''), fontSize: 12 }}
+            aria-hidden="true"
+          >
+            {(currentOrg?.name || '?').trim().charAt(0).toUpperCase()}
+          </div>
+          <span className="flex-1 min-w-0 text-left font-body font-semibold text-[14px] text-[color:var(--color-text-primary)] truncate">
+            {currentOrg?.displayName || currentOrg?.name || 'Workspace'}
+          </span>
+          <ChevronDown size={16} color="var(--color-text-muted)" aria-hidden="true" />
+        </button>
+        {switcherOpen && (
+          <div className="absolute left-3 right-3 mt-1 bg-white z-50" style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
+            <div className="py-1 max-h-72 overflow-y-auto">
+              {orgs.map((org) => {
+                const active = org._id === currentOrg?._id;
+                return (
+                  <button
+                    key={org._id}
+                    type="button"
+                    onClick={() => { handleSwitch(org._id); setSwitcherOpen(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-[color:var(--color-bg-subtle)]"
+                  >
+                    <div className="flex items-center justify-center font-display font-bold text-white shrink-0" style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: getAvatarColor(org.name || ''), fontSize: 11 }} aria-hidden="true">
+                      {(org.name || '?').trim().charAt(0).toUpperCase()}
+                    </div>
+                    <span className="flex-1 font-body text-[13px] text-[color:var(--color-text-primary)] truncate" style={{ fontWeight: active ? 600 : 400 }}>{org.name}</span>
+                    {active && <Check size={14} color="var(--color-accent)" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="py-1" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <button type="button" onClick={() => { setMode('create'); setError(''); setSwitcherOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left font-body text-[13px] text-[color:var(--color-accent)] hover:bg-[color:var(--color-bg-subtle)]">
+                <Plus size={14} /> Create workspace
+              </button>
+              <button type="button" onClick={() => { setMode('join'); setError(''); setSwitcherOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left font-body text-[13px] text-[color:var(--color-text-secondary)] hover:bg-[color:var(--color-bg-subtle)]">
+                <Users size={14} /> Join workspace
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {!mode && (
           <>
-            {/* Org list */}
-            <div className="py-2">
-              {orgs.map((org) => {
-                const isActive = org._id === currentOrg?._id;
-                const initial = org.name ? org.name.trim().charAt(0).toUpperCase() : '?';
-                return (
-                  <button
-                    key={org._id}
-                    type="button"
-                    onClick={() => handleSwitch(org._id)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
-                    style={isActive ? { background: 'var(--color-bg-subtle)' } : {}}
-                  >
-                    <div
-                      className="flex items-center justify-center font-display font-bold text-white shrink-0"
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 'var(--radius-sm)',
-                        background: isActive ? 'var(--color-accent)' : getAvatarColor(org.name || ''),
-                        fontSize: 13,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {initial}
-                    </div>
-                    <span className="flex-1 font-body text-[13px] text-[color:var(--color-text-primary)] truncate font-medium">
-                      {org.name}
-                    </span>
-                    {isActive && (
-                      <Check size={15} color="var(--color-accent)" aria-hidden="true" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {/* App sections */}
+            <nav className="py-2">
+              {navItems.map((item) => (
+                <SidebarLink
+                  key={item.to}
+                  icon={item.icon}
+                  label={item.label}
+                  active={pathname === item.to}
+                  onClick={() => navigate(item.to)}
+                />
+              ))}
+              {isAdmin && (
+                <SidebarLink
+                  icon={Zap}
+                  label={t('automationsHub.title')}
+                  active={pathname.startsWith('/automations')}
+                  onClick={() => navigate('/automations/hub')}
+                />
+              )}
+            </nav>
 
-            {/* Actions */}
-            <div
-              className="py-2"
-              style={{ borderTop: '1px solid var(--color-border)' }}
-            >
-              <button
-                type="button"
-                onClick={() => { setMode('create'); setError(''); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
-              >
-                <div
-                  className="flex items-center justify-center shrink-0"
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1.5px dashed var(--color-accent)',
-                  }}
+            {/* Boards in this workspace */}
+            <div className="py-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <div className="flex items-center justify-between px-4 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => navigate('/boards')}
+                  className="font-body font-semibold text-[11px] uppercase tracking-wide text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] transition-colors"
                 >
-                  <Plus size={15} color="var(--color-accent)" aria-hidden="true" />
-                </div>
-                <span className="font-body text-[13px] font-medium text-[color:var(--color-accent)]">
-                  Create Organisation
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode('join'); setError(''); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors duration-100 hover:bg-[color:var(--color-bg-subtle)]"
-              >
-                <div
-                  className="flex items-center justify-center shrink-0"
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1.5px dashed var(--color-border)',
-                  }}
-                >
-                  <Users size={15} color="var(--color-text-secondary)" aria-hidden="true" />
-                </div>
-                <span className="font-body text-[13px] font-medium text-[color:var(--color-text-secondary)]">
-                  Join Organisation
-                </span>
-              </button>
+                  {t('nav.boards')}
+                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    aria-label={t('nav.boards')}
+                    onClick={() => navigate('/boards')}
+                    className="flex items-center justify-center rounded hover:bg-[color:var(--color-bg-subtle)]"
+                    style={{ width: 22, height: 22 }}
+                  >
+                    <Plus size={14} color="var(--color-text-muted)" />
+                  </button>
+                )}
+              </div>
+              {boards.length === 0 ? (
+                <p className="px-4 py-1 font-body text-[12px] text-[color:var(--color-text-muted)]">
+                  {t('workspace.noBoards')}
+                </p>
+              ) : (
+                boards.map((b) => (
+                  <SidebarLink
+                    key={b._id}
+                    icon={LayoutList}
+                    label={b.name}
+                    active={pathname === `/boards/${b._id}`}
+                    onClick={() => navigate(`/boards/${b._id}`)}
+                  />
+                ))
+              )}
             </div>
           </>
         )}
@@ -201,14 +279,14 @@ const OrgSidebar = () => {
               Back
             </button>
             <p className="font-display font-bold text-[14px] text-[color:var(--color-text-primary)] mb-4">
-              Create Organisation
+              Create workspace
             </p>
             <form onSubmit={handleCreate}>
               <input
                 type="text"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
-                placeholder="Organisation name"
+                placeholder="Workspace name"
                 autoFocus
                 disabled={submitting}
                 className="w-full h-9 px-3 font-body text-[13px] text-[color:var(--color-text-primary)] bg-[color:var(--color-bg-input)] focus:outline-none"
@@ -244,7 +322,7 @@ const OrgSidebar = () => {
               Back
             </button>
             <p className="font-display font-bold text-[14px] text-[color:var(--color-text-primary)] mb-4">
-              Join Organisation
+              Join workspace
             </p>
             <form onSubmit={handleJoin}>
               <input

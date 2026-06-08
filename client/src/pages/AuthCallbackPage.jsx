@@ -36,7 +36,7 @@ const AuthCallbackPage = () => {
 
       const hasOrg =
         Array.isArray(user.organisations) && user.organisations.length > 0;
-      navigate(hasOrg ? '/dashboard' : '/onboarding', { replace: true });
+      navigate(hasOrg ? '/workspace' : '/onboarding', { replace: true });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

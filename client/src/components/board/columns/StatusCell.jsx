@@ -58,37 +58,52 @@ const StatusCell = ({ value, column, readOnly, onChange }) => {
     };
   }, [open]);
 
-  const chip = (label, color) => {
-    const pair = getColorPair(color);
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          padding: '3px 10px',
-          fontSize: 12,
-          fontWeight: 500,
-          color: pair.text,
-          background: pair.bg,
-          borderRadius: 'var(--radius-full)',
-        }}
-      >
-        {label}
-      </span>
-    );
-  };
+  // Monday-style: the selected status fills the whole cell with its solid
+  // colour and white label; the picker lists solid colour bars.
+  const solidBar = (label, color, full = false) => (
+    <span
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: full ? '100%' : undefined,
+        minHeight: full ? 36 : undefined,
+        padding: full ? '0 8px' : '7px 10px',
+        fontSize: full ? 13 : 12,
+        fontWeight: 500,
+        color: '#fff',
+        background: color || 'var(--color-border-strong)',
+        borderRadius: full ? 0 : 'var(--radius-sm)',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </span>
+  );
 
   return (
-    <div ref={triggerRef} style={{ position: 'relative', width: '100%' }}>
-      <div
-        style={{ ...cellWrapperStyle, cursor: readOnly ? 'default' : 'pointer' }}
-        onClick={() => !readOnly && setOpen((v) => !v)}
-      >
-        {selected ? chip(selected.label, selected.color) : (
-          !readOnly && (
+    <div ref={triggerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {selected ? (
+        <div
+          onClick={() => !readOnly && setOpen((v) => !v)}
+          title={selected.label}
+          style={{ width: '100%', height: '100%', cursor: readOnly ? 'default' : 'pointer' }}
+        >
+          {solidBar(selected.label, selected.color, true)}
+        </div>
+      ) : (
+        <div
+          style={{ ...cellWrapperStyle, cursor: readOnly ? 'default' : 'pointer' }}
+          onClick={() => !readOnly && setOpen((v) => !v)}
+        >
+          {!readOnly && (
             <CellPlaceholder text={column?.type === 'dropdown' ? 'Select' : 'Set status'} />
-          )
-        )}
-      </div>
+          )}
+        </div>
+      )}
       {open && !readOnly && createPortal(
         <div
           ref={popRef}
@@ -118,17 +133,14 @@ const StatusCell = ({ value, column, readOnly, onChange }) => {
               style={{
                 display: 'block',
                 width: '100%',
-                margin: '2px 0',
-                padding: '6px 8px',
-                fontSize: 12,
+                margin: '3px 0',
+                padding: 0,
                 background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                textAlign: 'left',
-                borderRadius: 'var(--radius-sm)',
               }}
             >
-              {chip(opt.label, opt.color)}
+              {solidBar(opt.label, opt.color)}
             </button>
           ))}
           {value && (

@@ -1052,12 +1052,10 @@ const Navbar = () => {
             )}
           </button>
 
-          {/* Logo + nav links (links hidden on mobile) */}
+          {/* Logo only — primary navigation now lives in the left sidebar
+              (Monday-style). The mobile drawer below still uses NavLinks. */}
           <div className="flex items-center gap-4">
             <Logo />
-            <div className="hidden md:block h-full">
-              <NavLinks isAdmin={isAdmin} />
-            </div>
           </div>
 
           {/* Search — centered, hidden on mobile */}

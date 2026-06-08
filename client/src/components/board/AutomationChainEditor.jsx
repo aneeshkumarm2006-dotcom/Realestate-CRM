@@ -25,6 +25,7 @@ import {
 import SortableItem from '../dnd/SortableItem';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
+import ConditionTreeBuilder from './ConditionTreeBuilder';
 import { ActionConfigField, FieldLabel, Toggle } from './automationFields';
 import {
   catalogEntry,
@@ -64,6 +65,10 @@ import {
 const TASK_EVENT_TRIGGERS = [
   'COLUMN_VALUE_CHANGED',
   'STATUS_BECAME',
+  'CHECKBOX_CHECKED',
+  'NUMBER_CROSSED',
+  'ITEM_MOVED_TO_GROUP',
+  'UPDATE_POSTED',
   'DATE_ARRIVED',
   'PERSON_ASSIGNED',
 ];
@@ -85,6 +90,10 @@ const TRIGGER_TITLES = {
   ITEM_CREATED: 'When an item is created',
   COLUMN_VALUE_CHANGED: 'When a column changes',
   STATUS_BECAME: 'When status becomes…',
+  CHECKBOX_CHECKED: 'When a checkbox is checked',
+  NUMBER_CROSSED: 'When a number crosses a threshold',
+  ITEM_MOVED_TO_GROUP: 'When an item moves to a group',
+  UPDATE_POSTED: 'When an update is posted',
   DATE_ARRIVED: 'When a date arrives',
   PERSON_ASSIGNED: 'When a person is assigned',
   FORM_SUBMITTED: 'When a form is submitted',
@@ -119,7 +128,7 @@ const Connector = () => (
  * the modal's TriggerConfigForm but compact. ITEM_CREATED / dormant triggers
  * render a summary line only.
  */
-const TriggerChip = ({ triggerType, tc, setTc, board, saving }) => {
+const TriggerChip = ({ triggerType, tc, setTc, board, groups = [], saving }) => {
   const title = TRIGGER_TITLES[triggerType] || 'When triggered';
 
   let body = null;
@@ -165,6 +174,72 @@ const TriggerChip = ({ triggerType, tc, setTc, board, saving }) => {
             ))}
           </select>
         </div>
+      </div>
+    );
+  } else if (triggerType === 'CHECKBOX_CHECKED') {
+    const checkboxCols = columnsOfType(board, 'checkbox');
+    body = (
+      <div>
+        <FieldLabel>Checkbox column</FieldLabel>
+        <select value={tc.columnId || ''} disabled={saving || checkboxCols.length === 0} onChange={(e) => setTc({ columnId: e.target.value })} style={selectStyle(saving || checkboxCols.length === 0)}>
+          <option value="">{checkboxCols.length === 0 ? '— no checkbox columns —' : 'Select column…'}</option>
+          {checkboxCols.map((c) => (
+            <option key={c._id} value={c._id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+    );
+  } else if (triggerType === 'NUMBER_CROSSED') {
+    const numberCols = columnsOfType(board, 'number');
+    body = (
+      <div className="flex flex-col gap-2">
+        <div>
+          <FieldLabel>Number column</FieldLabel>
+          <select value={tc.columnId || ''} disabled={saving || numberCols.length === 0} onChange={(e) => setTc({ columnId: e.target.value })} style={selectStyle(saving || numberCols.length === 0)}>
+            <option value="">{numberCols.length === 0 ? '— no number columns —' : 'Select column…'}</option>
+            {numberCols.map((c) => (
+              <option key={c._id} value={c._id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <FieldLabel>Direction</FieldLabel>
+            <select value={tc.direction || 'above'} disabled={saving} onChange={(e) => setTc({ direction: e.target.value })} style={selectStyle(saving)}>
+              <option value="above">rises to ≥</option>
+              <option value="below">falls to ≤</option>
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Threshold</FieldLabel>
+            <input
+              type="number"
+              value={tc.threshold ?? ''}
+              disabled={saving}
+              onChange={(e) => setTc({ threshold: e.target.value === '' ? '' : Number(e.target.value) })}
+              style={{ ...selectStyle(saving), cursor: 'text' }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  } else if (triggerType === 'ITEM_MOVED_TO_GROUP') {
+    body = (
+      <div>
+        <FieldLabel>Destination group</FieldLabel>
+        <select value={tc.groupId || ''} disabled={saving} onChange={(e) => setTc({ groupId: e.target.value })} style={selectStyle(saving)}>
+          <option value="">Any group</option>
+          {(groups || []).map((g) => (
+            <option key={g._id} value={g._id}>{g.name}</option>
+          ))}
+        </select>
+      </div>
+    );
+  } else if (triggerType === 'UPDATE_POSTED') {
+    body = (
+      <div className="flex items-center gap-2" style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)', color: 'var(--color-text-muted)' }}>
+        <Zap size={13} aria-hidden="true" />
+        <span className="font-body" style={{ fontSize: 11 }}>Fires whenever an update is posted to the item.</span>
       </div>
     );
   } else if (triggerType === 'DATE_ARRIVED') {
@@ -375,6 +450,18 @@ const buildTriggerConfig = (triggerType, tc = {}) => {
       if (tc.fromValue) out.fromValue = tc.fromValue;
       return out;
     }
+    case 'CHECKBOX_CHECKED':
+      return { columnId: tc.columnId };
+    case 'NUMBER_CROSSED':
+      return {
+        columnId: tc.columnId,
+        threshold: Number(tc.threshold),
+        direction: tc.direction === 'below' ? 'below' : 'above',
+      };
+    case 'ITEM_MOVED_TO_GROUP':
+      return tc.groupId ? { groupId: tc.groupId } : {};
+    case 'UPDATE_POSTED':
+      return {};
     case 'DATE_ARRIVED':
       return {
         columnId: tc.columnId,
@@ -428,6 +515,7 @@ const AutomationChainEditor = ({
       return { id: newActionKey(), type: act.type, config };
     })
   );
+  const [conditionTree, setConditionTree] = useState(() => automation.conditionTree || null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -464,6 +552,11 @@ const AutomationChainEditor = ({
       if (!Number.isInteger(Number(tc.offsetDays))) return 'Days offset must be a whole number';
     }
     if (triggerType === 'PERSON_ASSIGNED' && !tc.columnId) return 'Choose a person column';
+    if (triggerType === 'CHECKBOX_CHECKED' && !tc.columnId) return 'Choose a checkbox column';
+    if (triggerType === 'NUMBER_CROSSED') {
+      if (!tc.columnId) return 'Choose a number column';
+      if (!Number.isFinite(Number(tc.threshold))) return 'Enter a numeric threshold';
+    }
     for (let i = 0; i < conditions.length; i++) {
       if (!conditions[i].value) return `Condition ${i + 1}: choose a value`;
     }
@@ -480,6 +573,7 @@ const AutomationChainEditor = ({
       name: name.trim(),
       enabled,
       conditions: conditions.map((c) => ({ type: c.type, value: c.value })),
+      conditionTree: conditionTree || null,
       actions: actions.map((a) => ({ type: a.type, config: a.config || {} })),
     };
     if (NEW_EVENT_TRIGGERS.includes(triggerType)) {
@@ -545,7 +639,7 @@ const AutomationChainEditor = ({
       />
 
       {/* Trigger */}
-      <TriggerChip triggerType={triggerType} tc={tc} setTc={setTc} board={board} saving={saving} />
+      <TriggerChip triggerType={triggerType} tc={tc} setTc={setTc} board={board} groups={groups} saving={saving} />
 
       {supportsConditions && (
         <>
@@ -573,6 +667,7 @@ const AutomationChainEditor = ({
               Add condition
             </button>
           </div>
+          <ConditionTreeBuilder board={board} tree={conditionTree} onChange={setConditionTree} />
         </>
       )}
 

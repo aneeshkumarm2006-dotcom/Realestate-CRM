@@ -14,6 +14,7 @@ const {
   listRecipes,
   createFromRecipe,
 } = require('../controllers/automationRecipeController');
+const { getHub, getUsage, getConnections } = require('../controllers/automationHubController');
 
 const router = express.Router();
 
@@ -31,6 +32,12 @@ router.get('/automations/action-catalog', getActionCatalog);
 // `recipes` / `from-recipe` aren't captured as an `:id`.
 router.get('/automations/recipes', listRecipes);
 router.post('/automations/from-recipe/:slug', createFromRecipe);
+
+// Phase 1b — account-wide Automations Hub (admin-only, org-scoped via ?orgId=).
+// Literal paths, registered before `/automations/:id`.
+router.get('/automations/hub', getHub);
+router.get('/automations/usage', getUsage);
+router.get('/automations/connections', getConnections);
 
 // Automation-scoped
 router.put('/automations/:id', updateAutomation);

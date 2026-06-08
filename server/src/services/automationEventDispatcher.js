@@ -5,6 +5,7 @@ const Board = require('../models/Board');
 const eventBus = require('./eventBus');
 const { runAutomationOnce } = require('../controllers/automationController');
 const { runActions } = require('./automationActionRunner');
+const { evaluateConditionTree, treeHasConditions } = require('../utils/conditionTree');
 
 let mounted = false;
 
@@ -57,6 +58,20 @@ const evaluateConditions = (automation, payload) => {
     }
   }
   return true;
+};
+
+/**
+ * Decide whether a task-scoped automation's conditions pass. Prefers the §1b.3
+ * AND/OR condition tree (evaluated against the full task + board columns) when
+ * one is set; otherwise falls back to the legacy flat conditions
+ * (group/status). One source of truth for the dispatcher + date runner.
+ */
+const conditionsPass = (automation, { task, board, fallbackPayload }) => {
+  const tree = automation && automation.conditionTree;
+  if (tree && treeHasConditions(tree)) {
+    return evaluateConditionTree(task, tree, board);
+  }
+  return evaluateConditions(automation, fallbackPayload || {});
 };
 
 /**
@@ -178,7 +193,7 @@ const handleItemCreated = async (payload) => {
   }
 
   for (const automation of automations) {
-    if (!evaluateConditions(automation, payload)) continue;
+    if (!conditionsPass(automation, { task: triggeringTask, board, fallbackPayload: payload })) continue;
     try {
       await runAutomationOnce(automation, { triggeringTask });
       automation.lastRunAt = new Date();
@@ -240,6 +255,38 @@ const TRIGGER_MATCHERS = {
     }
     return true;
   },
+  // { columnId } — fires when the watched checkbox column becomes checked
+  // (truthy new value). Rides the same task.column_changed event.
+  CHECKBOX_CHECKED: (cfg, payload) => {
+    if (!cfg || asId(cfg.columnId) !== asId(payload.columnId)) return false;
+    const v = payload.toValue;
+    return v === true || v === 'true' || v === 1 || v === '1';
+  },
+  // { columnId, threshold, direction } — fires when the number crosses the
+  // threshold: rising through it for 'above', falling through it for 'below'.
+  NUMBER_CROSSED: (cfg, payload) => {
+    if (!cfg || asId(cfg.columnId) !== asId(payload.columnId)) return false;
+    const th = Number(cfg.threshold);
+    if (!Number.isFinite(th)) return false;
+    const to = Number(payload.toValue);
+    if (!Number.isFinite(to)) return false;
+    const fromRaw = Number(payload.fromValue);
+    const from = Number.isFinite(fromRaw) ? fromRaw : null;
+    if (cfg.direction === 'below') {
+      // crossed downward: was above (or unset) and is now at/below the threshold
+      return (from === null || from > th) && to <= th;
+    }
+    // 'above' — crossed upward: was below (or unset) and is now at/above
+    return (from === null || from < th) && to >= th;
+  },
+  // { groupId? } — empty means "moved to any group"; set means the destination
+  // group must match. Rides the task.moved_to_group event.
+  ITEM_MOVED_TO_GROUP: (cfg, payload) => {
+    if (!cfg || !cfg.groupId) return true;
+    return asId(cfg.groupId) === asId(payload.toGroupId);
+  },
+  // No config — fires on every update posted to the task. Rides update.posted.
+  UPDATE_POSTED: () => true,
   // { columnId, userId? } — userId (if set) must be among the net-added users.
   PERSON_ASSIGNED: (cfg, payload) => {
     if (!cfg || asId(cfg.columnId) !== asId(payload.columnId)) return false;
@@ -333,7 +380,7 @@ const handleTaskTriggerEvent = async (triggerType, payload) => {
     const cfg = automation.triggerConfig || {};
     if (!matchFn(cfg, payload)) continue; // watched surface didn't match
 
-    if (!evaluateConditions(automation, condPayload)) {
+    if (!conditionsPass(automation, { task: triggeringTask, board, fallbackPayload: condPayload })) {
       // Relevant but filtered out by a condition — record for debugging.
       Automation.appendTriggerHistory(automation, {
         taskId: triggeringTask._id,
@@ -386,12 +433,23 @@ const handleTaskTriggerEvent = async (triggerType, payload) => {
   }
 };
 
-const handleColumnChanged = (payload) =>
-  handleTaskTriggerEvent('COLUMN_VALUE_CHANGED', payload);
+// A single column change drives COLUMN_VALUE_CHANGED plus the specialised
+// CHECKBOX_CHECKED / NUMBER_CROSSED triggers (each filtered by its own matcher,
+// so only relevant automations run). They ride the same task.column_changed
+// event — no extra emit points needed.
+const handleColumnChanged = async (payload) => {
+  await handleTaskTriggerEvent('COLUMN_VALUE_CHANGED', payload);
+  await handleTaskTriggerEvent('CHECKBOX_CHECKED', payload);
+  await handleTaskTriggerEvent('NUMBER_CROSSED', payload);
+};
 const handleStatusBecame = (payload) =>
   handleTaskTriggerEvent('STATUS_BECAME', payload);
 const handlePersonAssigned = (payload) =>
   handleTaskTriggerEvent('PERSON_ASSIGNED', payload);
+const handleMovedToGroup = (payload) =>
+  handleTaskTriggerEvent('ITEM_MOVED_TO_GROUP', payload);
+const handleUpdatePosted = (payload) =>
+  handleTaskTriggerEvent('UPDATE_POSTED', payload);
 
 // Dormant cross-phase handlers — registered now so the emitters in F7/F13 land
 // into live subscribers (exactly how the F1 events were dormant in Phase 1).
@@ -436,6 +494,9 @@ const mountAutomationEventDispatcher = () => {
   eventBus.on('task.column_changed', wrap(handleColumnChanged));
   eventBus.on('task.status_became', wrap(handleStatusBecame));
   eventBus.on('task.person_assigned', wrap(handlePersonAssigned));
+  // Phase 1b — new task-scoped triggers with their own emit points.
+  eventBus.on('task.moved_to_group', wrap(handleMovedToGroup));
+  eventBus.on('update.posted', wrap(handleUpdatePosted));
   // F4 — cross-phase stubs (dormant until F7/F13/F9 emit them).
   eventBus.on('webhook.received', wrap(handleWebhookReceived));
   eventBus.on('form.submitted', wrap(handleFormSubmitted));

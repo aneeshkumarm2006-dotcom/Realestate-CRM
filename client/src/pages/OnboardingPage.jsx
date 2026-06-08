@@ -28,7 +28,7 @@ const OnboardingPage = () => {
       setSubmitting(true);
       joinOrg(prefilledCode)
         .then(() => fetchCurrentUser())
-        .then(() => navigate('/dashboard', { replace: true }))
+        .then(() => navigate('/workspace', { replace: true }))
         .catch((err) => {
           setError(err.response?.data?.error || 'Invalid invite code');
           setSubmitting(false);
@@ -45,7 +45,7 @@ const OnboardingPage = () => {
     try {
       await createOrg(orgName.trim());
       await fetchCurrentUser();
-      navigate('/dashboard', { replace: true });
+      navigate('/workspace', { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || 'Could not create organisation');
       setSubmitting(false);
@@ -60,7 +60,7 @@ const OnboardingPage = () => {
     try {
       await joinOrg(inviteCode.trim());
       await fetchCurrentUser();
-      navigate('/dashboard', { replace: true });
+      navigate('/workspace', { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid invite code');
       setSubmitting(false);

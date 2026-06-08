@@ -556,6 +556,123 @@ const actionTypes = {
     },
   },
 
+  // ----- CLEAR_COLUMN ------------------------------------------------------
+  CLEAR_COLUMN: {
+    requires: null,
+    configSchema: {
+      fields: [{ key: 'columnId', label: 'Column', type: 'column', required: true }],
+    },
+    validate: (config, ctx) => {
+      const cfg = config || {};
+      const col = findColumn(ctx && ctx.board, cfg.columnId);
+      if (!col) throw ValidationError('CLEAR_COLUMN requires a valid columnId');
+      if (col.type === 'formula' || col.type === 'mirror') {
+        throw ValidationError('CLEAR_COLUMN cannot clear a read-only column');
+      }
+      return { columnId: asId(col._id) };
+    },
+    describe: (config, ctx) => {
+      const col = findColumn(ctx && ctx.board, config?.columnId);
+      return `Clear ${col?.name || 'column'}`;
+    },
+    execute: async (ctx) => {
+      const { task, board, config, automation } = ctx;
+      if (!task) return { status: 'skipped', error: 'No triggering task', payloadSummary: {} };
+      const col = findColumn(board, config.columnId);
+      if (!col) return { status: 'failed', error: 'Column no longer exists', payloadSummary: { columnId: config.columnId } };
+      const key = asId(col._id);
+      if (!task.columnValues || typeof task.columnValues.get !== 'function') {
+        task.columnValues = new Map(Object.entries(task.columnValues || {}));
+      }
+      const prevValue = task.columnValues.get(key);
+      const prev = prevValue == null ? null : prevValue;
+      if (prev == null) {
+        return { status: 'skipped', error: 'Column already empty', payloadSummary: { columnId: key } };
+      }
+      task.columnValues.set(key, null);
+      await task.save();
+      emitColumnWriteEvents(task, automation.board, col, prev, null, {
+        actorId: ctx.actorId,
+        originAutomationId: automation._id,
+        cascadeDepth: ctx.cascadeDepth,
+      });
+      return { status: 'ok', task, payloadSummary: { columnId: key, cleared: true } };
+    },
+  },
+
+  // ----- DUPLICATE_ITEM ----------------------------------------------------
+  DUPLICATE_ITEM: {
+    requires: null,
+    configSchema: { fields: [] },
+    // No config — clones the triggering item into the same group.
+    validate: () => ({}),
+    describe: () => 'Duplicate this item',
+    execute: async ({ task, automation }) => {
+      if (!task) return { status: 'skipped', error: 'No triggering task to duplicate', payloadSummary: {} };
+      if (task.parent) return { status: 'skipped', error: 'Subitems cannot be duplicated here', payloadSummary: {} };
+
+      // Deep-copy the columnValues map so the clone is independent.
+      let columnValues;
+      if (task.columnValues && typeof task.columnValues.entries === 'function') {
+        columnValues = new Map(task.columnValues);
+      } else if (task.columnValues) {
+        columnValues = new Map(Object.entries(task.columnValues));
+      } else {
+        columnValues = new Map();
+      }
+
+      const copy = await Task.create({
+        name: `${task.name} (copy)`,
+        board: task.board,
+        group: task.group,
+        parent: null,
+        priority: task.priority || 'medium',
+        status: task.status,
+        assignedTo: Array.isArray(task.assignedTo) ? task.assignedTo : [],
+        dueDate: task.dueDate,
+        note: task.note,
+        columnValues,
+        isPersonal: false,
+        createdBy: automation.createdBy,
+        createdByAutomation: true,
+      });
+      await Board.updateOne({ _id: task.board }, { $set: { updatedAt: new Date() } });
+      return { status: 'ok', payloadSummary: { duplicatedFrom: asId(task._id), newTaskId: asId(copy._id) } };
+    },
+  },
+
+  // ----- DELETE_ITEM -------------------------------------------------------
+  DELETE_ITEM: {
+    requires: null,
+    configSchema: { fields: [] },
+    // No config — permanently deletes the triggering item (and its subitems).
+    // Destructive: place it last in a chain. Mirrors taskController.deleteTask's
+    // cascade (comments + notifications + subitems) and emits task.deleted.
+    validate: () => ({}),
+    describe: () => 'Delete this item',
+    execute: async ({ task, automation }) => {
+      if (!task) return { status: 'skipped', error: 'No triggering task to delete', payloadSummary: {} };
+      const Comment = require('../models/Comment');
+      const Notification = require('../models/Notification');
+
+      const id = task._id;
+      const subitems = await Task.find({ parent: id }).select('_id');
+      const subitemIds = subitems.map((s) => s._id);
+      const idsToDelete = [id, ...subitemIds];
+
+      await Comment.deleteMany({ task: { $in: idsToDelete } });
+      await Notification.deleteMany({ task: { $in: idsToDelete } });
+      if (subitemIds.length > 0) await Task.deleteMany({ _id: { $in: subitemIds } });
+      await Task.deleteOne({ _id: id });
+      await Board.updateOne({ _id: task.board }, { $set: { updatedAt: new Date() } });
+
+      for (const deletedId of idsToDelete) {
+        eventBus.emit('task.deleted', { taskId: deletedId, boardId: task.board });
+      }
+      return { status: 'ok', payloadSummary: { deletedTaskId: asId(id), deletedSubitems: subitemIds.length } };
+    },
+  },
+
   // ----- NOTIFY_PERSON -----------------------------------------------------
   NOTIFY_PERSON: {
     requires: null,
@@ -1126,7 +1243,10 @@ const ACTION_DESCRIPTIONS = {
   CREATE_TASK: 'Create a task',
   CREATE_SUBITEM: 'Create a subitem',
   SET_COLUMN_VALUE: 'Set a column value',
+  CLEAR_COLUMN: 'Clear a column value',
   MOVE_TO_GROUP: 'Move item to a group',
+  DUPLICATE_ITEM: 'Duplicate this item',
+  DELETE_ITEM: 'Delete this item',
   NOTIFY_PERSON: 'Notify a person (in-app + optional email)',
   SEND_EMAIL: 'Send an email',
   SEND_SMS: 'Send an SMS',

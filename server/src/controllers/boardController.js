@@ -15,6 +15,8 @@ const {
   buildPrimaryOnlyColumns,
 } = require('../utils/boardTemplates');
 const Form = require('../models/Form');
+const Workspace = require('../models/Workspace');
+const { ensureDefaultWorkspace } = require('./workspaceController');
 const { grantedBoardAccessForUser } = require('../middleware/roleCheck');
 
 const VALID_VISIBILITIES = ['public', 'private'];
@@ -89,6 +91,10 @@ const getBoards = async (req, res) => {
     if (!isMember) {
       return res.status(403).json({ error: 'Not a member of this organisation' });
     }
+
+    // Phase 3.0 — make sure the default workspace exists and every board in the
+    // org is assigned to one (non-destructive lazy migration).
+    await ensureDefaultWorkspace(orgId, userId);
 
     const admin = isOrgAdmin(org, userId);
     const visibilityFilter = admin ? {} : { visibility: 'public' };
@@ -241,11 +247,22 @@ const createBoard = async (req, res) => {
       useFlexibleColumns = true;
     }
 
+    // Resolve the workspace this board belongs to (Phase 3.0): the requested
+    // workspace if it's valid and in this org, else the org's default workspace.
+    const def = await ensureDefaultWorkspace(organisation, userId);
+    let workspaceId = def._id;
+    const reqWs = req.body.workspace;
+    if (reqWs && mongoose.Types.ObjectId.isValid(reqWs)) {
+      const ws = await Workspace.findOne({ _id: reqWs, organisation });
+      if (ws) workspaceId = ws._id;
+    }
+
     const board = await Board.create({
       name: name.trim(),
       description: typeof description === 'string' ? description.trim() : '',
       visibility,
       organisation,
+      workspace: workspaceId,
       createdBy: userId,
       order: nextBoardOrder,
       statuses: DEFAULT_STATUSES.map((s) => ({ ...s })),

@@ -50,10 +50,13 @@ import LabelPicker from '../components/board/LabelPicker';
 import EditChipsModal from '../components/board/EditChipsModal';
 import BulkActionBar from '../components/board/BulkActionBar';
 import BoardFilterBar from '../components/board/BoardFilterBar';
+import BoardViewControls from '../components/board/BoardViewControls';
+import { compareByColumn } from '../utils/boardSort';
 import TableView from '../components/board/TableView';
 import InsightsTab from '../components/board/InsightsTab';
 import FormBoardView from '../components/board/FormBoardView';
-import { FileText } from 'lucide-react';
+import BoardCalendarView from '../components/board/BoardCalendarView';
+import { FileText, CalendarDays } from 'lucide-react';
 import * as formService from '../services/formService';
 import useAuthStore from '../store/authStore';
 import useOrgStore from '../store/orgStore';
@@ -86,6 +89,7 @@ const GROUP_DOT_CYCLE = [
 const VIEW_TABS = [
   { value: 'board', labelKey: 'board.viewBoard', icon: LayoutList },
   { value: 'table', labelKey: 'board.viewTable', icon: Table2 },
+  { value: 'calendar', labelKey: 'board.viewCalendar', icon: CalendarDays },
   { value: 'insights', labelKey: 'board.viewInsights', icon: BarChart3 },
 ];
 
@@ -201,6 +205,61 @@ const BoardDetailPage = () => {
   // Filter bar at the top of the board narrows the visible tasks by name,
   // status, priority, label, due date, and assignee. See utils/taskFilters.js.
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+
+  // --- View controls (sort + hidden columns) -----------------------------
+  // Persisted per board in localStorage so the view sticks across reloads.
+  const [sort, setSort] = useState(null); // { columnId, dir } | null
+  const [hiddenColumnIds, setHiddenColumnIds] = useState(() => new Set());
+
+  // Load persisted view state when the board changes.
+  useEffect(() => {
+    if (!boardId) return;
+    try {
+      const rawSort = localStorage.getItem(`macan:board:${boardId}:sort`);
+      setSort(rawSort ? JSON.parse(rawSort) : null);
+      const rawHidden = localStorage.getItem(`macan:board:${boardId}:hiddenCols`);
+      setHiddenColumnIds(new Set(rawHidden ? JSON.parse(rawHidden) : []));
+    } catch {
+      setSort(null);
+      setHiddenColumnIds(new Set());
+    }
+  }, [boardId]);
+
+  const persistSort = useCallback(
+    (next) => {
+      setSort(next);
+      try {
+        if (next) localStorage.setItem(`macan:board:${boardId}:sort`, JSON.stringify(next));
+        else localStorage.removeItem(`macan:board:${boardId}:sort`);
+      } catch { /* ignore quota / privacy-mode errors */ }
+    },
+    [boardId]
+  );
+
+  const persistHidden = useCallback(
+    (nextSet) => {
+      setHiddenColumnIds(nextSet);
+      try {
+        localStorage.setItem(`macan:board:${boardId}:hiddenCols`, JSON.stringify([...nextSet]));
+      } catch { /* ignore */ }
+    },
+    [boardId]
+  );
+
+  const toggleHiddenColumn = useCallback(
+    (colId) => {
+      setHiddenColumnIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(colId)) next.delete(colId);
+        else next.add(colId);
+        try {
+          localStorage.setItem(`macan:board:${boardId}:hiddenCols`, JSON.stringify([...next]));
+        } catch { /* ignore */ }
+        return next;
+      });
+    },
+    [boardId]
+  );
 
   // --- Bulk selection ----------------------------------------------------
   // Aggregated across every group on the board so the floating BulkActionBar
@@ -379,6 +438,19 @@ const BoardDetailPage = () => {
     [filteredTasksByGroup]
   );
 
+  // Apply the active "Sort" toolbar control on top of the filtered buckets.
+  // When no sort is set we return the filtered buckets untouched.
+  const displayTasksByGroup = useMemo(() => {
+    if (!sort?.columnId) return filteredTasksByGroup;
+    const col = (board?.columns || []).find((c) => c._id.toString() === sort.columnId);
+    if (!col) return filteredTasksByGroup;
+    const out = {};
+    for (const [gid, list] of Object.entries(filteredTasksByGroup)) {
+      out[gid] = [...(list || [])].sort((a, b) => compareByColumn(a, b, col, sort.dir));
+    }
+    return out;
+  }, [filteredTasksByGroup, sort, board?.columns]);
+
   const toggleGroup = (groupId) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -525,6 +597,37 @@ const BoardDetailPage = () => {
     },
     [boardId, addTaskLocal, refreshNotifications, toastError, t]
   );
+
+  // Toolbar "New lead": create a lead at the top of the first group and open it
+  // for editing. Expands the group first if it's collapsed.
+  const [creatingTopLead, setCreatingTopLead] = useState(false);
+  const handleNewLeadTop = useCallback(async () => {
+    const first = groups[0];
+    if (!first || creatingTopLead) return;
+    setCollapsed((prev) => {
+      if (!prev.has(first._id)) return prev;
+      const next = new Set(prev);
+      next.delete(first._id);
+      return next;
+    });
+    setCreatingTopLead(true);
+    try {
+      const created = await taskService.createTask({
+        name: t('boardMisc.newLeadName'),
+        board: boardId,
+        group: first._id,
+      });
+      addTaskLocal(created);
+      refreshNotifications(currentOrg?._id);
+      handleOpenTask(created);
+    } catch (err) {
+      console.error('Failed to create lead:', err);
+      toastError(err?.response?.data?.error || t('board.createLeadError'));
+    } finally {
+      setCreatingTopLead(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, creatingTopLead, boardId, addTaskLocal, refreshNotifications, currentOrg?._id, t]);
 
   // --- Inline edit ------------------------------------------------------
 
@@ -1163,6 +1266,8 @@ const BoardDetailPage = () => {
         <div className="mt-5">
           <TableView board={board} tasks={allTasks} members={members} />
         </div>
+      ) : viewMode === 'calendar' ? (
+        <BoardCalendarView board={board} tasks={allTasks} onOpenTask={handleOpenTask} />
       ) : viewMode === 'insights' ? (
         <div className="mt-5">
           <InsightsTab boardId={boardId} board={board} isAdmin={isAdmin} />
@@ -1171,6 +1276,20 @@ const BoardDetailPage = () => {
         <FormBoardView form={activeForm} isAdmin={isAdmin} />
       ) : (
         <>
+      {/* View controls (New lead · Sort · Hide columns) — flexible boards only */}
+      {hasGroups && board?.useFlexibleColumns && (
+        <BoardViewControls
+          board={board}
+          sort={sort}
+          onSortChange={persistSort}
+          hiddenColumnIds={hiddenColumnIds}
+          onToggleColumn={toggleHiddenColumn}
+          onShowAllColumns={() => persistHidden(new Set())}
+          onNewLead={isAdmin ? handleNewLeadTop : undefined}
+          creatingLead={creatingTopLead}
+        />
+      )}
+
       {/* Filter bar */}
       {hasGroups && board && (
         <BoardFilterBar
@@ -1241,7 +1360,9 @@ const BoardDetailPage = () => {
           >
             <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
               {groups.map((group, idx) => {
-                const groupTasks = filteredTasksByGroup[group._id] || [];
+                const groupTasks = displayTasksByGroup[group._id] || [];
+                // Monday-style group accent colour (cycled).
+                const groupColor = GROUP_DOT_CYCLE[idx % GROUP_DOT_CYCLE.length];
                 // While filtering, groups with no surviving tasks drop out of
                 // the view entirely to cut noise.
                 if (filtersActive && groupTasks.length === 0) return null;
@@ -1288,6 +1409,8 @@ const BoardDetailPage = () => {
                           ...style,
                           borderRadius: 'var(--radius-lg)',
                           boxShadow: 'var(--shadow-card)',
+                          // Monday-style colored left rail for the group.
+                          borderLeft: `4px solid ${groupColor}`,
                           position: 'relative',
                           zIndex: isDragging ? 30 : 'auto',
                           // Give an expanded group a floor height so a sparse
@@ -1305,7 +1428,7 @@ const BoardDetailPage = () => {
                       >
                         <TaskGroupHeader
                           name={group.name}
-                          colorDot={GROUP_DOT_CYCLE[idx % GROUP_DOT_CYCLE.length]}
+                          colorDot={groupColor}
                           totalCount={groupTasks.length}
                           doneCount={doneCount}
                           collapsed={isCollapsed}
@@ -1358,7 +1481,8 @@ const BoardDetailPage = () => {
                               onToggleSelectAll={handleToggleSelectGroup}
                               highlightedTaskId={highlightedTaskId}
                               groupId={group._id}
-                              dndDisabled={dndDisabledGlobal || isEditingHere}
+                              dndDisabled={dndDisabledGlobal || isEditingHere || !!sort?.columnId}
+                              hiddenColumnIds={hiddenColumnIds}
                             />
                           ) : (
                             <TaskTable
@@ -1380,7 +1504,7 @@ const BoardDetailPage = () => {
                               onSaveEdit={handleSaveEditTask}
                               onCancelEdit={handleCancelEdit}
                               groupId={group._id}
-                              dndDisabled={dndDisabledGlobal || isEditingHere}
+                              dndDisabled={dndDisabledGlobal || isEditingHere || !!sort?.columnId}
                               selectedIds={selectedTaskIds}
                               onToggleSelect={handleToggleSelectTask}
                               onToggleSelectAll={handleToggleSelectGroup}

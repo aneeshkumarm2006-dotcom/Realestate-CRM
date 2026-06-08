@@ -107,14 +107,42 @@
 > **Save-to-view** for the advanced filter (persist the tree to a SavedTableView +
 > mirror the evaluator server-side). Neither blocks Phase 1.
 
-### Phase 1b — Automations Hub & general-purpose library — 🔴
+### Phase 1b — Automations Hub & general-purpose library — ✅ COMPLETE (2026-06-08)
+- ✅ **1b.1/1b.5 Automations Hub** — account-wide page (`/automations/hub`, sidebar
+  entry) with Workflows (every automation across boards + on/off toggle), Health
+  (broken/failing), Usage (run-log charts), Connections tabs. `automationHubController`
+  (`/hub`, `/usage`, `/connections`).
+- ✅ **1b.2 Triggers (+4 → 13)** — CHECKBOX_CHECKED, NUMBER_CROSSED (ride
+  task.column_changed), ITEM_MOVED_TO_GROUP, UPDATE_POSTED (new emit points in
+  taskController/updateController). Matchers + tests.
+- ✅ **1b.3 Actions (+3 → 14)** — CLEAR_COLUMN, DUPLICATE_ITEM, DELETE_ITEM
+  (registry-driven). **Richer conditions** — AND/OR tree of column-compares
+  (`conditionTree` + server `conditionTree.js` evaluator mirroring the board filter;
+  wired into dispatcher + date runner; reuses the board's GroupEditor as
+  `ConditionTreeBuilder`).
+- ✅ **1b.4 Connections** — real connected-status per channel (email/sms/whatsapp/
+  webhooks/calendar) with correct manage deep-links.
+- ✅ **1b.6 Custom composer** — already board-agnostic (board picker + dynamic
+  columns/groups). Verified.
+- Tests: 39 automation unit tests green (conditionTree 11, dispatcher 11, actions 17).
+
+### Phase 1b — Automations Hub (original scope note) — ✅
 - 🔴 Automations Hub page (Health · Usage · Workflows · Connections), general
   triggers/conditions/actions, usage/observability dashboard, custom composer.
   *(Recommend trimming to the automations Rakotta actually uses — see analysis.)*
 
-### Phase 2 — Reporting & dashboards — 🔴
-- 🔴 Multi-section dashboard builder · more chart types · marketing/ROI analytics ·
-  per-widget permissions.
+### Phase 2 — Reporting & dashboards — 🟢 in progress
+- ✅ **2.1 Custom dashboard** — the Reports page now has a composable
+  **WorkspaceDashboard**: admins add chart widgets, each pulling from any board in
+  the workspace (board picker), in a responsive grid; everyone views. Reuses the
+  ChartWidget engine + 6 chart types (bar/line/pie/funnel/number/stacked-bar).
+  (`WorkspaceDashboard.jsx`, exported `ChartWidgetForm`/`WidgetCard` from
+  `InsightsTab.jsx`, wired into `AnalyticsPage`.)
+- 🔴 **2.3 Marketing / ROI analytics** — leads/visits/leases by source, ad budget
+  per source, cost-per-lead. Needs a lead-source + campaign-budget data model.
+- 🔴 **2.4 Per-widget / per-board permissions** — lock sensitive widgets to roles.
+- 🟡 **2.2 More chart types** — 6 types exist; add more (e.g. counts-by-source,
+  stacked-over-time) as needed.
 
 ### Phase 3 — Org structure & differentiator — 🔴
 - 🔴 **3.0 Workspaces under the Organisation** — real Org → **Workspace** → Folder →
@@ -122,11 +150,20 @@
   becomes a workspace switcher. **Added to plan 2026-06-07; not built; existing
   data left as-is for now.** (FEATURES.md §3.0 / PLAN.md §3.3.)
 - 🔴 Teams + team dashboards · roles/folders/workspace home.
-- 🔴 **Agent performance + commission/salary module** (the differentiator —
-  recommend pulling forward).
+- ⛔ **Agent performance + commission/salary module — DROPPED** (stakeholder,
+  2026-06-08). Agent *activity* reporting comes via Phase 2 dashboards; no
+  compensation math.
 
 ### Phase 4 — Comms & sales tooling — 🔴
 - 🔴 Email sequences (drip cadences) · mass email tracking · quotes & invoices.
+
+### Phase 4b — Visit Booking System (Calendly-style) — 🔴
+- 🔴 Our own booking engine for property visits. **One link = one building**, wired
+  to a board's calendar (board + target group chosen at creation). Manual
+  availability (weekly hours + overrides). On booking → lead in chosen group +
+  calendar event + confirmation email + auto-assign agent. Board-toolbar **"Booking
+  Links"** button; public page `/book/:slug`; cancel+rebook (MVP). New models:
+  `BookingLink`, `Booking` + `slotEngine`. Full spec in PLAN.md/FEATURES.md Phase 4b.
 
 ### Phase 5 — Knowledge base — 🔴
 - 🔴 Docs / Workdocs (Tiptap).

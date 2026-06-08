@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   MoreHorizontal,
-  MessageSquare,
+  MessageSquarePlus,
   GripVertical,
   ChevronRight,
   ArrowRight,
@@ -32,13 +32,17 @@ import {
 const COLUMN_WIDTH = 180;
 const DRAG_WIDTH = 24;
 const CHECK_WIDTH = 40;
-// Trailing control tracks mirror the classic TaskTable: a 48px comments
-// column (message icon + unread badge) and a 48px actions column. The extra
-// 44px add-column cell is unique to the flexible grid and stays put.
-const COMMENTS_WIDTH = 48;
+// Trailing control tracks: a 48px row-actions column and the 44px add-column
+// cell (the comments ⊕ now lives inside the Name cell, so it has no track).
 const ACTIONS_WIDTH = 48;
 const ADD_COLUMN_WIDTH = 44;
 const ROW_HEIGHT = 48;
+
+// Accent colours offered for column headers (Monday-style column colouring).
+const COLUMN_HEADER_SWATCHES = [
+  '#00C875', '#9D50DD', '#00A9FF', '#FDAB3D', '#FF642E',
+  '#E8517B', '#A25DDC', '#037F4C', '#0073EA', '#FB275D', '#66CCFF',
+];
 
 /**
  * DataGrid — generic grid driven by `board.columns` and a flat `tasks`
@@ -77,11 +81,14 @@ const DataGrid = ({
   highlightedTaskId = null,
   groupId = null,
   dndDisabled = false,
+  hiddenColumnIds = null,
 }) => {
   const { t } = useTranslation();
   const [headerMenu, setHeaderMenu] = useState(null); // { columnId, anchor }
   const [renamingId, setRenamingId] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
+  // Live width overrides while dragging a column's resize handle (colId → px).
+  const [colWidths, setColWidths] = useState({});
   const [expanded, setExpanded] = useState(() => new Set());
   // Per-column aggregation mode for the summary footer (columnId → agg).
   const [numAgg, setNumAgg] = useState(() => new Map());
@@ -102,8 +109,13 @@ const DataGrid = ({
   const toastError = useToastStore((s) => s.error);
 
   const columns = useMemo(
-    () => (board?.columns || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0)),
-    [board?.columns]
+    () =>
+      (board?.columns || [])
+        .slice()
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        // Hidden columns drop out of the grid (the primary column can't hide).
+        .filter((c) => c.isPrimary || !hiddenColumnIds?.has?.(c._id?.toString())),
+    [board?.columns, hiddenColumnIds]
   );
 
   const selectable = !readOnly && !!selectedIds && typeof onToggleSelect === 'function';
@@ -114,30 +126,75 @@ const DataGrid = ({
   const allSelected =
     tasks.length > 0 && selectedIds != null && tasks.every((t) => selectedIds.has(t._id));
 
-  // CSS grid template shared by the header and every row. Data columns
-  // stretch equally (`1fr`) so the grid always fills the container width; the
-  // control + add-column tracks are fixed.
+  // Resolved width for a column: a live drag override wins, then the persisted
+  // `width`, then the default. Monday columns are fixed-width and resizable.
+  const widthOf = (col) => colWidths[col._id] ?? (col.width > 0 ? col.width : COLUMN_WIDTH);
+
+  // CSS grid template shared by the header and every row. Each data column is a
+  // fixed pixel track (so it can be resized); the control + add-column tracks
+  // are fixed too. A trailing flexible track fills any leftover space.
   const gridTemplate = useMemo(() => {
-    const dataDefs = columns.map(() => `minmax(${COLUMN_WIDTH}px, 1fr)`);
+    const dataDefs = columns.map((c) => `${widthOf(c)}px`);
     return [
       `${DRAG_WIDTH}px`,
       `${CHECK_WIDTH}px`,
       ...dataDefs,
-      `${COMMENTS_WIDTH}px`,
       `${ACTIONS_WIDTH}px`,
       `${ADD_COLUMN_WIDTH}px`,
+      // Trailing filler so the row background fills the card instead of leaving
+      // a hard-edged gap after the + button. Collapses to 0 when columns
+      // overflow (then the grid scrolls horizontally).
+      'minmax(0, 1fr)',
     ].join(' ');
-  }, [columns]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, colWidths]);
 
   // Minimum width so the grid scrolls horizontally instead of squishing when
-  // there are more columns than fit.
+  // there are more columns than fit. (The Monday-style "write update" ⊕ now
+  // lives inside the Name cell, so it has no track of its own.)
   const minRowWidth =
     DRAG_WIDTH +
     CHECK_WIDTH +
-    columns.length * COLUMN_WIDTH +
-    COMMENTS_WIDTH +
+    columns.reduce((sum, c) => sum + widthOf(c), 0) +
     ACTIONS_WIDTH +
     ADD_COLUMN_WIDTH;
+
+  // Drag-to-resize a column. Updates the live override on every mousemove and
+  // persists the final width on mouseup.
+  const startResize = (e, col) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widthOf(col);
+    let lastW = startW;
+    const onMove = (ev) => {
+      lastW = Math.max(80, Math.min(800, startW + (ev.clientX - startX)));
+      setColWidths((prev) => ({ ...prev, [col._id]: lastW }));
+    };
+    const onUp = async () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      if (Math.round(lastW) !== Math.round(startW)) {
+        try {
+          await updateColumn(board._id, col._id, { width: Math.round(lastW) });
+        } catch (err) {
+          toastError(err?.response?.data?.error || t('grid.updateFailed'));
+        }
+      }
+      // Drop the override once the persisted width is reflected in props.
+      setColWidths((prev) => {
+        const next = { ...prev };
+        delete next[col._id];
+        return next;
+      });
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
 
   const onCellChange = async (task, column, value) => {
     try {
@@ -202,6 +259,14 @@ const DataGrid = ({
     setRenamingId(null);
   };
 
+  const handleSetColor = async (column, nextColor) => {
+    try {
+      await updateColumn(board._id, column._id, { color: nextColor });
+    } catch (err) {
+      toastError(err?.response?.data?.error || t('grid.updateFailed'));
+    }
+  };
+
   const handleDelete = async (column) => {
     if (column.isPrimary) {
       toastError(t('grid.primaryColumnCannotDelete'));
@@ -259,6 +324,7 @@ const DataGrid = ({
             align="space-between"
             className="group/col-header"
             divider
+            accent={col.color || null}
             stickyLeft={col.isPrimary ? FROZEN_PRIMARY_LEFT : null}
           >
             {renamingId === col._id ? (
@@ -282,10 +348,18 @@ const DataGrid = ({
                 }}
               />
             ) : (
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {col.name}
+              <span
+                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}
+              >
+                {col.color && (
+                  <span
+                    style={{ width: 8, height: 8, borderRadius: '50%', background: col.color, flexShrink: 0 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.name}</span>
                 {col.isPrimary && (
-                  <span style={{ marginLeft: 4, opacity: 0.6 }} title={t('grid.primaryColumn')}>
+                  <span style={{ opacity: 0.6 }} title={t('grid.primaryColumn')}>
                     *
                   </span>
                 )}
@@ -317,15 +391,38 @@ const DataGrid = ({
                 <MoreHorizontal size={12} />
               </button>
             )}
+            {/* Resize handle — drag the right edge to set column width. */}
+            {!readOnly && (
+              <div
+                onMouseDown={(e) => startResize(e, col)}
+                onClick={(e) => e.stopPropagation()}
+                title={t('grid.resizeColumn')}
+                className="opacity-0 group-hover/col-header:opacity-100 transition-opacity duration-150"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: -3,
+                  width: 7,
+                  height: '100%',
+                  cursor: 'col-resize',
+                  zIndex: 4,
+                  display: 'flex',
+                  justifyContent: 'center',
+                }}
+              >
+                <span style={{ width: 2, height: '100%', background: 'var(--color-accent)' }} />
+              </div>
+            )}
           </HeaderShell>
         ))}
 
-        {/* Comments + actions headers (empty, like the classic table) */}
-        <HeaderShell pad="0 8px" />
+        {/* Actions + add-column headers (empty) */}
         <HeaderShell pad="0 8px 0 0" />
         <HeaderShell pad="0 4px" align="center">
           {!readOnly && <AddColumnButton boardId={board._id} board={board} />}
         </HeaderShell>
+        {/* Trailing filler header */}
+        <HeaderShell pad="0" />
       </div>
 
       {/* Body rows */}
@@ -411,6 +508,9 @@ const DataGrid = ({
                       const value = col.isPrimary
                         ? task.name || valueFor(task, col._id)
                         : valueFor(task, col._id);
+                      // Status/dropdown render full-bleed (Monday-style colored
+                      // cell): drop the cell padding and let the cell stretch.
+                      const fullBleed = col.type === 'status' || col.type === 'dropdown';
                       return (
                         <div
                           key={col._id}
@@ -418,10 +518,10 @@ const DataGrid = ({
                           style={{
                             minHeight: ROW_HEIGHT,
                             display: 'flex',
-                            alignItems: 'center',
+                            alignItems: fullBleed ? 'stretch' : 'center',
                             // 8px here + the cell renderer's own 8px inner pad
                             // lands content at 16px, matching the classic table.
-                            padding: '0 8px',
+                            padding: fullBleed ? 0 : '0 8px',
                             borderRight: '1px solid var(--color-border)',
                             // The primary "Lead" column stays pinned on the left
                             // while the rest of the columns scroll horizontally.
@@ -453,7 +553,15 @@ const DataGrid = ({
                               <ChevronRight size={14} aria-hidden="true" />
                             </button>
                           )}
-                          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+                          <div
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              display: 'flex',
+                              alignItems: fullBleed ? 'stretch' : 'center',
+                              alignSelf: 'stretch',
+                            }}
+                          >
                             <Cell
                               value={value}
                               column={col}
@@ -462,54 +570,63 @@ const DataGrid = ({
                               onChange={(v) => onCellChange(task, col, v)}
                             />
                           </div>
+                          {/* Monday-style "write a new update" ⊕ — sits right of
+                              the Name with a divider line. */}
+                          {col.isPrimary && typeof onOpenTask === 'function' && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenTask(task)}
+                              title={t('grid.writeUpdate')}
+                              aria-label={
+                                commentCount > 0
+                                  ? t('grid.openCommentsCount', { count: commentCount })
+                                  : t('grid.writeUpdate')
+                              }
+                              className="flex items-center justify-center transition-colors duration-150 hover:bg-[color:var(--color-accent-light)]"
+                              style={{
+                                position: 'relative',
+                                width: 30,
+                                height: 28,
+                                marginLeft: 8,
+                                paddingLeft: 8,
+                                border: 'none',
+                                borderLeft: '1px solid var(--color-border)',
+                                background: 'transparent',
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <MessageSquarePlus size={15} color="var(--color-text-muted)" aria-hidden="true" />
+                              {commentCount > 0 && (
+                                <span
+                                  aria-hidden="true"
+                                  style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    right: 0,
+                                    minWidth: 14,
+                                    height: 14,
+                                    padding: '0 3px',
+                                    boxSizing: 'border-box',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 9999,
+                                    background: 'var(--color-accent)',
+                                    color: '#fff',
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    lineHeight: 1,
+                                  }}
+                                >
+                                  {commentCount > 9 ? '9+' : commentCount}
+                                </span>
+                              )}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
-
-                    {/* Comments — message icon + unread badge, like the classic table */}
-                    <Cellish center pad="0 8px">
-                      {typeof onOpenTask === 'function' && (
-                        <button
-                          type="button"
-                          onClick={() => onOpenTask(task)}
-                          aria-label={
-                            commentCount > 0
-                              ? t('grid.openCommentsCount', { count: commentCount })
-                              : t('grid.openComments')
-                          }
-                          className="flex items-center justify-center rounded transition-colors duration-150 hover:bg-[color:var(--color-border)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]"
-                          style={{ ...actionBtnStyle, position: 'relative', margin: '0 auto' }}
-                        >
-                          <MessageSquare size={15} color="var(--color-text-secondary)" aria-hidden="true" />
-                          {commentCount > 0 && (
-                            <span
-                              aria-hidden="true"
-                              style={{
-                                position: 'absolute',
-                                top: -3,
-                                right: -3,
-                                minWidth: 15,
-                                height: 15,
-                                padding: '0 3px',
-                                boxSizing: 'border-box',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                borderRadius: 9999,
-                                background: 'var(--color-accent)',
-                                color: '#FFFFFF',
-                                fontSize: 9,
-                                fontWeight: 700,
-                                lineHeight: 1,
-                                border: '1.5px solid var(--color-bg-surface, #FFFFFF)',
-                              }}
-                            >
-                              {commentCount > 9 ? '9+' : commentCount}
-                            </span>
-                          )}
-                        </button>
-                      )}
-                    </Cellish>
 
                     {/* Actions ⋯ */}
                     <Cellish center pad="0 8px 0 0">
@@ -527,7 +644,8 @@ const DataGrid = ({
                       )}
                     </Cellish>
 
-                    {/* Add-column trailing cell (empty in body) */}
+                    {/* Add-column trailing cell + filler (empty in body) */}
+                    <div />
                     <div />
                   </div>
 
@@ -594,6 +712,49 @@ const DataGrid = ({
               >
                 {t('grid.rename')}
               </button>
+
+              {/* Column colour swatches */}
+              <div style={{ padding: '6px 8px 2px', fontSize: 11, color: 'var(--color-text-muted)' }}>
+                {t('grid.columnColor')}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 8px' }}>
+                <button
+                  type="button"
+                  title={t('grid.noColor')}
+                  onClick={() => handleSetColor(col, null)}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    border: !col.color ? '2px solid var(--color-text-primary)' : '1px solid var(--color-border)',
+                    background: 'var(--color-bg-subtle)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <span style={{ width: 12, height: 2, background: 'var(--color-text-muted)', transform: 'rotate(-45deg)' }} />
+                </button>
+                {COLUMN_HEADER_SWATCHES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    title={c}
+                    onClick={() => handleSetColor(col, c)}
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      border: col.color === c ? '2px solid var(--color-text-primary)' : '1px solid var(--color-border)',
+                      background: c,
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  />
+                ))}
+              </div>
+
               <button
                 type="button"
                 disabled={col.isPrimary}
@@ -633,15 +794,16 @@ const HeaderShell = ({
   className,
   divider = false,
   stickyLeft = null,
+  accent = null,
 }) => (
   <div
     className={className}
     style={{
       height: 40,
       padding: pad,
-      borderBottom: '1px solid var(--color-border)',
+      borderBottom: accent ? `2px solid ${accent}` : '1px solid var(--color-border)',
       borderRight: divider ? '1px solid var(--color-border)' : undefined,
-      background: 'var(--color-bg-subtle)',
+      background: accent ? `${accent}1A` : 'var(--color-bg-subtle)',
       fontSize: 11,
       fontWeight: 600,
       textTransform: 'uppercase',
@@ -784,7 +946,7 @@ const GroupSummaryRow = ({ columns, tasks, sharedRowStyle, numAgg, onCycleAgg })
         }
         return <div key={col._id} style={cellBase} />;
       })}
-      {/* Trailing comments / actions / add-column tracks (empty). */}
+      {/* Trailing actions / add-column / filler tracks (empty). */}
       <div />
       <div />
       <div />

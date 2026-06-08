@@ -8,6 +8,7 @@ import {
   Send,
   Mail,
   MessageSquare,
+  MessageSquarePlus,
   Trash2,
   Download,
   Pencil,
@@ -240,16 +241,37 @@ const UpdatesTab = ({ task, onCountChange }) => {
             {t('itemTabs.loadingUpdates')}
           </p>
         ) : updates.length === 0 ? (
-          <p
-            className="font-body text-center"
-            style={{
-              fontSize: 13,
-              color: 'var(--color-text-muted)',
-              padding: '32px 0',
-            }}
+          <div
+            className="flex flex-col items-center justify-center text-center"
+            style={{ padding: '44px 24px' }}
           >
-            {t('itemTabs.noUpdatesYet')}
-          </p>
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: '50%',
+                background: 'var(--color-accent-light)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 16,
+              }}
+            >
+              <MessageSquarePlus size={28} color="var(--color-accent)" aria-hidden="true" />
+            </div>
+            <p
+              className="font-body"
+              style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}
+            >
+              {t('itemTabs.noUpdatesYet')}
+            </p>
+            <p
+              className="font-body"
+              style={{ fontSize: 13, color: 'var(--color-text-muted)', maxWidth: 300, lineHeight: 1.5 }}
+            >
+              {t('itemTabs.noUpdatesYetDesc')}
+            </p>
+          </div>
         ) : (
           <ul
             className="flex flex-col"

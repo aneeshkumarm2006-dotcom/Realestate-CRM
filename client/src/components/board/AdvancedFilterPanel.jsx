@@ -31,14 +31,14 @@ const newCondition = (cols) => {
 const newGroup = () => ({ id: nid(), conjunction: 'and', rules: [] });
 
 // --- Immutable tree edits by path (array of indices into nested `rules`) -----
-const updateNode = (root, path, fn) => {
+export const updateNode = (root, path, fn) => {
   if (path.length === 0) return fn(root);
   const [i, ...rest] = path;
   const rules = root.rules.slice();
   rules[i] = updateNode(rules[i], rest, fn);
   return { ...root, rules };
 };
-const removeNode = (root, path) => {
+export const removeNode = (root, path) => {
   const [i, ...rest] = path;
   const rules = root.rules.slice();
   if (rest.length === 0) rules.splice(i, 1);
@@ -194,7 +194,7 @@ const ConditionRow = ({ cond, cols, allTasks, onUpdate, onRemove, optionLabels }
   );
 };
 
-const GroupEditor = ({ group, path, depth, cols, allTasks, optionLabels, onUpdate, onRemove, onAdd }) => {
+export const GroupEditor = ({ group, path, depth, cols, allTasks, optionLabels, onUpdate, onRemove, onAdd }) => {
   const { t } = useTranslation();
   const rules = group.rules || [];
 

@@ -272,6 +272,10 @@ const automationSchema = new mongoose.Schema(
         'GROUP_CREATED',
         'COLUMN_VALUE_CHANGED',
         'STATUS_BECAME',
+        'CHECKBOX_CHECKED',
+        'NUMBER_CROSSED',
+        'ITEM_MOVED_TO_GROUP',
+        'UPDATE_POSTED',
         'DATE_ARRIVED',
         'PERSON_ASSIGNED',
         'FORM_SUBMITTED',
@@ -302,6 +306,14 @@ const automationSchema = new mongoose.Schema(
     conditions: {
       type: [conditionSchema],
       default: [],
+    },
+    // Phase 1b §1b.3 — richer conditions as an AND/OR tree of column compares
+    // ({ conjunction, rules:[ leaf | group ] }). When set (non-empty), it takes
+    // precedence over the flat `conditions[]` above. Stored as Mixed since the
+    // shape is recursive. Validated by sanitizeConditionTree in the controller.
+    conditionTree: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
     actions: {
       type: [actionSchema],

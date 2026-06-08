@@ -4,6 +4,7 @@ const Board = require('../models/Board');
 const Task = require('../models/Task');
 const Organisation = require('../models/Organisation');
 const { runActions } = require('./automationActionRunner');
+const { evaluateConditionTree, treeHasConditions } = require('../utils/conditionTree');
 
 let started = false;
 
@@ -182,7 +183,13 @@ const runDateAutomation = async (automation, now) => {
   const tasks = await Task.find({
     board: automation.board,
     isPersonal: { $ne: true },
-  }).select('columnValues group');
+  }).select('columnValues group createdByAutomation');
+
+  // §1b.3 — honour an AND/OR condition tree (only fire for matching tasks).
+  const hasTree = treeHasConditions(automation.conditionTree);
+  const boardForConditions = hasTree
+    ? await Board.findById(automation.board).select('columns').lean()
+    : null;
 
   // Secondary idempotency guard (covers overlapping windows after a clock skew /
   // restart): a single computed instant fires at most once. Keys are stored on
@@ -198,6 +205,7 @@ const runDateAutomation = async (automation, now) => {
 
   for (const task of tasks) {
     if (task.createdByAutomation) continue; // loop guard parity
+    if (hasTree && !evaluateConditionTree(task, automation.conditionTree, boardForConditions)) continue;
     const value = readTaskColumnValue(task, columnId);
     const instant = computeFireInstant(value, offsetDays, tz);
     if (!instant) continue;

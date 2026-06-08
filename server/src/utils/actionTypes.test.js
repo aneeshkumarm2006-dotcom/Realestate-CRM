@@ -68,13 +68,17 @@ const fakeTask = (entries = {}) => ({
 // ===========================================================================
 // Catalog / disabled wiring
 // ===========================================================================
-test('catalog: 11 actions; unshipped channel contracts disabled, shipped actions enabled', () => {
+test('catalog: 14 actions; unshipped channel contracts disabled, shipped actions enabled', () => {
   const catalog = buildActionCatalog();
-  assert.equal(catalog.length, 11);
+  assert.equal(catalog.length, 14);
   const byType = Object.fromEntries(catalog.map((c) => [c.type, c]));
   assert.equal(byType.CREATE_TASK.disabled, false);
   assert.equal(byType.SET_COLUMN_VALUE.disabled, false);
   assert.equal(byType.NOTIFY_PERSON.disabled, false);
+  // Phase 1b item-management actions — always enabled (no channel dependency).
+  assert.equal(byType.CLEAR_COLUMN.disabled, false);
+  assert.equal(byType.DUPLICATE_ITEM.disabled, false);
+  assert.equal(byType.DELETE_ITEM.disabled, false);
   // F7 + F8 + F9 + F10 + F11 have shipped → those actions enabled.
   assert.equal(byType.POST_WEBHOOK.disabled, false);
   assert.equal(byType.SEND_EMAIL.disabled, false);

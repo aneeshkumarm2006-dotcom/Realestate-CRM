@@ -20,6 +20,7 @@ const {
   getActionType,
 } = require('../utils/actionTypes');
 const { runActions } = require('../services/automationActionRunner');
+const { sanitizeConditionTree } = require('../utils/conditionTree');
 
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,6 +85,10 @@ const VALID_TRIGGER_TYPES = [
   'GROUP_CREATED',
   'COLUMN_VALUE_CHANGED',
   'STATUS_BECAME',
+  'CHECKBOX_CHECKED',
+  'NUMBER_CROSSED',
+  'ITEM_MOVED_TO_GROUP',
+  'UPDATE_POSTED',
   'DATE_ARRIVED',
   'PERSON_ASSIGNED',
   'FORM_SUBMITTED',
@@ -99,6 +104,10 @@ const VALID_CONDITION_TYPES = ['ITEM_IN_GROUP', 'ITEM_IN_STATUS', 'GROUP_NAME_MA
 const TASK_EVENT_TRIGGERS = [
   'COLUMN_VALUE_CHANGED',
   'STATUS_BECAME',
+  'CHECKBOX_CHECKED',
+  'NUMBER_CROSSED',
+  'ITEM_MOVED_TO_GROUP',
+  'UPDATE_POSTED',
   'DATE_ARRIVED',
   'PERSON_ASSIGNED',
 ];
@@ -117,6 +126,10 @@ const CONDITION_TYPES_BY_TRIGGER = {
   GROUP_CREATED: ['GROUP_NAME_MATCHES'],
   COLUMN_VALUE_CHANGED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
   STATUS_BECAME: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  CHECKBOX_CHECKED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  NUMBER_CROSSED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  ITEM_MOVED_TO_GROUP: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
+  UPDATE_POSTED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
   DATE_ARRIVED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
   PERSON_ASSIGNED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
   FORM_SUBMITTED: ['ITEM_IN_GROUP', 'ITEM_IN_STATUS'],
@@ -191,6 +204,47 @@ const sanitizeTriggerConfig = (triggerType, rawConfig, board) => {
       }
       return { config: out };
     }
+
+    case 'CHECKBOX_CHECKED': {
+      // { columnId } — fires when the checkbox column becomes checked.
+      const col = findBoardColumn(board, cfg.columnId);
+      if (!col) return { error: 'CHECKBOX_CHECKED requires a valid columnId' };
+      if (col.type !== 'checkbox') {
+        return { error: 'CHECKBOX_CHECKED columnId must point at a checkbox column' };
+      }
+      return { config: { columnId: col._id.toString() } };
+    }
+
+    case 'NUMBER_CROSSED': {
+      // { columnId, threshold, direction } — fires when the number crosses the
+      // threshold (rising for 'above', falling for 'below').
+      const col = findBoardColumn(board, cfg.columnId);
+      if (!col) return { error: 'NUMBER_CROSSED requires a valid columnId' };
+      if (col.type !== 'number') {
+        return { error: 'NUMBER_CROSSED columnId must point at a number column' };
+      }
+      const threshold = Number(cfg.threshold);
+      if (!Number.isFinite(threshold)) {
+        return { error: 'NUMBER_CROSSED requires a numeric threshold' };
+      }
+      const direction = cfg.direction === 'below' ? 'below' : 'above';
+      return { config: { columnId: col._id.toString(), threshold, direction } };
+    }
+
+    case 'ITEM_MOVED_TO_GROUP': {
+      // { groupId? } — empty means "moved to any group". A set groupId is the
+      // destination group; validated as an ObjectId (cross-board membership is
+      // naturally scoped since automations are queried per board).
+      if (cfg.groupId == null || cfg.groupId === '') return { config: {} };
+      if (!mongoose.Types.ObjectId.isValid(cfg.groupId)) {
+        return { error: 'ITEM_MOVED_TO_GROUP groupId is invalid' };
+      }
+      return { config: { groupId: cfg.groupId.toString() } };
+    }
+
+    case 'UPDATE_POSTED':
+      // No config — fires on every update posted to a board item.
+      return { config: {} };
 
     case 'DATE_ARRIVED': {
       // { columnId, offsetDays, comparison }
@@ -671,9 +725,12 @@ const createAutomation = async (req, res) => {
         CONDITION_TYPES_BY_TRIGGER.ITEM_CREATED
       );
       if (cv.error) return res.status(400).json({ error: cv.error });
+      const ct = sanitizeConditionTree(body.conditionTree, ctx.board);
+      if (ct.error) return res.status(400).json({ error: ct.error });
       const av = await sanitizeActions(body.actions, ctx.board, boardId, ctx.org);
       if (av.error) return res.status(400).json({ error: av.error });
       doc.conditions = cv.conditions;
+      doc.conditionTree = ct.tree;
       doc.actions = av.actions;
       doc.nextRunAt = null;
     } else if (triggerType === 'GROUP_CREATED') {
@@ -705,10 +762,13 @@ const createAutomation = async (req, res) => {
         CONDITION_TYPES_BY_TRIGGER[triggerType]
       );
       if (cv.error) return res.status(400).json({ error: cv.error });
+      const ct = sanitizeConditionTree(body.conditionTree, ctx.board);
+      if (ct.error) return res.status(400).json({ error: ct.error });
       const av = await sanitizeActions(body.actions, ctx.board, boardId, ctx.org);
       if (av.error) return res.status(400).json({ error: av.error });
       doc.triggerConfig = tc.config;
       doc.conditions = cv.conditions;
+      doc.conditionTree = ct.tree;
       doc.actions = av.actions;
       doc.nextRunAt = null;
     } else {
@@ -841,6 +901,13 @@ const updateAutomation = async (req, res) => {
       );
       if (cv.error) return res.status(400).json({ error: cv.error });
       automation.conditions = cv.conditions;
+    }
+
+    if (body.conditionTree !== undefined) {
+      const ct = sanitizeConditionTree(body.conditionTree, ctx.board);
+      if (ct.error) return res.status(400).json({ error: ct.error });
+      automation.conditionTree = ct.tree;
+      automation.markModified('conditionTree');
     }
 
     if (body.actions !== undefined) {

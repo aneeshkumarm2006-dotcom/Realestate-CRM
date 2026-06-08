@@ -14,6 +14,7 @@ import LoginPage from './pages/LoginPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import OnboardingPage from './pages/OnboardingPage';
 import DashboardPage from './pages/DashboardPage';
+import WorkspaceHomePage from './pages/WorkspaceHomePage';
 import MyBoardsPage from './pages/MyBoardsPage';
 import BoardDetailPage from './pages/BoardDetailPage';
 import FormBuilderPage from './pages/FormBuilderPage';
@@ -22,6 +23,7 @@ import CalendarPage from './pages/CalendarPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ProductivityPage from './pages/ProductivityPage';
 import AutomationsPage from './pages/AutomationsPage';
+import AutomationsHubPage from './pages/AutomationsHubPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import LeadIntakePage from './pages/LeadIntakePage';
 import MyTasksPage from './pages/MyTasksPage';
@@ -97,7 +99,7 @@ const RequireAdmin = () => {
  */
 const PublicOnlyRoute = ({ children }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
+  return isAuthenticated ? <Navigate to="/workspace" replace /> : children;
 };
 
 function App() {
@@ -162,6 +164,7 @@ function App() {
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route element={<RequireOrg />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/workspace" element={<WorkspaceHomePage />} />
             <Route path="/boards" element={<MyBoardsPage />} />
             <Route path="/boards/:id" element={<BoardDetailPage />} />
             <Route path="/my-tasks" element={<MyTasksPage />} />
@@ -171,6 +174,7 @@ function App() {
               <Route path="/productivity" element={<ProductivityPage />} />
               {/* F6 — Recipe library & automation builder (admin-only) */}
               <Route path="/automations" element={<AutomationsPage />} />
+              <Route path="/automations/hub" element={<AutomationsHubPage />} />
               <Route path="/boards/:id/automations" element={<AutomationsPage />} />
               <Route path="/boards/:id/integrations" element={<IntegrationsPage />} />
               {/* F9 — Automated Lead Agent: per-board intake policy (admin-only) */}
@@ -185,8 +189,8 @@ function App() {
           </Route>
         </Route>
 
-        {/* Default */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        {/* Default — land on the workspace home (Monday-style). */}
+        <Route path="/" element={<Navigate to="/workspace" replace />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <ToastContainer />

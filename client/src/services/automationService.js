@@ -90,3 +90,30 @@ export const createFromRecipe = async (slug, payload) => {
   const { data } = await api.post(`/api/automations/from-recipe/${slug}`, payload);
   return data;
 };
+
+/**
+ * GET /api/automations/hub?orgId=… — account-wide list of every automation
+ * across the org's boards + health stats (admin only). (Phase 1b)
+ */
+export const getHub = async (orgId) => {
+  const { data } = await api.get('/api/automations/hub', { params: { orgId } });
+  return data; // { automations, boards, stats }
+};
+
+/**
+ * GET /api/automations/usage?orgId=…&from&to — run-log observability aggregates
+ * for the org over a date range (admin only). (Phase 1b)
+ */
+export const getUsage = async (orgId, { from, to } = {}) => {
+  const { data } = await api.get('/api/automations/usage', { params: { orgId, from, to } });
+  return data;
+};
+
+/**
+ * GET /api/automations/connections?orgId=… — real connected-status for each
+ * native channel + its manage link (admin only). (Phase 1b §1b.4)
+ */
+export const getConnections = async (orgId) => {
+  const { data } = await api.get('/api/automations/connections', { params: { orgId } });
+  return data.channels;
+};

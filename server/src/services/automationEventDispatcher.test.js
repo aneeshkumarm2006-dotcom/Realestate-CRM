@@ -100,6 +100,64 @@ test('PERSON_ASSIGNED: matches column; userId (if set) must be in addedUserIds',
 });
 
 // ---------------------------------------------------------------------------
+// CHECKBOX_CHECKED (Phase 1b)
+// ---------------------------------------------------------------------------
+test('CHECKBOX_CHECKED: fires only on the watched column when newly truthy', () => {
+  const m = TRIGGER_MATCHERS.CHECKBOX_CHECKED;
+  const col = oid();
+  assert.equal(m({ columnId: col.toString() }, { columnId: col, toValue: true }), true);
+  assert.equal(m({ columnId: col.toString() }, { columnId: col, toValue: 'true' }), true);
+  // unchecked / falsy → no fire
+  assert.equal(m({ columnId: col.toString() }, { columnId: col, toValue: false }), false);
+  assert.equal(m({ columnId: col.toString() }, { columnId: col, toValue: null }), false);
+  // wrong column → no fire
+  assert.equal(m({ columnId: col.toString() }, { columnId: oid(), toValue: true }), false);
+});
+
+// ---------------------------------------------------------------------------
+// NUMBER_CROSSED (Phase 1b)
+// ---------------------------------------------------------------------------
+test('NUMBER_CROSSED: rising crosses the threshold only on the upward transition', () => {
+  const m = TRIGGER_MATCHERS.NUMBER_CROSSED;
+  const col = oid();
+  const cfg = { columnId: col.toString(), threshold: 100, direction: 'above' };
+  // 80 → 120 crosses up
+  assert.equal(m(cfg, { columnId: col, fromValue: 80, toValue: 120 }), true);
+  // 120 → 130 already above, no crossing
+  assert.equal(m(cfg, { columnId: col, fromValue: 120, toValue: 130 }), false);
+  // exactly at threshold counts as crossed
+  assert.equal(m(cfg, { columnId: col, fromValue: 80, toValue: 100 }), true);
+  // falling does not fire an 'above' trigger
+  assert.equal(m(cfg, { columnId: col, fromValue: 130, toValue: 90 }), false);
+});
+
+test('NUMBER_CROSSED: falling direction fires on the downward transition', () => {
+  const m = TRIGGER_MATCHERS.NUMBER_CROSSED;
+  const col = oid();
+  const cfg = { columnId: col.toString(), threshold: 50, direction: 'below' };
+  assert.equal(m(cfg, { columnId: col, fromValue: 80, toValue: 40 }), true);
+  assert.equal(m(cfg, { columnId: col, fromValue: 40, toValue: 30 }), false); // already below
+  assert.equal(m(cfg, { columnId: col, fromValue: 30, toValue: 80 }), false); // rising
+});
+
+// ---------------------------------------------------------------------------
+// ITEM_MOVED_TO_GROUP / UPDATE_POSTED (Phase 1b)
+// ---------------------------------------------------------------------------
+test('ITEM_MOVED_TO_GROUP: empty config matches any destination; set must equal', () => {
+  const m = TRIGGER_MATCHERS.ITEM_MOVED_TO_GROUP;
+  const g = oid();
+  assert.equal(m({}, { toGroupId: oid() }), true);
+  assert.equal(m({ groupId: g.toString() }, { toGroupId: g }), true);
+  assert.equal(m({ groupId: g.toString() }, { toGroupId: oid() }), false);
+});
+
+test('UPDATE_POSTED: always matches (no config)', () => {
+  const m = TRIGGER_MATCHERS.UPDATE_POSTED;
+  assert.equal(m({}, { taskId: oid() }), true);
+  assert.equal(m(undefined, {}), true);
+});
+
+// ---------------------------------------------------------------------------
 // Dormant matchers (FORM_SUBMITTED / WEBHOOK_RECEIVED)
 // ---------------------------------------------------------------------------
 test('FORM_SUBMITTED / WEBHOOK_RECEIVED: empty config matches; set id must equal', () => {

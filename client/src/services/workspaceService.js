@@ -54,6 +54,31 @@ export const deleteOrg = async (orgId) => {
   return data;
 };
 
+// --- Workspaces inside an organisation (Phase 3.0) -------------------------
+
+/** GET /api/orgs/:orgId/workspaces — list workspaces in the org. */
+export const listWorkspaces = async (orgId) => {
+  const { data } = await api.get(`/api/orgs/${orgId}/workspaces`);
+  return data.workspaces || [];
+};
+
+/** POST /api/orgs/:orgId/workspaces — create a workspace (admin). */
+export const createWorkspace = async (orgId, name) => {
+  const { data } = await api.post(`/api/orgs/${orgId}/workspaces`, { name });
+  return data.workspace;
+};
+
+/** PATCH /api/orgs/:orgId/workspaces/:wsId — rename / reorder (admin). */
+export const updateWorkspace = async (orgId, wsId, patch) => {
+  const { data } = await api.patch(`/api/orgs/${orgId}/workspaces/${wsId}`, patch);
+  return data.workspace;
+};
+
+/** DELETE /api/orgs/:orgId/workspaces/:wsId — delete (admin); boards move to default. */
+export const deleteWorkspace = async (orgId, wsId) => {
+  await api.delete(`/api/orgs/${orgId}/workspaces/${wsId}`);
+};
+
 // --- Cross-workspace grants (F3) ------------------------------------------
 
 /**

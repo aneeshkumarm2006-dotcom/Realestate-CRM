@@ -78,6 +78,9 @@ app.use('/auth', require('./routes/auth'));
 const orgsRouter = require('./routes/orgs');
 app.use('/api/orgs', orgsRouter);
 app.use('/api/workspaces', orgsRouter);
+// Phase 3.0 — real Workspace layer, nested under /api/orgs/:orgId/workspaces.
+// Mounted AFTER orgsRouter so its nested paths fall through to here.
+app.use('/api/orgs', require('./routes/workspaces'));
 app.use('/api/boards', require('./routes/boards'));
 // F12 — authed, per-user saved calendar views + their normalized events.
 app.use('/api', require('./routes/calendarViews'));

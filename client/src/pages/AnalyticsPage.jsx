@@ -9,6 +9,7 @@ import {
   Flag,
 } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
+import WorkspaceDashboard from '../components/analytics/WorkspaceDashboard';
 import StatCard from '../components/ui/StatCard';
 import {
   SkeletonStatCard,
@@ -273,6 +274,15 @@ const AnalyticsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Phase 2.1 — composable custom dashboard (admins build; everyone views) */}
+      {orgId && (
+        <div className="mt-6">
+          <WorkspaceDashboard orgId={orgId} isAdmin={isAdmin} />
+        </div>
+      )}
+
+      <div style={{ borderTop: '1px solid var(--color-border)', margin: '28px 0 0' }} />
 
       {error && (
         <div

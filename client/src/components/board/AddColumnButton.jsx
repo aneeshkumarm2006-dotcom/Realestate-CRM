@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus } from 'lucide-react';
+import {
+  Plus, Search, ChevronLeft,
+  CircleDot, List, Type, Calendar, Users, Hash,
+  Paperclip, CalendarRange, CheckSquare, Sigma, Boxes,
+  AlignLeft, Link as LinkIcon, Mail, Phone, Star, Tags, MapPin, Copy,
+} from 'lucide-react';
 import useBoardStore from '../../store/boardStore';
 import useToastStore from '../../store/toastStore';
 
@@ -20,68 +25,41 @@ import useToastStore from '../../store/toastStore';
 
 const MIRROR_AGGREGATIONS = ['first', 'concat', 'sum', 'min', 'max', 'count'];
 
-const CATEGORIES = [
-  {
-    name: 'Text',
-    types: [
-      { id: 'text', label: 'Text' },
-      { id: 'long_text', label: 'Long Text' },
-      { id: 'link', label: 'Link' },
-      { id: 'email', label: 'Email' },
-      { id: 'phone', label: 'Phone' },
-    ],
-  },
-  {
-    name: 'Numbers',
-    types: [
-      { id: 'number', label: 'Number' },
-      { id: 'rating', label: 'Rating' },
-      { id: 'formula', label: 'Formula (read-only)' },
-    ],
-  },
-  {
-    name: 'People',
-    types: [{ id: 'person', label: 'People' }],
-  },
-  {
-    name: 'Dates',
-    types: [
-      { id: 'date', label: 'Date' },
-      { id: 'timeline', label: 'Timeline' },
-    ],
-  },
-  {
-    name: 'Custom',
-    types: [
-      { id: 'status', label: 'Status (chips)' },
-      { id: 'dropdown', label: 'Dropdown' },
-      { id: 'tags', label: 'Tags (multi)' },
-      { id: 'checkbox', label: 'Checkbox' },
-      { id: 'location', label: 'Location' },
-      { id: 'file', label: 'File' },
-    ],
-  },
-  {
-    name: 'Connect',
-    types: [
-      { id: 'connect_boards', label: 'Connect boards' },
-      { id: 'mirror', label: 'Mirror column' },
-    ],
-  },
+// Monday-style column-type catalogue: each entry carries an icon + a coloured
+// icon tile. `keywords` widens search matching (e.g. "people" finds Person).
+const TYPE_META = {
+  status: { label: 'Status', icon: CircleDot, bg: '#00C875', keywords: 'label state stage' },
+  dropdown: { label: 'Dropdown', icon: List, bg: '#7E5EF2', keywords: 'select choice list' },
+  text: { label: 'Text', icon: Type, bg: '#00A9FF', keywords: 'string note' },
+  date: { label: 'Date', icon: Calendar, bg: '#7E5EF2', keywords: 'day calendar' },
+  person: { label: 'People', icon: Users, bg: '#3C42E0', keywords: 'person owner assignee assigned' },
+  number: { label: 'Numbers', icon: Hash, bg: '#FDAB3D', keywords: 'amount count value' },
+  file: { label: 'Files', icon: Paperclip, bg: '#FF158A', keywords: 'attachment upload document' },
+  timeline: { label: 'Timeline', icon: CalendarRange, bg: '#A25DDC', keywords: 'range duration gantt' },
+  checkbox: { label: 'Checkbox', icon: CheckSquare, bg: '#00C875', keywords: 'tick done toggle' },
+  formula: { label: 'Formula', icon: Sigma, bg: '#FF642E', keywords: 'calc compute read-only' },
+  connect_boards: { label: 'Connect boards', icon: Boxes, bg: '#FF158A', keywords: 'link relation board' },
+  long_text: { label: 'Long Text', icon: AlignLeft, bg: '#00A9FF', keywords: 'paragraph notes' },
+  link: { label: 'Link', icon: LinkIcon, bg: '#00A9FF', keywords: 'url web' },
+  email: { label: 'Email', icon: Mail, bg: '#00A9FF', keywords: 'mail address' },
+  phone: { label: 'Phone', icon: Phone, bg: '#00A9FF', keywords: 'mobile call number' },
+  rating: { label: 'Rating', icon: Star, bg: '#FDAB3D', keywords: 'stars score' },
+  tags: { label: 'Tags', icon: Tags, bg: '#7E5EF2', keywords: 'labels multi keywords' },
+  location: { label: 'Location', icon: MapPin, bg: '#00C875', keywords: 'place address map' },
+  mirror: { label: 'Mirror column', icon: Copy, bg: '#A25DDC', keywords: 'reflect connect lookup' },
+};
+
+const GROUPS = [
+  { key: 'essentials', label: 'Essentials', types: ['status', 'dropdown', 'text', 'date', 'person', 'number'] },
+  { key: 'super', label: 'Super useful', types: ['file', 'timeline', 'checkbox', 'formula', 'connect_boards'] },
+  { key: 'more', label: 'More columns', types: ['long_text', 'link', 'email', 'phone', 'rating', 'tags', 'location', 'mirror'] },
 ];
 
-const menuItemStyle = {
-  display: 'block',
-  width: '100%',
-  padding: '6px 10px',
-  fontSize: 12,
-  textAlign: 'left',
-  background: 'transparent',
-  border: 'none',
-  cursor: 'pointer',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--color-text-primary)',
-};
+// Optional per-column accent colours offered when naming a new column.
+const COLUMN_SWATCHES = [
+  '#00C875', '#9D50DD', '#00A9FF', '#FDAB3D', '#FF642E',
+  '#E8517B', '#A25DDC', '#037F4C', '#0073EA', '#FB275D', '#66CCFF',
+];
 
 const labelStyle = {
   fontSize: 11,
@@ -108,7 +86,12 @@ const AddColumnButton = ({ boardId, board }) => {
   const [step, setStep] = useState('picker');
   const [pickedType, setPickedType] = useState(null);
   const [name, setName] = useState('');
+  const [color, setColor] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // picker UX
+  const [query, setQuery] = useState('');
+  const [showMore, setShowMore] = useState(false);
 
   // connect_boards config
   const [connectable, setConnectable] = useState([]);
@@ -137,6 +120,9 @@ const AddColumnButton = ({ boardId, board }) => {
     setStep('picker');
     setPickedType(null);
     setName('');
+    setColor(null);
+    setQuery('');
+    setShowMore(false);
     setSelectedTargetIds([]);
     setAllowMultiple(true);
     setSourceConnectColumnId('');
@@ -165,7 +151,7 @@ const AddColumnButton = ({ boardId, board }) => {
       setPanelPos(null);
       return undefined;
     }
-    const PANEL_WIDTH = 260;
+    const PANEL_WIDTH = step === 'picker' ? 340 : 280;
     const place = () => {
       const btn = ref.current;
       if (!btn) return;
@@ -181,7 +167,7 @@ const AddColumnButton = ({ boardId, board }) => {
       window.removeEventListener('scroll', place, true);
       window.removeEventListener('resize', place);
     };
-  }, [open]);
+  }, [open, step]);
 
   useEffect(() => {
     if (step === 'naming' && nameRef.current) nameRef.current.focus();
@@ -236,6 +222,7 @@ const AddColumnButton = ({ boardId, board }) => {
   const createSimple = async () => {
     if (!name.trim() || !pickedType) return;
     const payload = { name: name.trim(), type: pickedType };
+    if (color) payload.color = color;
     if (pickedType === 'status' || pickedType === 'dropdown' || pickedType === 'tags') {
       payload.settings = { options: [] };
     } else if (pickedType === 'rating') {
@@ -243,6 +230,21 @@ const AddColumnButton = ({ boardId, board }) => {
     }
     await submit(payload);
   };
+
+  // Flat, search-filtered list of {id, ...meta} for the picker.
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const all = Object.keys(TYPE_META);
+    if (!q) return null; // null → render grouped view
+    return all.filter((tid) => {
+      const m = TYPE_META[tid];
+      return (
+        m.label.toLowerCase().includes(q) ||
+        tid.includes(q) ||
+        (m.keywords || '').includes(q)
+      );
+    });
+  }, [query]);
 
   const createConnect = async () => {
     if (!name.trim()) return;
@@ -318,8 +320,8 @@ const AddColumnButton = ({ boardId, board }) => {
             top: panelPos.top,
             left: panelPos.left,
             zIndex: 1000,
-            minWidth: 260,
-            maxHeight: 380,
+            minWidth: step === 'picker' ? 340 : 280,
+            maxHeight: 420,
             overflowY: 'auto',
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border)',
@@ -328,52 +330,119 @@ const AddColumnButton = ({ boardId, board }) => {
             padding: 8,
           }}
         >
-          {step === 'picker' &&
-            CATEGORIES.map((cat) => (
-              <div key={cat.name} style={{ marginBottom: 8 }}>
-                <div
+          {step === 'picker' && (
+            <div>
+              {/* Search box */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  height: 36,
+                  padding: '0 10px',
+                  marginBottom: 10,
+                  border: '1px solid var(--color-border-strong)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-bg-surface, #fff)',
+                }}
+              >
+                <Search size={15} color="var(--color-text-muted)" aria-hidden="true" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search or describe your column"
                   style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--color-text-muted)',
-                    padding: '4px 6px',
+                    flex: 1,
+                    minWidth: 0,
+                    border: 'none',
+                    outline: 'none',
+                    background: 'transparent',
+                    fontSize: 13,
+                    color: 'var(--color-text-primary)',
                   }}
-                >
-                  {cat.name}
-                </div>
-                {cat.types.map((t) => {
-                  const disabled = t.id === 'mirror' && !hasConnectColumn;
-                  return (
+                />
+              </div>
+
+              {matches ? (
+                matches.length === 0 ? (
+                  <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--color-text-muted)' }}>
+                    No column types match “{query}”
+                  </div>
+                ) : (
+                  <TileGrid
+                    ids={matches}
+                    hasConnectColumn={hasConnectColumn}
+                    onPick={(tid) => startWithType(tid, TYPE_META[tid].label)}
+                  />
+                )
+              ) : (
+                <>
+                  {GROUPS.filter((g) => g.key !== 'more' || showMore).map((g) => (
+                    <div key={g.key} style={{ marginBottom: 12 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: 'var(--color-text-muted)',
+                          padding: '0 2px 6px',
+                        }}
+                      >
+                        {g.label}
+                      </div>
+                      <TileGrid
+                        ids={g.types}
+                        hasConnectColumn={hasConnectColumn}
+                        onPick={(tid) => startWithType(tid, TYPE_META[tid].label)}
+                      />
+                    </div>
+                  ))}
+                  {!showMore && (
                     <button
-                      key={t.id}
                       type="button"
-                      disabled={disabled}
-                      title={
-                        disabled
-                          ? 'Add a “Connect boards” column first to mirror data from it'
-                          : undefined
-                      }
-                      onClick={() => startWithType(t.id, t.label)}
+                      onClick={() => setShowMore(true)}
                       style={{
-                        ...menuItemStyle,
-                        cursor: disabled ? 'not-allowed' : 'pointer',
-                        opacity: disabled ? 0.4 : 1,
+                        width: '100%',
+                        marginTop: 2,
+                        padding: '8px 0',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: 'var(--color-text-secondary)',
+                        background: 'transparent',
+                        border: 'none',
+                        borderTop: '1px solid var(--color-border)',
+                        cursor: 'pointer',
                       }}
                     >
-                      {t.label}
+                      More columns
                     </button>
-                  );
-                })}
-              </div>
-            ))}
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {step === 'naming' && (
             <div style={{ padding: 6 }}>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 6 }}>
-                Name your new {pickedType} column
-              </div>
+              <button
+                type="button"
+                onClick={resetAll}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginBottom: 10,
+                  padding: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                <ChevronLeft size={14} /> Back
+              </button>
+              <label style={labelStyle}>{TYPE_META[pickedType]?.label || pickedType} column name</label>
               <input
                 ref={nameRef}
                 type="text"
@@ -385,6 +454,21 @@ const AddColumnButton = ({ boardId, board }) => {
                 }}
                 style={controlStyle}
               />
+              <label style={labelStyle}>Column color (optional)</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                <SwatchButton active={color === null} onClick={() => setColor(null)} title="No color">
+                  <span style={{ width: 14, height: 2, background: 'var(--color-text-muted)', transform: 'rotate(-45deg)' }} />
+                </SwatchButton>
+                {COLUMN_SWATCHES.map((c) => (
+                  <SwatchButton
+                    key={c}
+                    active={color === c}
+                    onClick={() => setColor(c)}
+                    title={c}
+                    style={{ background: c }}
+                  />
+                ))}
+              </div>
               <ConfigFooter onBack={resetAll} onSubmit={createSimple} disabled={!name.trim() || busy} />
             </div>
           )}
@@ -520,6 +604,90 @@ const AddColumnButton = ({ boardId, board }) => {
     </div>
   );
 };
+
+// A 2-column grid of Monday-style column-type tiles (coloured icon + label).
+const TileGrid = ({ ids, onPick, hasConnectColumn }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+    {ids.map((tid) => {
+      const m = TYPE_META[tid];
+      if (!m) return null;
+      const Icon = m.icon;
+      const disabled = tid === 'mirror' && !hasConnectColumn;
+      return (
+        <button
+          key={tid}
+          type="button"
+          disabled={disabled}
+          title={disabled ? 'Add a “Connect boards” column first to mirror data from it' : m.label}
+          onClick={() => onPick(tid)}
+          className="hover:bg-[color:var(--color-bg-subtle)]"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 9,
+            width: '100%',
+            padding: '7px 8px',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: 'var(--radius-sm)',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            opacity: disabled ? 0.4 : 1,
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              width: 24,
+              height: 24,
+              flexShrink: 0,
+              borderRadius: 6,
+              background: m.bg,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Icon size={14} color="#fff" aria-hidden="true" />
+          </span>
+          <span
+            style={{
+              fontSize: 13,
+              color: 'var(--color-text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {m.label}
+          </span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+// Small round colour swatch used in the naming step's colour picker.
+const SwatchButton = ({ active, onClick, title, style, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={title}
+    style={{
+      width: 22,
+      height: 22,
+      borderRadius: '50%',
+      border: active ? '2px solid var(--color-text-primary)' : '1px solid var(--color-border)',
+      cursor: 'pointer',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 0,
+      ...style,
+    }}
+  >
+    {children}
+  </button>
+);
 
 const ConfigFooter = ({ onBack, onSubmit, disabled }) => (
   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>

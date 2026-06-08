@@ -18,6 +18,7 @@ import AssigneePicker from './AssigneePicker';
 import AutomationRunLog from './AutomationRunLog';
 import TemplateVariableMenu from './TemplateVariableMenu';
 import { WhatsAppTemplateField } from './automationFields';
+import ConditionTreeBuilder from './ConditionTreeBuilder';
 import * as automationService from '../../services/automationService';
 
 const TRIGGER_OPTIONS = [
@@ -26,6 +27,10 @@ const TRIGGER_OPTIONS = [
   { value: 'GROUP_CREATED', label: 'When a group is created' },
   { value: 'COLUMN_VALUE_CHANGED', label: 'When a column changes' },
   { value: 'STATUS_BECAME', label: 'When status becomes…' },
+  { value: 'CHECKBOX_CHECKED', label: 'When a checkbox is checked' },
+  { value: 'NUMBER_CROSSED', label: 'When a number crosses a threshold' },
+  { value: 'ITEM_MOVED_TO_GROUP', label: 'When an item moves to a group' },
+  { value: 'UPDATE_POSTED', label: 'When an update is posted' },
   { value: 'DATE_ARRIVED', label: 'When a date arrives' },
   { value: 'PERSON_ASSIGNED', label: 'When a person is assigned' },
   { value: 'FORM_SUBMITTED', label: 'When a form is submitted' },
@@ -38,6 +43,10 @@ const TRIGGER_OPTIONS = [
 const TASK_EVENT_TRIGGERS = [
   'COLUMN_VALUE_CHANGED',
   'STATUS_BECAME',
+  'CHECKBOX_CHECKED',
+  'NUMBER_CROSSED',
+  'ITEM_MOVED_TO_GROUP',
+  'UPDATE_POSTED',
   'DATE_ARRIVED',
   'PERSON_ASSIGNED',
 ];
@@ -81,7 +90,10 @@ const ACTION_LABELS = {
   CREATE_TASK: 'Create a task',
   CREATE_SUBITEM: 'Create a subitem',
   SET_COLUMN_VALUE: 'Set a column value',
+  CLEAR_COLUMN: 'Clear a column value',
   MOVE_TO_GROUP: 'Move item to group',
+  DUPLICATE_ITEM: 'Duplicate this item',
+  DELETE_ITEM: 'Delete this item',
   NOTIFY_PERSON: 'Notify a person',
   SEND_EMAIL: 'Send email',
   SEND_SMS: 'Send SMS',
@@ -336,6 +348,18 @@ const describeNewTrigger = (automation, board) => {
       when = `When ${colName} becomes "${opt?.label || cfg.toValue || '—'}"`;
       break;
     }
+    case 'CHECKBOX_CHECKED':
+      when = `When ${colName} is checked`;
+      break;
+    case 'NUMBER_CROSSED':
+      when = `When ${colName} ${cfg.direction === 'below' ? 'falls to' : 'rises to'} ${cfg.threshold ?? '—'}`;
+      break;
+    case 'ITEM_MOVED_TO_GROUP':
+      when = cfg.groupId ? 'When an item moves to a group' : 'When an item moves to any group';
+      break;
+    case 'UPDATE_POSTED':
+      when = 'When an update is posted';
+      break;
     case 'DATE_ARRIVED': {
       const n = Number(cfg.offsetDays || 0);
       const rel =
@@ -438,6 +462,8 @@ const buildInitialForm = (groups) => ({
   note: '',
   // ITEM_CREATED fields
   conditions: [],
+  // §1b.3 AND/OR condition tree (Only run if…)
+  conditionTree: null,
   actions: [buildEmptyAction(groups)],
   // GROUP_CREATED fields
   groupNamePattern: '',
@@ -513,6 +539,7 @@ const formFromAutomation = (a, groups) => {
         : '',
     note: t.note || '',
     conditions,
+    conditionTree: a.conditionTree || null,
     actions: actions.length > 0 ? actions : [buildEmptyAction(groups)],
     groupNamePattern: String(groupNamePattern || ''),
     groupCreatedTemplates:
@@ -1454,7 +1481,7 @@ const FieldLabel = ({ children }) => (
  * flexible columns); dormant triggers render a greyed "Available after Phase …"
  * notice but still save (so the automation is ready when the emitter ships).
  */
-const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
+const TriggerConfigForm = ({ form, setForm, board, members, groups, saving }) => {
   const { t } = useTranslation();
   const tc = form.triggerConfig || {};
   const setTc = (patch) =>
@@ -1559,6 +1586,120 @@ const TriggerConfigForm = ({ form, setForm, board, members, saving }) => {
           </div>
         </div>
       </>
+    );
+  }
+
+  if (type === 'CHECKBOX_CHECKED') {
+    const checkboxCols = columnsOfType(board, 'checkbox');
+    return wrap(
+      <div>
+        <FieldLabel>{t('automation.checkboxColumn')}</FieldLabel>
+        <select
+          value={tc.columnId || ''}
+          disabled={saving || checkboxCols.length === 0}
+          onChange={(e) => setTc({ columnId: e.target.value })}
+          style={selectStyle(saving || checkboxCols.length === 0)}
+        >
+          <option value="">{checkboxCols.length === 0 ? t('automation.noCheckboxColumns') : t('automation.selectColumn')}</option>
+          {checkboxCols.map((c) => (
+            <option key={c._id} value={c._id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          {t('automation.checkboxCheckedHint')}
+        </p>
+      </div>
+    );
+  }
+
+  if (type === 'NUMBER_CROSSED') {
+    const numberCols = columnsOfType(board, 'number');
+    return wrap(
+      <>
+        <div>
+          <FieldLabel>{t('automation.numberColumn')}</FieldLabel>
+          <select
+            value={tc.columnId || ''}
+            disabled={saving || numberCols.length === 0}
+            onChange={(e) => setTc({ columnId: e.target.value })}
+            style={selectStyle(saving || numberCols.length === 0)}
+          >
+            <option value="">{numberCols.length === 0 ? t('automation.noNumberColumns') : t('automation.selectColumn')}</option>
+            {numberCols.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <FieldLabel>{t('automation.direction')}</FieldLabel>
+            <SegmentedControl
+              options={[
+                { value: 'above', label: t('automation.risesTo') },
+                { value: 'below', label: t('automation.fallsTo') },
+              ]}
+              value={tc.direction || 'above'}
+              onChange={(v) => setTc({ direction: v })}
+              disabled={saving}
+            />
+          </div>
+          <div>
+            <FieldLabel>{t('automation.threshold')}</FieldLabel>
+            <input
+              type="number"
+              value={tc.threshold ?? ''}
+              disabled={saving}
+              onChange={(e) => setTc({ threshold: e.target.value === '' ? '' : Number(e.target.value) })}
+              style={{ ...selectStyle(saving), cursor: 'text' }}
+            />
+          </div>
+        </div>
+        <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          {t('automation.numberCrossedHint')}
+        </p>
+      </>
+    );
+  }
+
+  if (type === 'ITEM_MOVED_TO_GROUP') {
+    return wrap(
+      <div>
+        <FieldLabel>{t('automation.destinationGroup')}</FieldLabel>
+        <select
+          value={tc.groupId || ''}
+          disabled={saving}
+          onChange={(e) => setTc({ groupId: e.target.value })}
+          style={selectStyle(saving)}
+        >
+          <option value="">{t('automation.anyGroup')}</option>
+          {(groups || []).map((g) => (
+            <option key={g._id} value={g._id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+        <p className="font-body" style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+          {t('automation.movedToGroupHint')}
+        </p>
+      </div>
+    );
+  }
+
+  if (type === 'UPDATE_POSTED') {
+    return wrap(
+      <div
+        className="flex items-center gap-2"
+        style={{ padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)', color: 'var(--color-text-muted)' }}
+      >
+        <Zap size={14} aria-hidden="true" />
+        <span className="font-body" style={{ fontSize: 12 }}>
+          {t('automation.updatePostedHint')}
+        </span>
+      </div>
     );
   }
 
@@ -1697,7 +1838,13 @@ const EventTriggerBuilder = ({ form, setForm, board, members, groups, catalog, s
       setForm={setForm}
       board={board}
       members={members}
+      groups={groups}
       saving={saving}
+    />
+    <ConditionTreeBuilder
+      board={board}
+      tree={form.conditionTree}
+      onChange={(tree) => setForm((f) => ({ ...f, conditionTree: tree }))}
     />
     <ActionsSection
       form={form}
@@ -2120,6 +2267,18 @@ const AutomationsModal = ({
         if (tc.fromValue) out.fromValue = tc.fromValue;
         return out;
       }
+      case 'CHECKBOX_CHECKED':
+        return { columnId: tc.columnId };
+      case 'NUMBER_CROSSED':
+        return {
+          columnId: tc.columnId,
+          threshold: Number(tc.threshold),
+          direction: tc.direction === 'below' ? 'below' : 'above',
+        };
+      case 'ITEM_MOVED_TO_GROUP':
+        return tc.groupId ? { groupId: tc.groupId } : {};
+      case 'UPDATE_POSTED':
+        return {};
       case 'DATE_ARRIVED':
         return {
           columnId: tc.columnId,
@@ -2154,6 +2313,7 @@ const AutomationsModal = ({
         triggerType: form.triggerType,
         triggerConfig: buildTriggerConfig(),
         conditions: [],
+        conditionTree: form.conditionTree || null,
         actions: buildActionsPayload(),
       };
     }
@@ -2251,6 +2411,13 @@ const AutomationsModal = ({
       }
       if (form.triggerType === 'PERSON_ASSIGNED' && !tc.columnId) {
         return t('automation.errorChoosePersonColumn');
+      }
+      if (form.triggerType === 'CHECKBOX_CHECKED' && !tc.columnId) {
+        return t('automation.errorChooseCheckboxColumn');
+      }
+      if (form.triggerType === 'NUMBER_CROSSED') {
+        if (!tc.columnId) return t('automation.errorChooseNumberColumn');
+        if (!Number.isFinite(Number(tc.threshold))) return t('automation.errorThresholdRequired');
       }
       // COLUMN_VALUE_CHANGED: columnId optional. FORM/WEBHOOK: no config needed.
       return validateActions();

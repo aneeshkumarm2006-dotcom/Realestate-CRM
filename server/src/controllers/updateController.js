@@ -8,6 +8,7 @@ const {
 } = require('../services/notificationService');
 const { sendMentionEmail } = require('../services/emailService');
 const { logActivity } = require('../services/activityService');
+const eventBus = require('../services/eventBus');
 
 /**
  * Access rules (mirrors commentController):
@@ -202,6 +203,15 @@ const addUpdate = async (req, res) => {
             result.reason
           );
         }
+      });
+    }
+
+    // Phase 1b: UPDATE_POSTED trigger — board tasks only.
+    if (!task.isPersonal) {
+      eventBus.emit('update.posted', {
+        taskId: task._id,
+        boardId: task.board,
+        actorId: userId,
       });
     }
 

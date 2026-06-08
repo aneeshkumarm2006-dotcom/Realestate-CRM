@@ -37,6 +37,7 @@ import {
   SkeletonBoardListRow,
 } from '../components/ui/Skeleton';
 import BoardCard from '../components/board/BoardCard';
+import { useTranslation } from 'react-i18next';
 import BoardFormModal from '../components/board/BoardFormModal';
 import DeleteBoardModal from '../components/board/DeleteBoardModal';
 import ShareBoardModal from '../components/workspace/ShareBoardModal';
@@ -78,6 +79,7 @@ const useIsCurrentOrgAdmin = () => {
 };
 
 const MyBoardsPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const currentOrg = useOrgStore((s) => s.currentOrg);
   const boards = useBoardStore((s) => s.boards);
@@ -107,7 +109,7 @@ const MyBoardsPage = () => {
     });
   }, [orgId, fetchBoards]);
 
-  // Client-side search filter (Task 7.8)
+  // Client-side search filter.
   const filteredBoards = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return boards;
