@@ -21,8 +21,12 @@ const isOrgAdmin = (org, userId) =>
 const isOrgMember = (org, userId) =>
   !!org && Array.isArray(org.members) && org.members.some((m) => m.toString() === userId);
 
+// The public form page `/f/:slug` is served by the FRONTEND (the React app), so
+// its shareable URL must be built from CLIENT_URL — not the server base
+// (WEBHOOK_PUBLIC_BASE_URL), which is for webhook callbacks. Trailing slash
+// stripped so we don't emit `//f/...`.
 const PUBLIC_BASE_URL = () =>
-  process.env.WEBHOOK_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+  (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
 
 /** Load board + org for a member (read). Returns `{ board, org }` or `{ status, error }`. */
 const loadBoardForMember = async (boardId, userId) => {
