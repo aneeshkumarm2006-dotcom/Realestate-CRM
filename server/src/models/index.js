@@ -17,6 +17,8 @@ require('./WebhookDelivery');
 require('./EmailAccount');
 require('./EmailMessage');
 require('./EmailTemplate');
+require('./EmailSequence');
+require('./SequenceEnrollment');
 require('./LeadIntakePolicy');
 require('./SmsConfig');
 require('./SmsMessage');

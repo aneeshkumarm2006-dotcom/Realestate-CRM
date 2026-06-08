@@ -30,6 +30,7 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import PageWrapper from '../components/layout/PageWrapper';
+import * as workspaceService from '../services/workspaceService';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import {
@@ -98,6 +99,7 @@ const MyBoardsPage = () => {
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [shareTarget, setShareTarget] = useState(null);
+  const [folders, setFolders] = useState([]);
 
   const orgId = currentOrg?._id || null;
 
@@ -107,6 +109,8 @@ const MyBoardsPage = () => {
     fetchBoards(orgId).catch((err) => {
       console.error('Failed to fetch boards:', err);
     });
+    // Phase 3.1 — folders for the board create/edit folder picker.
+    workspaceService.listWorkspaces(orgId).then(setFolders).catch(() => {});
   }, [orgId, fetchBoards]);
 
   // Client-side search filter.
@@ -122,6 +126,7 @@ const MyBoardsPage = () => {
       visibility: values.visibility,
       description: values.description,
       organisation: orgId,
+      ...(values.folderId ? { workspace: values.folderId } : {}),
     });
     setCreateOpen(false);
   };
@@ -132,6 +137,7 @@ const MyBoardsPage = () => {
       name: values.name,
       visibility: values.visibility,
       description: values.description,
+      ...(values.folderId ? { workspace: values.folderId } : {}),
     });
     setEditTarget(null);
   };
@@ -407,6 +413,7 @@ const MyBoardsPage = () => {
         onClose={() => setCreateOpen(false)}
         onSubmit={handleCreateSubmit}
         mode="create"
+        folders={folders}
       />
 
       {/* Edit modal */}
@@ -416,6 +423,7 @@ const MyBoardsPage = () => {
         onSubmit={handleEditSubmit}
         initialValues={editTarget || undefined}
         mode="edit"
+        folders={folders}
       />
 
       {/* Delete confirmation */}

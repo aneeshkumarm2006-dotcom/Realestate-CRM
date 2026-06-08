@@ -17,7 +17,7 @@ const {
 const Form = require('../models/Form');
 const Workspace = require('../models/Workspace');
 const { ensureDefaultWorkspace } = require('./workspaceController');
-const { grantedBoardAccessForUser } = require('../middleware/roleCheck');
+const { grantedBoardAccessForUser, resolveBoardGrantRole } = require('../middleware/roleCheck');
 
 const VALID_VISIBILITIES = ['public', 'private'];
 
@@ -59,11 +59,20 @@ const loadBoardContext = async (boardId, userId) => {
   if (!isMember) {
     return { status: 403, error: 'Not a member of this organisation' };
   }
-  const adminAccess = isOrgAdmin(org, userId);
-  if (board.visibility === 'private' && !adminAccess) {
-    return { status: 403, error: 'Access denied' };
+  const orgAdmin = isOrgAdmin(org, userId);
+  // Phase 3.2 — a non-admin's grant role decides board access. An editor grant
+  // is treated as board-scoped admin (can edit tasks/columns); org-only actions
+  // (rename/delete board) still gate on org admin separately. A viewer grant is
+  // read-only. No grant + private board → denied.
+  let grantRole = null;
+  if (!orgAdmin) {
+    grantRole = await resolveBoardGrantRole(userId, board);
+    if (board.visibility === 'private' && !grantRole) {
+      return { status: 403, error: 'Access denied' };
+    }
   }
-  return { board, org, isAdmin: adminAccess };
+  const canEdit = orgAdmin || grantRole === 'editor';
+  return { board, org, isAdmin: canEdit, isOrgAdmin: orgAdmin, grantRole };
 };
 
 const DEFAULT_STATUSES = [
@@ -97,9 +106,18 @@ const getBoards = async (req, res) => {
     await ensureDefaultWorkspace(orgId, userId);
 
     const admin = isOrgAdmin(org, userId);
-    const visibilityFilter = admin ? {} : { visibility: 'public' };
-    const boards = await Board.find({ organisation: orgId, ...visibilityFilter })
-      .sort({ order: 1, updatedAt: -1 });
+    // Phase 3.2 — non-admins see public boards PLUS any board explicitly granted
+    // to them (per-board / per-folder / per-workspace grant). Admins see all.
+    let grantedAccess = new Map();
+    let boardQuery = { organisation: orgId };
+    if (!admin) {
+      grantedAccess = await grantedBoardAccessForUser(userId);
+      boardQuery = {
+        organisation: orgId,
+        $or: [{ visibility: 'public' }, { _id: { $in: [...grantedAccess.keys()] } }],
+      };
+    }
+    const boards = await Board.find(boardQuery).sort({ order: 1, updatedAt: -1 });
 
     // Lazy heal: pre-migration boards may have an empty `statuses` array,
     // which causes the client's status picker to fall back to legacy enum
@@ -112,7 +130,26 @@ const getBoards = async (req, res) => {
       }
     }
 
-    return res.json({ boards });
+    // Phase 3.1 — attach each board's folder (the server "Workspace" model is
+    // the folder layer) so the sidebar can group boards and the Content tab can
+    // show the folder name.
+    const folders = await Workspace.find({ organisation: orgId }).select('name').lean();
+    const folderNameById = new Map(folders.map((f) => [f._id.toString(), f.name]));
+    const out = boards.map((b) => {
+      const obj = typeof b.toObject === 'function' ? b.toObject() : b;
+      const fid = obj.workspace ? obj.workspace.toString() : null;
+      // Phase 3.2 — the caller's effective role on this board (admins edit all;
+      // others get their grant role, else 'viewer' for a public board).
+      const accessRole = admin ? 'admin' : grantedAccess.get(obj._id.toString()) || 'viewer';
+      return {
+        ...obj,
+        folderId: fid,
+        folderName: fid ? folderNameById.get(fid) || null : null,
+        accessRole,
+      };
+    });
+
+    return res.json({ boards: out });
   } catch (err) {
     console.error('getBoards error:', err);
     return res.status(500).json({ error: 'Server error' });
@@ -326,7 +363,7 @@ const updateBoard = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
-    const { name, visibility, description } = req.body;
+    const { name, visibility, description, workspace } = req.body;
 
     const board = await Board.findById(id);
     if (!board) return res.status(404).json({ error: 'Board not found' });
@@ -351,6 +388,21 @@ const updateBoard = async (req, res) => {
     }
     if (typeof description === 'string') {
       board.description = description.trim();
+    }
+    // Phase 3.1 — move the board to a folder (the "Workspace" model). Must be a
+    // folder in this same org.
+    if (workspace !== undefined) {
+      if (workspace === null || workspace === '') {
+        return res.status(400).json({ error: 'A folder is required' });
+      }
+      if (!mongoose.Types.ObjectId.isValid(workspace)) {
+        return res.status(400).json({ error: 'Invalid folder id' });
+      }
+      const folder = await Workspace.findOne({ _id: workspace, organisation: board.organisation });
+      if (!folder) {
+        return res.status(400).json({ error: 'Folder does not belong to this workspace' });
+      }
+      board.workspace = folder._id;
     }
 
     await board.save();

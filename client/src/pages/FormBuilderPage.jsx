@@ -142,6 +142,10 @@ const FormBuilderPage = () => {
     headline: '',
   });
 
+  // Phase 2.3 — lead-source auto-fill.
+  const [sourceTag, setSourceTag] = useState('');
+  const [sourceColumnId, setSourceColumnId] = useState('');
+
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -175,6 +179,8 @@ const FormBuilderPage = () => {
           accentColor: f.branding?.accentColor || '',
           headline: f.branding?.headline || '',
         });
+        setSourceTag(f.sourceTag || '');
+        setSourceColumnId(f.sourceColumnId ? String(f.sourceColumnId) : '');
         setSavedForm({ publicUrl: f.publicUrl, slug: f.slug });
       })
       .catch(() => setError(t('pages.couldNotLoadForm')))
@@ -251,6 +257,8 @@ const FormBuilderPage = () => {
     captchaEnabled,
     enabled,
     branding,
+    sourceTag: sourceTag.trim(),
+    sourceColumnId: sourceColumnId || null,
   });
 
   const handleSave = useCallback(async () => {
@@ -413,6 +421,40 @@ const FormBuilderPage = () => {
                       </button>
                     )}
                   </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Lead source auto-fill (Phase 2.3) */}
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 16, marginTop: 4 }}>
+              <p className="font-display" style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+                {t('pages.leadSourceTitle')}
+              </p>
+              <p className="font-body" style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10 }}>
+                {t('pages.leadSourceHint')}
+              </p>
+              <div className="flex flex-col gap-3">
+                <Input
+                  label={t('pages.sourceTagLabel')}
+                  placeholder={t('pages.sourceTagPlaceholder')}
+                  value={sourceTag}
+                  onChange={(e) => setSourceTag(e.target.value)}
+                />
+                <label className="font-body" style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+                  {t('pages.sourceColumnLabel')}
+                  <select
+                    value={sourceColumnId}
+                    onChange={(e) => setSourceColumnId(e.target.value)}
+                    className="font-body focus:outline-none"
+                    style={{ width: '100%', height: 38, padding: '0 10px', marginTop: 6, border: '1.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-surface, #fff)', color: 'var(--color-text-primary)', fontSize: 14 }}
+                  >
+                    <option value="">{t('pages.sourceColumnNone')}</option>
+                    {columns
+                      .filter((c) => ['text', 'dropdown', 'status', 'tags'].includes(c.type))
+                      .map((c) => (
+                        <option key={c._id} value={String(c._id)}>{c.name}</option>
+                      ))}
+                  </select>
                 </label>
               </div>
             </div>

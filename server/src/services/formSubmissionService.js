@@ -208,6 +208,15 @@ const submitForm = async (slug, { payload = {}, turnstileToken, ip, userAgent } 
       // Public forms show labels; resolve label→option-id for status/dropdown/tags.
       columnValues[asId(field.columnId)] = resolveValueForColumn(board, field.columnId, v);
     }
+    // Phase 2.3 — auto-fill the lead source: stamp the form's source tag onto
+    // its configured source column (unless a mapped field already set it).
+    if (form.sourceTag && form.sourceColumnId) {
+      const sid = asId(form.sourceColumnId);
+      const onBoard = (board.columns || []).some((c) => asId(c._id) === sid);
+      if (onBoard && columnValues[sid] === undefined) {
+        columnValues[sid] = resolveValueForColumn(board, form.sourceColumnId, form.sourceTag);
+      }
+    }
     const created = await createTaskWithColumnValues({
       board,
       columnValues,

@@ -19,11 +19,21 @@ import MyBoardsPage from './pages/MyBoardsPage';
 import BoardDetailPage from './pages/BoardDetailPage';
 import FormBuilderPage from './pages/FormBuilderPage';
 import PublicFormPage from './pages/PublicFormPage';
+import PublicBookingPage from './pages/PublicBookingPage';
+import BookingLinksPage from './pages/BookingLinksPage';
+import SequencesPage from './pages/SequencesPage';
 import CalendarPage from './pages/CalendarPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ProductivityPage from './pages/ProductivityPage';
 import AutomationsPage from './pages/AutomationsPage';
 import AutomationsHubPage from './pages/AutomationsHubPage';
+import AutomationFormsPage from './pages/AutomationFormsPage';
+import AutomationsHubPremium from './pages/AutomationsHubPremium';
+import IntegrationsPremium from './pages/IntegrationsPremium';
+import BookingPremium from './pages/BookingPremium';
+import SchedulingPage from './pages/booking/SchedulingPage';
+import WorkflowsPage from './pages/booking/WorkflowsPage';
+import EditWorkflowPage from './pages/booking/EditWorkflowPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import LeadIntakePage from './pages/LeadIntakePage';
 import MyTasksPage from './pages/MyTasksPage';
@@ -158,6 +168,8 @@ function App() {
         {/* F13 — public, brandable intake form. No auth shell, no navbar. A
             logged-in admin can still open it to preview their own form. */}
         <Route path="/f/:slug" element={<PublicFormPage />} />
+        {/* Phase 4b — public visit booking page. No auth shell. */}
+        <Route path="/book/:slug" element={<PublicBookingPage />} />
 
         {/* Protected */}
         <Route element={<ProtectedRoute />}>
@@ -174,11 +186,27 @@ function App() {
               <Route path="/productivity" element={<ProductivityPage />} />
               {/* F6 — Recipe library & automation builder (admin-only) */}
               <Route path="/automations" element={<AutomationsPage />} />
-              <Route path="/automations/hub" element={<AutomationsHubPage />} />
+              {/* Premium Design — Automations Hub (violet). Old functional hub kept at /hub-classic. */}
+              <Route path="/automations/hub" element={<AutomationsHubPremium />} />
+              <Route path="/automations/hub-classic" element={<AutomationsHubPage />} />
+              {/* Premium Design — "Mad Libs" automation forms builder (admin-only) */}
+              <Route path="/automations/forms" element={<AutomationFormsPage />} />
+              {/* Premium Design — Integrations / Connections marketplace (teal) */}
+              <Route path="/integrations" element={<IntegrationsPremium />} />
+              {/* Premium Design — Booking links manager + live preview (amber) */}
+              <Route path="/booking" element={<BookingPremium />} />
+              {/* Calendly-style standalone Booking app (opens in its own tab) */}
+              <Route path="/booking-app" element={<SchedulingPage />} />
+              <Route path="/booking-app/workflows" element={<WorkflowsPage />} />
+              <Route path="/booking-app/workflows/edit" element={<EditWorkflowPage />} />
               <Route path="/boards/:id/automations" element={<AutomationsPage />} />
               <Route path="/boards/:id/integrations" element={<IntegrationsPage />} />
               {/* F9 — Automated Lead Agent: per-board intake policy (admin-only) */}
               <Route path="/boards/:id/intake" element={<LeadIntakePage />} />
+              {/* Phase 4b — Visit booking links (admin-only) */}
+              <Route path="/boards/:id/bookings" element={<BookingLinksPage />} />
+              {/* Phase 4 — Email sequences / drip cadences (admin-only) */}
+              <Route path="/boards/:id/sequences" element={<SequencesPage />} />
               {/* F13 — public form builder (admin-only) */}
               <Route path="/forms/new" element={<FormBuilderPage />} />
               <Route path="/forms/:id/edit" element={<FormBuilderPage />} />

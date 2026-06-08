@@ -131,7 +131,20 @@
   triggers/conditions/actions, usage/observability dashboard, custom composer.
   *(Recommend trimming to the automations Rakotta actually uses — see analysis.)*
 
-### Phase 2 — Reporting & dashboards — 🟢 in progress
+### Phase 2 — Reporting & dashboards — ✅ COMPLETE (2026-06-08)
+- ✅ **2.4 Per-widget visibility** — ChartWidget `visibility` (everyone | admins);
+  members never list/fetch admins-only widgets; form toggle + "Admins" badge.
+- ✅ **2.3 Marketing/ROI** — `Campaign` model (source label + ad spend + dates),
+  `marketingController` (campaign CRUD + `/marketing/roi`), `marketingRoiService`
+  (per-source leads/won/conversion/cost-per-lead/cost-per-acquisition; 4 tests).
+  Dedicated **Marketing & ROI** section on AnalyticsPage (campaign manager + ROI
+  table + leads/spend charts). **Lead-source capture**: form `sourceTag` +
+  `sourceColumnId` auto-fills the source column on every submission; admins also
+  set a Source column manually.
+- 🟡 **2.2 More chart types** — 6 types + the Marketing report cover current needs;
+  add more on demand. (Original §2.1 note retained below.)
+
+### Phase 2 — Reporting & dashboards (original §2.1 note) — 🟢 in progress
 - ✅ **2.1 Custom dashboard** — the Reports page now has a composable
   **WorkspaceDashboard**: admins add chart widgets, each pulling from any board in
   the workspace (board picker), in a responsive grid; everyone views. Reuses the
@@ -144,7 +157,23 @@
 - 🟡 **2.2 More chart types** — 6 types exist; add more (e.g. counts-by-source,
   stacked-over-time) as needed.
 
-### Phase 3 — Org structure & differentiator — 🔴
+### Phase 3 — Org structure & differentiator — ✅ Folders + Permissions COMPLETE (2026-06-08)
+- ✅ **3.1 Folders** — the "Workspace" model is the folder layer (Org → Folder →
+  Board). `getBoards` returns `folderId`/`folderName`; `updateBoard` moves a board
+  between folders. Sidebar is a **collapsible folder tree** with admin folder CRUD
+  (create/rename/delete; default folder protected) — `SidebarFolders.jsx`. Board
+  create/edit modal has a **Folder picker**. The Content tab's Folder column now
+  fills.
+- ✅ **3.2 Permissions (Option 2, no row-level)** — added a **`folder`** grant type
+  to `WorkspaceGrant`; grants now ENFORCED: `getBoards` shows public + granted
+  boards (with `accessRole`), `loadBoardContext` honours grants (viewer=read,
+  editor=board-scoped edit), board rename/delete stay org-admin-only. New admin
+  **Permissions tab** (`PermissionsTab.jsx`) grants a member Viewer/Editor on a
+  board / folder / whole workspace, with expiry + revoke. Reuses the existing
+  grant CRUD endpoints.
+- ⛔ Teams / team dashboards / agent-performance + commission — dropped earlier.
+
+### Phase 3 — Org structure & differentiator (original note) — 🔴
 - 🔴 **3.0 Workspaces under the Organisation** — real Org → **Workspace** → Folder →
   Board hierarchy (today `Workspace` is an alias for `Organisation`). Sidebar
   becomes a workspace switcher. **Added to plan 2026-06-07; not built; existing
@@ -157,7 +186,25 @@
 ### Phase 4 — Comms & sales tooling — 🔴
 - 🔴 Email sequences (drip cadences) · mass email tracking · quotes & invoices.
 
-### Phase 4b — Visit Booking System (Calendly-style) — 🔴
+### Phase 4b — Visit Booking System (Calendly-style) — ✅ MVP COMPLETE (2026-06-08)
+- ✅ Models `BookingLink` + `Booking`; TZ-aware `slotEngine.js` (weekly hours +
+  date overrides − buffers − minNotice − dateRange − dailyCap − booked slots),
+  **9 unit tests** incl. DST.
+- ✅ Admin CRUD (`/api/boards/:id/booking-links`) + public flow
+  (`/book/:slug`, `/slots`, `/submit`, `/cancel/:token`, `/book/ics/:token`).
+- ✅ On booking → lead via `createTaskWithColumnValues` in the chosen group,
+  stamps the date column (shows on board Calendar), round-robin/fixed agent
+  assignment to the person column, confirmation email to visitor + agent with an
+  **.ics** "Add to calendar" + cancel/rebook link.
+- ✅ Client: **Booking Links** board-toolbar button → manager (create/edit wizard:
+  group, date column, duration, timezone, buffers/cap/min-notice/range, weekly
+  availability, agents+mode, branding) + public `/book/:slug` page (day picker →
+  slots → form → confirmation, + cancel screen).
+- 🔜 Later: reminder emails (24h/1h), Google busy-sync, true reschedule, a
+  dedicated "my upcoming visits" feed for the Home cockpit (today the visit shows
+  as a dated lead).
+
+### Phase 4b — Visit Booking System (original scope note) — 🔴
 - 🔴 Our own booking engine for property visits. **One link = one building**, wired
   to a board's calendar (board + target group chosen at creation). Manual
   availability (weekly hours + overrides). On booking → lead in chosen group +

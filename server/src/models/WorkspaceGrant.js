@@ -19,7 +19,9 @@ const mongoose = require('mongoose');
  * connectable / link / mirror paths. Cleaned up by orgCascade on workspace
  * delete (both as grantor and as the granted resource).
  */
-const RESOURCE_TYPES = ['board', 'workspace'];
+// 'folder' (Phase 3.2) → resourceId is a Workspace._id (the folder layer); the
+// grant covers every board inside that folder.
+const RESOURCE_TYPES = ['board', 'workspace', 'folder'];
 const GRANT_ROLES = ['viewer', 'editor'];
 
 const workspaceGrantSchema = new mongoose.Schema({

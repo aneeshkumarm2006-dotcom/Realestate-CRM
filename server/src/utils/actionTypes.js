@@ -833,6 +833,56 @@ const actionTypes = {
     },
   },
 
+  // ----- ENROLL_IN_SEQUENCE (Phase 4 — email drip cadence) ----------------
+  // Enroll the triggering lead into a multi-step email sequence. Always enabled
+  // (no channel gate): the sequenceRunner sends each step through the same
+  // tracked email path as SEND_EMAIL, degrading to the Resend fallback when no
+  // mailbox is connected.
+  ENROLL_IN_SEQUENCE: {
+    requires: null,
+    configSchema: {
+      fields: [
+        { key: 'sequenceId', label: 'Email sequence', type: 'sequence', required: true },
+      ],
+    },
+    validate: (config) => {
+      const cfg = config || {};
+      const id = asId(cfg.sequenceId);
+      if (!id || !isObjectId(id)) {
+        throw ValidationError('ENROLL_IN_SEQUENCE requires a valid sequence');
+      }
+      return { sequenceId: id };
+    },
+    describe: (config) => `Enroll lead in sequence ${config?.sequenceId || '…'}`,
+    // Idempotent — a lead already active in the sequence is skipped. Lazy
+    // require keeps the registry cycle-free.
+    execute: async ({ task, config, actorId }) => {
+      if (!task) {
+        return { status: 'skipped', error: 'No triggering task to enroll', payloadSummary: {} };
+      }
+      const { enrollById } = require('../services/sequenceService');
+      const result = await enrollById({
+        sequenceId: config.sequenceId,
+        taskId: task._id,
+        enrolledBy: actorId || null,
+      });
+      if (result.ok) {
+        return {
+          status: 'ok',
+          payloadSummary: {
+            sequenceId: config.sequenceId,
+            enrollmentId: asId(result.enrollment._id),
+          },
+        };
+      }
+      return {
+        status: 'skipped',
+        error: result.reason || 'Enrollment skipped',
+        payloadSummary: { sequenceId: config.sequenceId, reason: result.reason },
+      };
+    },
+  },
+
   // ----- SEND_SMS (F10) ----------------------------------------------------
   SEND_SMS: {
     requires: 'F10',
@@ -1249,6 +1299,7 @@ const ACTION_DESCRIPTIONS = {
   DELETE_ITEM: 'Delete this item',
   NOTIFY_PERSON: 'Notify a person (in-app + optional email)',
   SEND_EMAIL: 'Send an email',
+  ENROLL_IN_SEQUENCE: 'Enroll the lead in an email sequence',
   SEND_SMS: 'Send an SMS',
   SEND_WHATSAPP: 'Send a WhatsApp message',
   CREATE_CALENDAR_EVENT: 'Create a calendar event',

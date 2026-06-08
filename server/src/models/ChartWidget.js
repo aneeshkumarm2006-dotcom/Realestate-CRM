@@ -21,6 +21,9 @@ const mongoose = require('mongoose');
 const TYPES = ['bar', 'line', 'pie', 'funnel', 'number', 'stacked_bar'];
 const AGGREGATES = ['count', 'sum', 'avg', 'min', 'max'];
 const TIME_BUCKETS = ['day', 'week', 'month'];
+// Phase 2.4 — who can see a widget. 'everyone' = any workspace member;
+// 'admins' = workspace admins only (lock sensitive widgets, e.g. revenue/ROI).
+const VISIBILITIES = ['everyone', 'admins'];
 
 const chartQuerySchema = new mongoose.Schema(
   {
@@ -64,6 +67,9 @@ const chartWidgetSchema = new mongoose.Schema(
     title: { type: String, default: '', trim: true },
     query: { type: chartQuerySchema, default: () => ({}) },
     layout: { type: chartLayoutSchema, default: () => ({}) },
+    // Phase 2.4 — visibility gate. Members only see 'everyone' widgets; admins
+    // see all. Enforced server-side in the list + data endpoints.
+    visibility: { type: String, enum: VISIBILITIES, default: 'everyone' },
   },
   { timestamps: true }
 );
@@ -74,8 +80,10 @@ chartWidgetSchema.index({ workspaceId: 1 });
 chartWidgetSchema.statics.TYPES = TYPES;
 chartWidgetSchema.statics.AGGREGATES = AGGREGATES;
 chartWidgetSchema.statics.TIME_BUCKETS = TIME_BUCKETS;
+chartWidgetSchema.statics.VISIBILITIES = VISIBILITIES;
 
 module.exports = mongoose.model('ChartWidget', chartWidgetSchema);
 module.exports.TYPES = TYPES;
 module.exports.AGGREGATES = AGGREGATES;
 module.exports.TIME_BUCKETS = TIME_BUCKETS;
+module.exports.VISIBILITIES = VISIBILITIES;

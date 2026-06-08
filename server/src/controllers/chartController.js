@@ -64,6 +64,9 @@ const sanitizeLayout = (raw) => {
   return { x: num(l.x, 0), y: num(l.y, 0), w: num(l.w, 4), h: num(l.h, 4) };
 };
 
+const sanitizeVisibility = (v) =>
+  ChartWidget.VISIBILITIES.includes(v) ? v : 'everyone';
+
 const serialize = (w) => ({
   _id: w._id,
   boardId: w.boardId,
@@ -72,6 +75,7 @@ const serialize = (w) => ({
   title: w.title || '',
   query: w.query || {},
   layout: w.layout || {},
+  visibility: w.visibility || 'everyone',
   createdAt: w.createdAt,
   updatedAt: w.updatedAt,
 });
@@ -85,6 +89,11 @@ const list = async (req, res) => {
       return res.status(403).json({ error: 'Not a member of this workspace' });
     }
     const filter = scope.boardId ? { boardId: scope.boardId } : { workspaceId: scope.workspaceId, boardId: null };
+    // Phase 2.4 — members never see admins-only widgets ($ne also matches the
+    // legacy docs that predate the `visibility` field).
+    if (!isOrgAdmin(scope.org, req.user.userId)) {
+      filter.visibility = { $ne: 'admins' };
+    }
     const widgets = await ChartWidget.find(filter).sort({ createdAt: 1 });
     return res.json({ charts: widgets.map(serialize) });
   } catch (err) {
@@ -113,6 +122,7 @@ const create = async (req, res) => {
       title: typeof body.title === 'string' ? body.title : '',
       query: sanitizeQuery(body.query),
       layout: sanitizeLayout(body.layout),
+      visibility: sanitizeVisibility(body.visibility),
     });
     return res.status(201).json({ chart: serialize(widget) });
   } catch (err) {
@@ -130,8 +140,14 @@ const loadWidget = async (widgetId, userId, { write }) => {
   if (!org) return { status: 404, error: 'Workspace not found' };
   if (write) {
     if (!isOrgAdmin(org, userId)) return { status: 403, error: 'Admin access required' };
-  } else if (!isOrgMember(org, userId)) {
-    return { status: 403, error: 'Not a member of this workspace' };
+  } else {
+    if (!isOrgMember(org, userId)) {
+      return { status: 403, error: 'Not a member of this workspace' };
+    }
+    // Phase 2.4 — admins-only widgets are invisible to plain members.
+    if (widget.visibility === 'admins' && !isOrgAdmin(org, userId)) {
+      return { status: 403, error: 'This widget is restricted to admins' };
+    }
   }
   return { widget, org };
 };
@@ -153,6 +169,7 @@ const update = async (req, res) => {
     if (body.title !== undefined) widget.title = String(body.title || '');
     if (body.query !== undefined) widget.query = sanitizeQuery(body.query);
     if (body.layout !== undefined) widget.layout = sanitizeLayout(body.layout);
+    if (body.visibility !== undefined) widget.visibility = sanitizeVisibility(body.visibility);
 
     await widget.save();
     return res.json({ chart: serialize(widget) });

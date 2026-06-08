@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -8,8 +8,9 @@ import {
   Plus,
   Settings as SettingsIcon,
   Zap,
-  Webhook,
   UserPlus,
+  Mail,
+  MapPin,
   GripVertical,
   SearchX,
   Columns3,
@@ -56,6 +57,8 @@ import TableView from '../components/board/TableView';
 import InsightsTab from '../components/board/InsightsTab';
 import FormBoardView from '../components/board/FormBoardView';
 import BoardCalendarView from '../components/board/BoardCalendarView';
+// Lazy — keeps Leaflet (~158KB) out of the initial bundle until the Map tab opens.
+const BoardMapView = lazy(() => import('../components/board/BoardMapView'));
 import { FileText, CalendarDays } from 'lucide-react';
 import * as formService from '../services/formService';
 import useAuthStore from '../store/authStore';
@@ -90,6 +93,7 @@ const VIEW_TABS = [
   { value: 'board', labelKey: 'board.viewBoard', icon: LayoutList },
   { value: 'table', labelKey: 'board.viewTable', icon: Table2 },
   { value: 'calendar', labelKey: 'board.viewCalendar', icon: CalendarDays },
+  { value: 'map', labelKey: 'board.viewMap', icon: MapPin },
   { value: 'insights', labelKey: 'board.viewInsights', icon: BarChart3 },
 ];
 
@@ -1160,17 +1164,17 @@ const BoardDetailPage = () => {
             </Button>
             <Button
               variant="secondary"
-              icon={Webhook}
-              onClick={() => navigate(`/boards/${boardId}/integrations`)}
-            >
-              {t('board.integrations')}
-            </Button>
-            <Button
-              variant="secondary"
               icon={UserPlus}
               onClick={() => navigate(`/boards/${boardId}/intake`)}
             >
               {t('board.leadIntake')}
+            </Button>
+            <Button
+              variant="secondary"
+              icon={Mail}
+              onClick={() => navigate(`/boards/${boardId}/sequences`)}
+            >
+              {t('board.sequences')}
             </Button>
             <Button
               variant="primary"
@@ -1268,6 +1272,10 @@ const BoardDetailPage = () => {
         </div>
       ) : viewMode === 'calendar' ? (
         <BoardCalendarView board={board} tasks={allTasks} onOpenTask={handleOpenTask} />
+      ) : viewMode === 'map' ? (
+        <Suspense fallback={<div className="skeleton mt-5" style={{ height: '68vh', borderRadius: 'var(--radius-lg)' }} />}>
+          <BoardMapView board={board} tasks={allTasks} onOpenTask={handleOpenTask} />
+        </Suspense>
       ) : viewMode === 'insights' ? (
         <div className="mt-5">
           <InsightsTab boardId={boardId} board={board} isAdmin={isAdmin} />

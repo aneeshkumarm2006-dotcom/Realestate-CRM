@@ -35,6 +35,10 @@ const BUCKET_OPTIONS = [
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
 ];
+const VISIBILITY_OPTIONS = [
+  { value: 'everyone', label: 'Everyone (all members)' },
+  { value: 'admins', label: 'Admins only' },
+];
 
 const GROUP_TYPES = ['status', 'dropdown', 'tags', 'person'];
 const DATE_TYPES = ['date', 'timeline'];
@@ -71,6 +75,7 @@ export const ChartWidgetForm = ({ isOpen, onClose, board, boards, initial, savin
   const [aggregateColumnId, setAggregateColumnId] = useState(q.aggregateColumnId || '');
   const [splitBy, setSplitBy] = useState(q.splitBy || '');
   const [timeBucket, setTimeBucket] = useState(q.timeBucket || 'month');
+  const [visibility, setVisibility] = useState(initial?.visibility || 'everyone');
   const [localError, setLocalError] = useState('');
 
   const colOpts = (types) =>
@@ -103,6 +108,7 @@ export const ChartWidgetForm = ({ isOpen, onClose, board, boards, initial, savin
       ...(pickBoard ? { boardId } : {}),
       type,
       title: title.trim(),
+      visibility,
       query: {
         columnId: needsGroup ? columnId || null : null,
         aggregate,
@@ -190,6 +196,8 @@ export const ChartWidgetForm = ({ isOpen, onClose, board, boards, initial, savin
           <Dropdown label="Bucket by" options={BUCKET_OPTIONS} value={timeBucket} onChange={setTimeBucket} />
         )}
 
+        <Dropdown label="Who can see this" options={VISIBILITY_OPTIONS} value={visibility} onChange={setVisibility} />
+
         {shownError && (
           <p className="font-body" style={{ fontSize: 13, color: 'var(--color-status-stuck)' }}>
             {shownError}
@@ -203,8 +211,16 @@ export const ChartWidgetForm = ({ isOpen, onClose, board, boards, initial, savin
 export const WidgetCard = ({ widget, data, loading, error, isAdmin, onEdit, onDelete, onRefresh }) => (
   <div style={cardStyle} className="flex flex-col">
     <div className="flex items-start justify-between gap-2 mb-3">
-      <h3 className="font-display font-semibold" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>
+      <h3 className="font-display font-semibold flex items-center gap-2" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>
         {widget.title || '(Untitled widget)'}
+        {widget.visibility === 'admins' && (
+          <span
+            title="Visible to admins only"
+            style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#A25DDC', background: '#A25DDC1A', borderRadius: 'var(--radius-full)', padding: '2px 7px' }}
+          >
+            Admins
+          </span>
+        )}
       </h3>
       <div className="flex items-center gap-1 shrink-0">
         <button type="button" aria-label="Refresh" title="Refresh" onClick={onRefresh} className="flex items-center justify-center rounded-md hover:bg-[color:var(--color-bg-subtle)]" style={{ width: 28, height: 28 }}>

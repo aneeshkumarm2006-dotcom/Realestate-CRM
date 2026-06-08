@@ -1,0 +1,37 @@
+const mongoose = require('mongoose');
+const crypto = require('crypto');
+
+/**
+ * Booking — Phase 4b. One confirmed (or cancelled) visit booked through a
+ * BookingLink. Holds the slot, the visitor's details + answers, and links to the
+ * lead Task it created and the agent it was assigned to. `cancelToken` powers the
+ * public cancel/rebook link.
+ */
+const bookingSchema = new mongoose.Schema(
+  {
+    link: { type: mongoose.Schema.Types.ObjectId, ref: 'BookingLink', required: true, index: true },
+    board: { type: mongoose.Schema.Types.ObjectId, ref: 'Board', index: true },
+    organisation: { type: mongoose.Schema.Types.ObjectId, ref: 'Organisation' },
+    slotStart: { type: Date, required: true, index: true },
+    slotEnd: { type: Date, required: true },
+    timezone: { type: String, default: 'America/Toronto' },
+    visitor: {
+      name: { type: String, default: '' },
+      email: { type: String, default: '' },
+      phone: { type: String, default: '' },
+    },
+    answers: { type: [{ _id: false, label: String, value: String }], default: [] },
+    status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed', index: true },
+    leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
+    agentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    cancelToken: { type: String, index: true },
+    cancelledAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+bookingSchema.pre('validate', function genToken() {
+  if (!this.cancelToken) this.cancelToken = crypto.randomBytes(16).toString('hex');
+});
+
+module.exports = mongoose.model('Booking', bookingSchema);

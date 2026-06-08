@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import PageWrapper from '../components/layout/PageWrapper';
 import WorkspaceDashboard from '../components/analytics/WorkspaceDashboard';
+import MarketingReport from '../components/analytics/MarketingReport';
 import StatCard from '../components/ui/StatCard';
 import {
   SkeletonStatCard,
@@ -281,6 +282,9 @@ const AnalyticsPage = () => {
           <WorkspaceDashboard orgId={orgId} isAdmin={isAdmin} />
         </div>
       )}
+
+      {/* Phase 2.3 — Marketing & ROI (admin-only) */}
+      {orgId && isAdmin && <MarketingReport orgId={orgId} />}
 
       <div style={{ borderTop: '1px solid var(--color-border)', margin: '28px 0 0' }} />
 

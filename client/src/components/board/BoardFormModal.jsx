@@ -14,7 +14,7 @@ import Button from '../ui/Button';
  *   initialValues — pre-fill values when editing
  *   mode          — "create" | "edit" (affects title + submit label)
  */
-const DEFAULTS = { name: '', visibility: 'private', description: '' };
+const DEFAULTS = { name: '', visibility: 'private', description: '', folderId: '' };
 
 const BoardFormModal = ({
   isOpen,
@@ -22,6 +22,7 @@ const BoardFormModal = ({
   onSubmit,
   initialValues,
   mode = 'create',
+  folders = [],
 }) => {
   const [values, setValues] = useState(DEFAULTS);
   const [submitting, setSubmitting] = useState(false);
@@ -34,6 +35,7 @@ const BoardFormModal = ({
       name: initialValues?.name || '',
       visibility: initialValues?.visibility || 'private',
       description: initialValues?.description || '',
+      folderId: initialValues?.folderId ? String(initialValues.folderId) : (folders.find((f) => f.isDefault)?._id ? String(folders.find((f) => f.isDefault)._id) : ''),
     });
     setError(null);
     setSubmitting(false);
@@ -53,6 +55,7 @@ const BoardFormModal = ({
         name: trimmed,
         visibility: values.visibility,
         description: values.description.trim(),
+        folderId: values.folderId || null,
       });
     } catch (err) {
       const msg =
@@ -171,6 +174,28 @@ const BoardFormModal = ({
             })}
           </div>
         </div>
+
+        {/* Folder (Phase 3.1) */}
+        {folders.length > 0 && (
+          <div>
+            <label
+              className="block mb-2 font-body font-medium text-xs uppercase tracking-wide"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              Folder
+            </label>
+            <select
+              value={values.folderId}
+              onChange={(e) => setValues((v) => ({ ...v, folderId: e.target.value }))}
+              className="w-full font-body focus:outline-none"
+              style={{ height: 40, padding: '0 10px', fontSize: 14, border: '1.5px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-surface, #fff)', color: 'var(--color-text-primary)' }}
+            >
+              {folders.map((f) => (
+                <option key={f._id} value={String(f._id)}>{f.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <Input
           label="Description (optional)"

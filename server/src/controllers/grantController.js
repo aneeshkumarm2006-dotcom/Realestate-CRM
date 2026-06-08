@@ -35,6 +35,11 @@ const resolveResourceLabel = async (grant, boardCache, orgCache) => {
     const board = boardCache.get(id);
     return board ? board.name : '(deleted board)';
   }
+  if (grant.resourceType === 'folder') {
+    const Workspace = require('../models/Workspace');
+    const folder = await Workspace.findById(grant.resourceId).select('name').lean();
+    return folder ? folder.name : '(deleted folder)';
+  }
   const id = grant.resourceId.toString();
   if (!orgCache.has(id)) {
     orgCache.set(id, await Organisation.findById(id).select('name displayName').lean());
@@ -111,6 +116,13 @@ const createGrant = async (req, res) => {
       if (!board) return res.status(404).json({ error: 'Board not found' });
       if (board.organisation.toString() !== workspaceId.toString()) {
         return res.status(403).json({ error: 'You can only share boards in your own workspace' });
+      }
+    } else if (resourceType === 'folder') {
+      const Workspace = require('../models/Workspace');
+      const folder = await Workspace.findById(resourceId).select('organisation').lean();
+      if (!folder) return res.status(404).json({ error: 'Folder not found' });
+      if (folder.organisation.toString() !== workspaceId.toString()) {
+        return res.status(403).json({ error: 'You can only share folders in your own workspace' });
       }
     } else if (resourceId.toString() !== workspaceId.toString()) {
       return res.status(400).json({ error: 'A workspace grant must reference the granting workspace' });

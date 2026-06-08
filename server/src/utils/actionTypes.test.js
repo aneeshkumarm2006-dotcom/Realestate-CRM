@@ -68,10 +68,13 @@ const fakeTask = (entries = {}) => ({
 // ===========================================================================
 // Catalog / disabled wiring
 // ===========================================================================
-test('catalog: 14 actions; unshipped channel contracts disabled, shipped actions enabled', () => {
+test('catalog: 15 actions; unshipped channel contracts disabled, shipped actions enabled', () => {
   const catalog = buildActionCatalog();
-  assert.equal(catalog.length, 14);
+  assert.equal(catalog.length, 15);
   const byType = Object.fromEntries(catalog.map((c) => [c.type, c]));
+  // Phase 4 — email sequence enrollment is always enabled (no channel gate).
+  assert.equal(byType.ENROLL_IN_SEQUENCE.disabled, false);
+  assert.equal(byType.ENROLL_IN_SEQUENCE.requires, null);
   assert.equal(byType.CREATE_TASK.disabled, false);
   assert.equal(byType.SET_COLUMN_VALUE.disabled, false);
   assert.equal(byType.NOTIFY_PERSON.disabled, false);

@@ -106,6 +106,8 @@ const serializeForm = (f) => ({
   captchaEnabled: !!f.captchaEnabled,
   enabled: !!f.enabled,
   branding: brandingOut(f),
+  sourceTag: f.sourceTag || '',
+  sourceColumnId: f.sourceColumnId || null,
   publicUrl: `${PUBLIC_BASE_URL()}/f/${f.slug}`,
   createdAt: f.createdAt,
   updatedAt: f.updatedAt,
@@ -206,6 +208,8 @@ const createForm = async (req, res) => {
       captchaEnabled: body.captchaEnabled === true || body.captchaEnabled === 'true',
       enabled: body.enabled === undefined ? true : !!body.enabled,
       branding: sanitizeBranding(body.branding),
+      sourceTag: typeof body.sourceTag === 'string' ? body.sourceTag.trim() : '',
+      sourceColumnId: body.sourceColumnId ? String(body.sourceColumnId) : null,
     });
     return res.status(201).json({ form: serializeForm(form) });
   } catch (err) {
@@ -255,6 +259,8 @@ const updateForm = async (req, res) => {
     if (body.captchaEnabled !== undefined) form.captchaEnabled = body.captchaEnabled === true || body.captchaEnabled === 'true';
     if (body.enabled !== undefined) form.enabled = !!body.enabled;
     if (body.branding !== undefined) form.branding = sanitizeBranding(body.branding);
+    if (body.sourceTag !== undefined) form.sourceTag = String(body.sourceTag || '').trim();
+    if (body.sourceColumnId !== undefined) form.sourceColumnId = body.sourceColumnId ? String(body.sourceColumnId) : null;
 
     await form.save();
     return res.json({ form: serializeForm(form) });

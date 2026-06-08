@@ -44,6 +44,7 @@ const {
 const { publicSmsRouter, smsRouter } = require('./routes/sms');
 const { publicWhatsAppRouter, whatsappRouter } = require('./routes/whatsapp');
 const { publicFormRouter, boardFormRouter } = require('./routes/forms');
+const { publicBookingRouter, boardBookingRouter } = require('./routes/bookings');
 app.use(publicWebhookRouter);
 // F8 — public email tracking pixels, inbound provider push, and the OAuth
 // callback. No auth (see allowlist above); each carries its own parser/guard.
@@ -58,6 +59,9 @@ app.use(publicWhatsAppRouter);
 // F13 — public form render + submit. No auth (the submit route carries its own
 // rate limiter + 256KB body parser); render is read-only config JSON.
 app.use(publicFormRouter);
+// Phase 4b — public visit booking render/slots/submit/cancel + .ics. No auth;
+// submit/cancel carry their own rate limiter + body parser.
+app.use(publicBookingRouter);
 
 // Body parsing (global — applies to every route mounted AFTER this point)
 app.use(express.json());
@@ -86,8 +90,10 @@ app.use('/api/boards', require('./routes/boards'));
 app.use('/api', require('./routes/calendarViews'));
 // F13 — authed board form management + per-user saved table views + chart widgets.
 app.use('/api', boardFormRouter);
+app.use('/api', boardBookingRouter);
 app.use('/api', require('./routes/savedViews'));
 app.use('/api', require('./routes/charts'));
+app.use('/api', require('./routes/marketing'));
 // F7 — admin, board-scoped webhook management (authed). Mounted at /api so its
 // routes resolve as /api/boards/:id/webhooks… alongside the boards router.
 app.use('/api', boardWebhookRouter);
@@ -101,6 +107,8 @@ app.use('/api', whatsappRouter);
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api', require('./routes/groups'));
 app.use('/api', require('./routes/automations'));
+// Phase 4 — email sequences (drip cadences) + bulk "mass email" enrollment.
+app.use('/api', require('./routes/sequences'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api', require('./routes/comments'));
 app.use('/api', require('./routes/updates'));

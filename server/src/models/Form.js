@@ -52,6 +52,11 @@ const formSchema = new mongoose.Schema(
     postSubmitRedirectUrl: { type: String, default: '' },
     captchaEnabled: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true },
+    // Phase 2.3 — lead-source auto-fill. `sourceTag` (e.g. "Website Form") is
+    // stamped onto `sourceColumnId` on every submission so the Marketing/ROI
+    // report can attribute these leads. Both optional.
+    sourceTag: { type: String, default: '' },
+    sourceColumnId: { type: String, default: null },
     // Branding for the public form (Phase 1.7). All optional; empty values fall
     // back to the default app styling. `accentColor` is a hex string used for
     // the submit button / accents; `headline` overrides the form name heading.

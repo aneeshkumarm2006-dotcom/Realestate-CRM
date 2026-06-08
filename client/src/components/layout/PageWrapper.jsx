@@ -14,8 +14,12 @@ import {
   LayoutList,
   ChevronDown,
   Zap,
+  Sparkles,
+  Plug,
+  CalendarClock,
 } from 'lucide-react';
 import Navbar from './Navbar';
+import SidebarFolders from './SidebarFolders';
 import useOrgStore from '../../store/orgStore';
 import useAuthStore from '../../store/authStore';
 import useBoardStore from '../../store/boardStore';
@@ -220,50 +224,45 @@ const OrgSidebar = () => {
                 <SidebarLink
                   icon={Zap}
                   label={t('automationsHub.title')}
-                  active={pathname.startsWith('/automations')}
+                  active={pathname.startsWith('/automations') && pathname !== '/automations/forms'}
                   onClick={() => navigate('/automations/hub')}
+                />
+              )}
+              {isAdmin && (
+                <SidebarLink
+                  icon={Sparkles}
+                  label={t('automationsForms.nav')}
+                  active={pathname === '/automations/forms'}
+                  onClick={() => navigate('/automations/forms')}
+                />
+              )}
+              {isAdmin && (
+                <SidebarLink
+                  icon={Plug}
+                  label={t('integrationsPremium.nav')}
+                  active={pathname === '/integrations'}
+                  onClick={() => navigate('/integrations')}
+                />
+              )}
+              {isAdmin && (
+                <SidebarLink
+                  icon={CalendarClock}
+                  label={t('bookingPremium.nav')}
+                  active={false}
+                  onClick={() => window.open('/booking-app', '_blank', 'noopener')}
                 />
               )}
             </nav>
 
-            {/* Boards in this workspace */}
-            <div className="py-2" style={{ borderTop: '1px solid var(--color-border)' }}>
-              <div className="flex items-center justify-between px-4 py-1.5">
-                <button
-                  type="button"
-                  onClick={() => navigate('/boards')}
-                  className="font-body font-semibold text-[11px] uppercase tracking-wide text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text-primary)] transition-colors"
-                >
-                  {t('nav.boards')}
-                </button>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    aria-label={t('nav.boards')}
-                    onClick={() => navigate('/boards')}
-                    className="flex items-center justify-center rounded hover:bg-[color:var(--color-bg-subtle)]"
-                    style={{ width: 22, height: 22 }}
-                  >
-                    <Plus size={14} color="var(--color-text-muted)" />
-                  </button>
-                )}
-              </div>
-              {boards.length === 0 ? (
-                <p className="px-4 py-1 font-body text-[12px] text-[color:var(--color-text-muted)]">
-                  {t('workspace.noBoards')}
-                </p>
-              ) : (
-                boards.map((b) => (
-                  <SidebarLink
-                    key={b._id}
-                    icon={LayoutList}
-                    label={b.name}
-                    active={pathname === `/boards/${b._id}`}
-                    onClick={() => navigate(`/boards/${b._id}`)}
-                  />
-                ))
-              )}
-            </div>
+            {/* Boards grouped by folder (Phase 3.1) */}
+            <SidebarFolders
+              orgId={currentOrg?._id}
+              boards={boards}
+              isAdmin={isAdmin}
+              pathname={pathname}
+              onNavigate={navigate}
+              onRefreshBoards={() => currentOrg?._id && fetchBoards(currentOrg._id).catch(() => {})}
+            />
           </>
         )}
 
