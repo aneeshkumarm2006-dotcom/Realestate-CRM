@@ -82,7 +82,15 @@ const getCurrentUser = async (req, res) => {
       });
     }
 
-    return res.json({ user: { ...user, organisations } });
+    // Never ship the (encrypted) AI keys to the client — surface only whether
+    // each provider key is set so the Profile UI can show "saved" state.
+    const aiKeysPresent = {
+      anthropic: !!user.aiKeys?.anthropic,
+      openai: !!user.aiKeys?.openai,
+    };
+    delete user.aiKeys;
+
+    return res.json({ user: { ...user, organisations, aiKeysPresent } });
   } catch (err) {
     console.error('getCurrentUser error:', err);
     return res.status(500).json({ error: 'Server error' });

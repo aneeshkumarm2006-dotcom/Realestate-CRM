@@ -64,7 +64,25 @@ ACTIONS (key → val):
 
 Keep val concise. Always call the tool exactly once.`;
 
-const draftWithClaude = async (text, apiKey) => {
+// Coerce a model's raw tool input into the { trigger, cond, action } draft shape
+// the Sentence Builder consumes, applying the same defensive defaults for both
+// providers.
+const normalizeDraft = (inp) => ({
+  trigger:
+    inp.trigger && inp.trigger.key
+      ? { key: inp.trigger.key, val: inp.trigger.val ?? null }
+      : { key: 'new', val: null },
+  cond:
+    inp.condition && inp.condition.key
+      ? { key: inp.condition.key, val: inp.condition.val }
+      : null,
+  action:
+    inp.action && inp.action.key
+      ? { key: inp.action.key, val: inp.action.val ?? null }
+      : { key: 'notify', val: 'the assigned agent' },
+});
+
+const draftWithClaude = async (text, apiKey, model) => {
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -73,7 +91,7 @@ const draftWithClaude = async (text, apiKey) => {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_DRAFT_MODEL || 'claude-haiku-4-5-20251001',
+      model: model || process.env.ANTHROPIC_DRAFT_MODEL || 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       system: SYSTEM,
       tools: [TOOL],
@@ -85,12 +103,40 @@ const draftWithClaude = async (text, apiKey) => {
   const data = await resp.json();
   const block = (data.content || []).find((b) => b.type === 'tool_use');
   if (!block || !block.input) throw new Error('no tool_use in response');
-  const inp = block.input;
-  return {
-    trigger: inp.trigger && inp.trigger.key ? { key: inp.trigger.key, val: inp.trigger.val ?? null } : { key: 'new', val: null },
-    cond: inp.condition && inp.condition.key ? { key: inp.condition.key, val: inp.condition.val } : null,
-    action: inp.action && inp.action.key ? { key: inp.action.key, val: inp.action.val ?? null } : { key: 'notify', val: 'the assigned agent' },
-  };
+  return normalizeDraft(block.input);
 };
 
-module.exports = { draftWithClaude };
+// OpenAI (ChatGPT) drafter — mirrors draftWithClaude using the Chat Completions
+// API with a forced function call for the same structured output.
+const draftWithOpenAI = async (text, apiKey, model) => {
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model || process.env.OPENAI_DRAFT_MODEL || 'gpt-4o-mini',
+      max_tokens: 512,
+      messages: [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: String(text).slice(0, 2000) },
+      ],
+      tools: [{ type: 'function', function: { name: TOOL.name, description: TOOL.description, parameters: TOOL.input_schema } }],
+      tool_choice: { type: 'function', function: { name: TOOL.name } },
+    }),
+  });
+  if (!resp.ok) throw new Error(`openai ${resp.status}`);
+  const data = await resp.json();
+  const call = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (!call?.function?.arguments) throw new Error('no tool_call in response');
+  let inp;
+  try {
+    inp = JSON.parse(call.function.arguments);
+  } catch {
+    throw new Error('malformed tool_call arguments');
+  }
+  return normalizeDraft(inp);
+};
+
+module.exports = { draftWithClaude, draftWithOpenAI };

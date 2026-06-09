@@ -5,6 +5,14 @@ const Comment = require('../models/Comment');
 const Notification = require('../models/Notification');
 const WorkspaceGrant = require('../models/WorkspaceGrant');
 const { cascadeDeleteOrg } = require('../services/orgCascade');
+const aesEncrypt = require('../utils/aesEncrypt');
+
+// Derive the {anthropic, openai} presence flags the client uses to render
+// "key saved" state without ever shipping the (encrypted) key itself.
+const aiKeysPresent = (user) => ({
+  anthropic: !!user?.aiKeys?.anthropic,
+  openai: !!user?.aiKeys?.openai,
+});
 
 /**
  * PUT /api/profile — Update the current user's display name.
@@ -30,6 +38,69 @@ const updateProfile = async (req, res) => {
     return res.json({ user });
   } catch (err) {
     console.error('updateProfile error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
+/**
+ * PUT /api/profile/ai — Save the current user's AI drafter settings: the
+ * Anthropic (Claude) and OpenAI (ChatGPT) API keys, plus the chosen provider
+ * and model. Keys are AES-256-GCM encrypted at rest and never returned.
+ *
+ * A blank string clears a stored key; omitting a key field leaves it untouched
+ * (so the model picker on the Forms page can save provider/model without
+ * needing the keys re-entered).
+ */
+const updateAiSettings = async (req, res) => {
+  try {
+    const { anthropicKey, openaiKey, aiProvider, aiModel } = req.body || {};
+    const update = {};
+
+    const wantsKeyWrite =
+      typeof anthropicKey === 'string' || typeof openaiKey === 'string';
+    if (wantsKeyWrite && !aesEncrypt.isConfigured()) {
+      return res.status(503).json({
+        error:
+          'Secure key storage is not configured on the server (EMAIL_TOKEN_ENCRYPTION_KEY).',
+      });
+    }
+
+    if (typeof anthropicKey === 'string') {
+      const trimmed = anthropicKey.trim();
+      update['aiKeys.anthropic'] = trimmed ? aesEncrypt.encrypt(trimmed) : null;
+    }
+    if (typeof openaiKey === 'string') {
+      const trimmed = openaiKey.trim();
+      update['aiKeys.openai'] = trimmed ? aesEncrypt.encrypt(trimmed) : null;
+    }
+    if (aiProvider === 'claude' || aiProvider === 'openai') {
+      update.aiProvider = aiProvider;
+    }
+    if (typeof aiModel === 'string' && aiModel.trim()) {
+      update.aiModel = aiModel.trim();
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: update },
+      { new: true }
+    )
+      .select('-__v')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const present = aiKeysPresent(user);
+    delete user.aiKeys;
+    return res.json({ user: { ...user, aiKeysPresent: present } });
+  } catch (err) {
+    console.error('updateAiSettings error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 };
@@ -130,6 +201,7 @@ const deleteAccount = async (req, res) => {
 
 module.exports = {
   updateProfile,
+  updateAiSettings,
   uploadAvatar,
   deleteAccount,
 };

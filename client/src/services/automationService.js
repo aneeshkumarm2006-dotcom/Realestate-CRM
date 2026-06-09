@@ -119,7 +119,8 @@ export const getConnections = async (orgId) => {
 };
 
 // "Describe it" — AI draft from plain language. Returns { draft } | { fallback }.
-export const draftAutomation = async (text) => {
-  const { data } = await api.post('/api/automations/draft', { text });
+// opts may carry { provider, model } to override the user's saved drafter model.
+export const draftAutomation = async (text, opts = {}) => {
+  const { data } = await api.post('/api/automations/draft', { text, ...opts });
   return data;
 };

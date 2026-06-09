@@ -55,6 +55,23 @@ const userSchema = new mongoose.Schema({
   profilePic: {
     type: String,
   },
+  // Personal AI provider keys for the "Describe what you want" automation drafter.
+  // Stored AES-256-GCM encrypted (same scheme as email/SMS/WhatsApp tokens) and
+  // NEVER returned to the client — getCurrentUser strips them and surfaces only
+  // presence flags. `aiProvider`/`aiModel` are the user's chosen drafter model.
+  aiKeys: {
+    anthropic: { type: String, default: null }, // encrypted Anthropic (Claude) API key
+    openai: { type: String, default: null }, // encrypted OpenAI (ChatGPT) API key
+  },
+  aiProvider: {
+    type: String,
+    enum: ['claude', 'openai'],
+    default: 'claude',
+  },
+  aiModel: {
+    type: String,
+    default: null,
+  },
   organisations: [membershipSchema],
   defaultWorkspaceId: {
     type: mongoose.Schema.Types.ObjectId,

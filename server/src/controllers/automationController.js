@@ -3,6 +3,7 @@ const Board = require('../models/Board');
 const Task = require('../models/Task');
 const TaskGroup = require('../models/TaskGroup');
 const Organisation = require('../models/Organisation');
+const User = require('../models/User');
 const Automation = require('../models/Automation');
 const AutomationRunLog = require('../models/AutomationRunLog');
 const {
@@ -1145,18 +1146,45 @@ const getActionCatalog = async (req, res) => {
 
 /**
  * POST /api/automations/draft — draft an automation from a plain-language
- * request via Claude (tool use). Returns { draft } or { fallback: true } when no
- * ANTHROPIC_API_KEY is configured / the call fails, so the client degrades to its
- * local keyword heuristic. Never errors the request on AI failure.
+ * request. Body: { text, provider?, model? }. Uses the requesting user's stored
+ * (encrypted) provider key, falling back to the server env key. Returns { draft }
+ * or { fallback: true } when no key is available / the call fails, so the client
+ * degrades to its local keyword heuristic. Never errors the request on AI failure.
  */
 const draftAutomation = async (req, res) => {
   try {
     const text = String(req.body?.text || '').trim();
     if (!text) return res.status(400).json({ error: 'text is required' });
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return res.json({ fallback: true });
-    const { draftWithClaude } = require('../services/automationDraftAI');
-    const draft = await draftWithClaude(text, apiKey);
+
+    const user = await User.findById(req.user.userId)
+      .select('aiKeys aiProvider aiModel')
+      .lean();
+
+    const provider = req.body?.provider || user?.aiProvider || 'claude';
+    const model = req.body?.model || user?.aiModel || null;
+
+    const aesEncrypt = require('../utils/aesEncrypt');
+    const decryptKey = (enc) => {
+      if (!enc) return null;
+      try {
+        return aesEncrypt.decrypt(enc);
+      } catch {
+        return null;
+      }
+    };
+
+    const { draftWithClaude, draftWithOpenAI } = require('../services/automationDraftAI');
+
+    let draft;
+    if (provider === 'openai') {
+      const apiKey = decryptKey(user?.aiKeys?.openai) || process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.json({ fallback: true });
+      draft = await draftWithOpenAI(text, apiKey, model);
+    } else {
+      const apiKey = decryptKey(user?.aiKeys?.anthropic) || process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.json({ fallback: true });
+      draft = await draftWithClaude(text, apiKey, model);
+    }
     return res.json({ draft });
   } catch (err) {
     console.error('draftAutomation error:', err.message);

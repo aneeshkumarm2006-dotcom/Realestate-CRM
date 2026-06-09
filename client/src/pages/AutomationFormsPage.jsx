@@ -16,6 +16,9 @@ import {
 } from '../premium/premiumData';
 import { AutomationSentence, buildPayload, recipeToAction, recipeToTrigger } from '../premium/automationSentence';
 import { getHub, createAutomation, updateAutomation, draftAutomation } from '../services/automationService';
+import { updateAiSettings } from '../services/profileService';
+import { ClaudeIcon, OpenAIIcon } from '../components/icons/AiBrandIcons';
+import { AI_MODELS, defaultModelFor } from '../components/icons/aiModels';
 import useBoardStore from '../store/boardStore';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
@@ -375,11 +378,77 @@ function parseDescribe(text) {
   return { trigger, cond, action };
 }
 
+// Model picker shown under "Draft it": choose the AI brand (Claude / ChatGPT)
+// and a specific model. Selection is persisted to the user's profile so it
+// sticks across sessions and is what the draft endpoint uses.
+function ModelPicker({ lang, provider, model, onProvider, onModel }) {
+  const PROVIDERS = [
+    { key: 'claude', label: 'Claude' },
+    { key: 'openai', label: 'ChatGPT' },
+  ];
+  return (
+    <div className="magic-model">
+      <span className="mm-label">{L({ en: 'Drafted by', fr: 'Rédigé par' }, lang)}</span>
+      <div className="mm-providers">
+        {PROVIDERS.map(({ key, label }) => (
+          <button
+            type="button"
+            key={key}
+            className={'mm-prov' + (provider === key ? ' on' : '')}
+            onClick={() => onProvider(key)}
+            aria-pressed={provider === key}
+          >
+            {key === 'claude'
+              ? <ClaudeIcon size={15} color={provider === key ? undefined : 'currentColor'} />
+              : <OpenAIIcon size={15} color={provider === key ? undefined : 'currentColor'} />}
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mm-select-wrap">
+        <select className="mm-select" value={model || ''} onChange={(e) => onModel(e.target.value)}>
+          {(AI_MODELS[provider] || []).map((m) => (
+            <option key={m.id} value={m.id}>{m.label}</option>
+          ))}
+        </select>
+        <span className="mm-caret"><Icon name="chevronDown" size={15} /></span>
+      </div>
+    </div>
+  );
+}
+
 function FormsPage({ lang, autos, loading, error, boards, currentUserId, reload, toastError }) {
   const [cat, setCat] = useState('all');
   const [sheet, setSheet] = useState(null);
   const [desc, setDesc] = useState('');
   const [drafting, setDrafting] = useState(false);
+
+  // AI drafter model selection — seeded from the user's saved preference and
+  // persisted back to the profile whenever it changes (best-effort).
+  const savedProvider = useAuthStore((s) => s.user?.aiProvider);
+  const savedModel = useAuthStore((s) => s.user?.aiModel);
+  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
+  const [provider, setProvider] = useState(savedProvider || 'claude');
+  const [model, setModel] = useState(savedModel || defaultModelFor(savedProvider || 'claude'));
+
+  useEffect(() => {
+    if (savedProvider) setProvider(savedProvider);
+    if (savedModel) setModel(savedModel);
+  }, [savedProvider, savedModel]);
+
+  const persistAi = (patch) => {
+    updateAiSettings(patch).then(() => fetchCurrentUser()).catch(() => {});
+  };
+  const chooseProvider = (p) => {
+    const m = defaultModelFor(p);
+    setProvider(p);
+    setModel(m);
+    persistAi({ aiProvider: p, aiModel: m });
+  };
+  const chooseModel = (m) => {
+    setModel(m);
+    persistAi({ aiModel: m });
+  };
 
   const counts = useMemo(() => {
     const m = { all: RECIPES.length };
@@ -396,7 +465,7 @@ function FormsPage({ lang, autos, loading, error, boards, currentUserId, reload,
     setDrafting(true);
     let draft;
     try {
-      const res = await draftAutomation(text);
+      const res = await draftAutomation(text, { provider, model });
       draft = res && res.draft && !res.fallback ? res.draft : parseDescribe(text);
     } catch {
       draft = parseDescribe(text);
@@ -436,6 +505,7 @@ function FormsPage({ lang, autos, loading, error, boards, currentUserId, reload,
               onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDescribe(); } }} />
             <button type="button" className="btn btn-primary" onClick={submitDescribe} disabled={drafting}><Icon name="arrowRight" size={16} />{drafting ? L({ en: 'Drafting…', fr: 'Rédaction…' }, lang) : L({ en: 'Draft it', fr: 'Rédiger' }, lang)}</button>
           </div>
+          <ModelPicker lang={lang} provider={provider} model={model} onProvider={chooseProvider} onModel={chooseModel} />
           <div className="magic-suggest">
             {suggestions.map((s) => <button type="button" key={s} className="magic-chip" onClick={() => { setDesc(s); draftFrom(s); }}>{s}</button>)}
           </div>

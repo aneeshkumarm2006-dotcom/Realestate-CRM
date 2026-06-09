@@ -9,6 +9,7 @@ import SmsConfigForm from '../components/settings/SmsConfigForm';
 import SmsOptOutList from '../components/settings/SmsOptOutList';
 import WhatsAppConfigForm from '../components/settings/WhatsAppConfigForm';
 import WhatsAppTemplateManager from '../components/settings/WhatsAppTemplateManager';
+import AiKeysConfigForm from '../components/settings/AiKeysConfigForm';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Modal from '../components/ui/Modal';
@@ -1021,6 +1022,9 @@ const SettingsPage = () => {
           <WhatsAppTemplateManager workspaceId={currentOrg?._id} />
         </div>
       );
+    }
+    if (activeTab === 'ai') {
+      return <AiKeysConfigForm />;
     }
     return (
       <ProfileTab
