@@ -10,6 +10,7 @@ import {
 import PageWrapper from '../components/layout/PageWrapper';
 import Chip from '../components/ui/Chip';
 import { getMyTasks } from '../services/taskService';
+import useOrgStore from '../store/orgStore';
 
 /**
  * My Leads (Phase 0 §0.1) — repurposed from the old personal-task page into an
@@ -145,12 +146,13 @@ const BoardGroup = ({ boardName, leads, onOpen, lng }) => (
 const MyTasksPage = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const currentOrgId = useOrgStore((s) => s.currentOrg?._id);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchLeads = useCallback(async () => {
     try {
-      const all = await getMyTasks();
+      const all = await getMyTasks(currentOrgId || undefined);
       // Assigned leads/deals only — drop the deprecated personal-task concept.
       setLeads(all.filter((task) => !task.isPersonal && task.board));
     } catch (err) {
@@ -158,7 +160,7 @@ const MyTasksPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentOrgId]);
 
   useEffect(() => {
     fetchLeads();

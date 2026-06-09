@@ -11,6 +11,8 @@ lerna-debug.log*
 .claude
 
 .env
+env.txt
+server/env.txt
 
 node_modules
 dist

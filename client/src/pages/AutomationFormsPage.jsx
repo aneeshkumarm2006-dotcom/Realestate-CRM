@@ -14,8 +14,8 @@ import {
   L, t, STR, splitTpl, valLabel, VOCAB,
   REC_CATS, RECIPES, TRIGGERS, CONDITIONS, ACTIONS,
 } from '../premium/premiumData';
-import { AutomationSentence, buildPayload, recipeToAction } from '../premium/automationSentence';
-import { getHub, createAutomation, updateAutomation } from '../services/automationService';
+import { AutomationSentence, buildPayload, recipeToAction, recipeToTrigger } from '../premium/automationSentence';
+import { getHub, createAutomation, updateAutomation, draftAutomation } from '../services/automationService';
 import useBoardStore from '../store/boardStore';
 import useOrgStore from '../store/orgStore';
 import useAuthStore from '../store/authStore';
@@ -148,7 +148,7 @@ function FillSheet({ recipe, lang, onClose, boards, currentUserId, onCreated, to
   const activate = async () => {
     const board = boards.find((b) => b._id === boardId);
     if (!board) { toastError(L({ en: 'Pick a board first', fr: 'Choisissez d’abord un tableau' }, lang)); return; }
-    const payload = buildPayload({ name: enFill(recipe.tpl, vals), actions: [recipeToAction(vals)], board, currentUserId });
+    const payload = buildPayload({ name: enFill(recipe.tpl, vals), trigger: recipeToTrigger(recipe, vals), actions: [recipeToAction(vals)], board, currentUserId });
     setCreating(true);
     try { await createAutomation(boardId, payload); onCreated && onCreated(); setDone(true); }
     catch (err) { toastError(err?.response?.data?.error || L({ en: 'Could not create the automation', fr: 'Impossible de créer l’automatisation' }, lang)); }
@@ -273,7 +273,7 @@ function SentenceBuilder({ lang, draft, onClose, boards, currentUserId, onCreate
   const activate = async () => {
     const board = boards.find((b) => b._id === boardId);
     if (!board) { toastError(L({ en: 'Pick a board first', fr: 'Choisissez d’abord un tableau' }, lang)); return; }
-    const payload = buildPayload({ name: enName(), actions: actions.filter(Boolean).map((a) => ({ key: a.key, val: a.val })), board, currentUserId });
+    const payload = buildPayload({ name: enName(), trigger, actions: actions.filter(Boolean).map((a) => ({ key: a.key, val: a.val })), board, currentUserId });
     setCreating(true);
     try { await createAutomation(boardId, payload); onCreated && onCreated(); setDone(true); }
     catch (err) { toastError(err?.response?.data?.error || L({ en: 'Could not create the automation', fr: 'Impossible de créer l’automatisation' }, lang)); }
@@ -379,6 +379,7 @@ function FormsPage({ lang, autos, loading, error, boards, currentUserId, reload,
   const [cat, setCat] = useState('all');
   const [sheet, setSheet] = useState(null);
   const [desc, setDesc] = useState('');
+  const [drafting, setDrafting] = useState(false);
 
   const counts = useMemo(() => {
     const m = { all: RECIPES.length };
@@ -388,7 +389,23 @@ function FormsPage({ lang, autos, loading, error, boards, currentUserId, reload,
   const shown = cat === 'all' ? RECIPES : RECIPES.filter((r) => r.cat === cat);
   const needsAttention = autos.some((a) => a.needsSetup || a.recentFailures > 0);
 
-  const submitDescribe = () => { if (desc.trim()) setSheet({ kind: 'builder', draft: parseDescribe(desc) }); };
+  // Draft from plain language: try the AI endpoint, fall back to the local
+  // keyword heuristic (also used when no ANTHROPIC_API_KEY is configured).
+  const draftFrom = async (text) => {
+    if (!text.trim() || drafting) return;
+    setDrafting(true);
+    let draft;
+    try {
+      const res = await draftAutomation(text);
+      draft = res && res.draft && !res.fallback ? res.draft : parseDescribe(text);
+    } catch {
+      draft = parseDescribe(text);
+    } finally {
+      setDrafting(false);
+    }
+    setSheet({ kind: 'builder', draft });
+  };
+  const submitDescribe = () => draftFrom(desc);
   const suggestions = lang === 'fr'
     ? ['Relancer les nouveaux prospects après 2 jours', 'Rappeler aux clients leur visite', 'Aviser quand un prospect devient Intéressé']
     : ['Follow up with new leads after 2 days', 'Remind clients about their visit', 'Notify me when a lead becomes Interested'];
@@ -417,10 +434,10 @@ function FormsPage({ lang, autos, loading, error, boards, currentUserId, reload,
           <div className="magic-field">
             <textarea rows={1} value={desc} placeholder={L({ en: 'e.g. Remind me to follow up with new leads after 2 days…', fr: 'ex. Me rappeler de relancer les nouveaux prospects après 2 jours…' }, lang)}
               onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDescribe(); } }} />
-            <button type="button" className="btn btn-primary" onClick={submitDescribe}><Icon name="arrowRight" size={16} />{L({ en: 'Draft it', fr: 'Rédiger' }, lang)}</button>
+            <button type="button" className="btn btn-primary" onClick={submitDescribe} disabled={drafting}><Icon name="arrowRight" size={16} />{drafting ? L({ en: 'Drafting…', fr: 'Rédaction…' }, lang) : L({ en: 'Draft it', fr: 'Rédiger' }, lang)}</button>
           </div>
           <div className="magic-suggest">
-            {suggestions.map((s) => <button type="button" key={s} className="magic-chip" onClick={() => { setDesc(s); setSheet({ kind: 'builder', draft: parseDescribe(s) }); }}>{s}</button>)}
+            {suggestions.map((s) => <button type="button" key={s} className="magic-chip" onClick={() => { setDesc(s); draftFrom(s); }}>{s}</button>)}
           </div>
         </div>
       </div>

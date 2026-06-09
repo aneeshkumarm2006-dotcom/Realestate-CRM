@@ -15,8 +15,8 @@ export const getTasks = async (boardId, groupId) => {
 /**
  * GET /api/tasks/my — current user's assigned + personal tasks.
  */
-export const getMyTasks = async () => {
-  const { data } = await api.get('/api/tasks/my');
+export const getMyTasks = async (orgId) => {
+  const { data } = await api.get('/api/tasks/my', { params: orgId ? { org: orgId } : {} });
   return data.tasks;
 };
 

@@ -1311,7 +1311,7 @@ const BoardDetailPage = () => {
       )}
 
       {/* Task groups */}
-      <section className="mt-6 flex flex-col gap-4">
+      <section className="mt-6 flex flex-col gap-2">
         {loading && !hasGroups ? (
           <div
             role="status"
@@ -1415,7 +1415,7 @@ const BoardDetailPage = () => {
                         }`}
                         style={{
                           ...style,
-                          borderRadius: 'var(--radius-lg)',
+                          borderRadius: 'var(--radius-md)',
                           boxShadow: 'var(--shadow-card)',
                           // Monday-style colored left rail for the group.
                           borderLeft: `4px solid ${groupColor}`,
@@ -1429,9 +1429,11 @@ const BoardDetailPage = () => {
                           // grid body can grow to fill the card and its
                           // horizontal scrollbar sits at the card's bottom edge
                           // rather than floating just under a short content area.
+                          // Size to content (Monday-style) — no empty floor
+                          // height. The summary footer sits directly under the
+                          // last row instead of being pushed to the card bottom.
                           display: isCollapsed ? undefined : 'flex',
                           flexDirection: isCollapsed ? undefined : 'column',
-                          minHeight: isCollapsed ? undefined : 360,
                         }}
                       >
                         <TaskGroupHeader

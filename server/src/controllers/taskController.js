@@ -490,14 +490,23 @@ const getMyTasks = async (req, res) => {
     const userId = req.user.userId;
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    // Top-level only (subitems shouldn't clutter "My Tasks").
-    const tasks = await Task.find({
+    // Optional ?org=<id> — scope to the current workspace's boards so the home
+    // cockpit / My Leads don't leak the user's tasks from other workspaces.
+    const orgId = req.query.org;
+    const match = {
       parent: null,
       $or: [
         { assignedTo: userObjectId, isPersonal: { $ne: true } },
         { isPersonal: true, createdBy: userObjectId },
       ],
-    })
+    };
+    if (orgId && mongoose.Types.ObjectId.isValid(orgId)) {
+      const boards = await Board.find({ organisation: orgId }).select('_id').lean();
+      match.board = { $in: boards.map((b) => b._id) };
+    }
+
+    // Top-level only (subitems shouldn't clutter "My Tasks").
+    const tasks = await Task.find(match)
       .populate('assignedTo', 'name profilePic email')
       .populate('createdBy', 'name profilePic email')
       .populate('board', 'name visibility statuses labels')

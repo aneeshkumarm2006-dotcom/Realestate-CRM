@@ -26,6 +26,12 @@ const bookingSchema = new mongoose.Schema(
     agentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     cancelToken: { type: String, index: true },
     cancelledAt: { type: Date, default: null },
+    // Which before_event reminder workflows have already fired for this booking
+    // (so the runner never double-sends).
+    remindersSent: {
+      type: [{ _id: false, workflow: { type: mongoose.Schema.Types.ObjectId, ref: 'BookingWorkflow' }, at: { type: Date, default: Date.now } }],
+      default: [],
+    },
   },
   { timestamps: true }
 );

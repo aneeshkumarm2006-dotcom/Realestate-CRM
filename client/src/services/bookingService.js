@@ -30,6 +30,27 @@ export const listBookings = async (linkId) => {
   return data.bookings || [];
 };
 
+// ---- booking workflows (org-scoped, admin) ----
+export const listBookingWorkflows = async (orgId) => {
+  const { data } = await api.get('/api/booking-workflows', { params: { org: orgId } });
+  return data.workflows || [];
+};
+export const getBookingWorkflow = async (id) => {
+  const { data } = await api.get(`/api/booking-workflows/${id}`);
+  return data.workflow;
+};
+export const createBookingWorkflow = async (payload) => {
+  const { data } = await api.post('/api/booking-workflows', payload);
+  return data.workflow;
+};
+export const updateBookingWorkflow = async (id, payload) => {
+  const { data } = await api.patch(`/api/booking-workflows/${id}`, payload);
+  return data.workflow;
+};
+export const deleteBookingWorkflow = async (id) => {
+  await api.delete(`/api/booking-workflows/${id}`);
+};
+
 // ---- public (no auth) ----
 export const getPublicBooking = async (slug) => {
   const { data } = await api.get(`/book/${slug}`);

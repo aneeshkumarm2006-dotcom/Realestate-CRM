@@ -200,15 +200,34 @@ const columnTypes = {
   }),
 
   dropdown: baseEntry({
+    // Value: option-id[] (multi-select, Monday-style). Accepts a legacy single
+    // id string for back-compat and normalises everything to a de-duped array.
     validate: (value, settings) => {
       if (value == null || value === '') return;
       const ids = optionIdsFromSettings(settings);
-      if (!ids.has(value.toString())) {
-        throw ValidationError('dropdown value is not one of the configured options');
+      const arr = Array.isArray(value) ? value : [value];
+      for (const v of arr) {
+        if (v == null || v === '') continue;
+        if (!ids.has(v.toString())) {
+          throw ValidationError('dropdown value is not one of the configured options');
+        }
       }
     },
-    serialize: (value) => (value == null || value === '' ? null : value.toString()),
-    defaultValue: () => null,
+    serialize: (value) => {
+      if (value == null || value === '') return [];
+      const arr = Array.isArray(value) ? value : [value];
+      const seen = new Set();
+      const out = [];
+      for (const v of arr) {
+        if (v == null || v === '') continue;
+        const id = v.toString();
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(id);
+      }
+      return out;
+    },
+    defaultValue: () => [],
     indexable: true,
   }),
 

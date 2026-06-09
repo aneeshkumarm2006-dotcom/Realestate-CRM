@@ -385,6 +385,8 @@ const submitBooking = async (req, res) => {
 
     // Let ITEM_CREATED automations treat the new lead like any other.
     eventBus.emit('item.created', { taskId: task._id, boardId: board._id, groupId: task.group, statusId: task.status, createdByUserId: asId(board.createdBy) });
+    // Fire on_booking reminder/alert workflows for this event type.
+    eventBus.emit('booking.created', { bookingId: booking._id, linkId: link._id, organisationId: board.organisation });
 
     // Best-effort confirmation emails (never fail the booking on email errors).
     sendBookingEmails({ link, board, booking, task, agentId }).catch((e) => console.error('[booking] email failed:', e?.message || e));

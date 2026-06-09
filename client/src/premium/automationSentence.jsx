@@ -85,17 +85,47 @@ export function mapAction(actionKey, val, board, currentUserId) {
 }
 
 /**
- * Build a valid create payload. Triggers are mapped to ITEM_CREATED for v1 (the
- * universally-valid trigger); the full sentence is preserved in `name` and the
- * trigger/conditions can be refined later in the board editor.
+ * Map a design trigger ({key, val}) to a real backend trigger + triggerConfig.
+ * - status  → STATUS_BECAME on the board's status column (val matched to an option)
+ * - form    → FORM_SUBMITTED
+ * - new/noreply/visit/other → ITEM_CREATED (the universally-valid baseline;
+ *   "no reply in N days" / "visit booked" have no native trigger yet, so a new
+ *   lead is the safe stand-in and the full intent stays in the name).
  */
-export function buildPayload({ name, actions, board, currentUserId }) {
+const findStatusTrigger = (board, label) => {
+  const col = (board?.columns || []).find((c) => c && c.type === 'status');
+  if (!col) return null;
+  const opts = (col.settings && col.settings.options) || [];
+  const match = opts.find((o) => String(o.label || '').toLowerCase() === String(label || '').toLowerCase());
+  if (!match) return null;
+  return { columnId: String(col._id), toValue: String(match.id ?? match._id ?? match.value ?? '') };
+};
+
+export function buildTrigger(trigger, board) {
+  const key = trigger && trigger.key;
+  if (key === 'status') {
+    const cfg = findStatusTrigger(board, trigger.val);
+    if (cfg && cfg.toValue) return { triggerType: 'STATUS_BECAME', triggerConfig: cfg };
+  } else if (key === 'form') {
+    return { triggerType: 'FORM_SUBMITTED', triggerConfig: {} };
+  }
+  return { triggerType: 'ITEM_CREATED', triggerConfig: {} };
+}
+
+/**
+ * Build a valid create payload. The trigger is mapped to its real backend type
+ * where we can resolve it (status / form), else ITEM_CREATED. The full sentence
+ * is preserved in `name` and trigger/conditions can be refined in the board editor.
+ */
+export function buildPayload({ name, trigger, actions, board, currentUserId }) {
   const acts = (actions && actions.length ? actions : [{ key: 'notify', val: null }])
     .filter((a) => a && a.key)
     .map((a) => mapAction(a.key, a.val, board, currentUserId));
+  const { triggerType, triggerConfig } = buildTrigger(trigger, board);
   return {
     name: (name || 'New automation').slice(0, 120),
-    triggerType: 'ITEM_CREATED',
+    triggerType,
+    triggerConfig,
     actions: acts.length ? acts : [mapAction('notify', null, board, currentUserId)],
     enabled: true,
   };
@@ -107,4 +137,12 @@ export function recipeToAction(vals) {
   if (ch === 'an SMS') return { key: 'sms', val: null };
   if (ch === 'an email') return { key: 'email', val: null };
   return { key: 'notify', val: null };
+}
+
+/** Derive the design trigger for a recipe (the few that aren't "new lead"). */
+export function recipeToTrigger(recipe, vals) {
+  if (!recipe) return { key: 'new' };
+  if (recipe.id === 'r9' || recipe.id === 'r12') return { key: 'status', val: vals && vals.status };
+  if (recipe.id === 'r6') return { key: 'form' };
+  return { key: 'new' };
 }

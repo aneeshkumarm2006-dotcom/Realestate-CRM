@@ -11,6 +11,7 @@ const {
 } = require('./src/services/webhookDispatcher');
 const { startEmailSyncRunner } = require('./src/services/emailSyncRunner');
 const { startSequenceRunner } = require('./src/services/sequenceRunner');
+const { startBookingWorkflowRunner } = require('./src/services/bookingWorkflowRunner');
 const {
   mountLeadIntakeRunner,
 } = require('./src/services/leadIntakeRunner');
@@ -46,6 +47,8 @@ const start = async () => {
   startEmailSyncRunner();
   // Phase 4 — email sequence drip runner (per-minute) + reply auto-stop.
   startSequenceRunner();
+  // Booking workflows — on-booking alerts + before-event reminder emails.
+  startBookingWorkflowRunner();
   // F9 — Automated Lead Agent: runs the board intake policy on `lead.intake`.
   mountLeadIntakeRunner();
   // F7 — warn if the in-memory rate-limit bucket won't meter across replicas.

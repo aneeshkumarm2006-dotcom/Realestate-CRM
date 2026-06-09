@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Inbox, Calendar, Clock, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
+import { Inbox, Calendar, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { getMyTasks } from '../../services/taskService';
+import useOrgStore from '../../store/orgStore';
 
 /**
  * MyDayRow — the personal "agent cockpit" row (adapted from the Claude-design
@@ -37,16 +38,19 @@ const statusOf = (task) => {
 const MyDayRow = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const currentOrg = useOrgStore((s) => s.currentOrg);
   const [leads, setLeads] = useState(null); // null = loading
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    if (!currentOrg?._id) return undefined;
     let cancelled = false;
-    getMyTasks()
+    setLeads(null);
+    getMyTasks(currentOrg._id)
       .then((list) => { if (!cancelled) setLeads(Array.isArray(list) ? list.filter((x) => !x.isPersonal) : []); })
       .catch(() => { if (!cancelled) { setLeads([]); setError(true); } });
     return () => { cancelled = true; };
-  }, []);
+  }, [currentOrg?._id]);
 
   const myLeads = useMemo(() => (leads || []).slice(0, 6), [leads]);
   const followUps = useMemo(
@@ -174,7 +178,7 @@ const Row = ({ children, onClick, style }) => (
     onClick={onClick}
     onKeyDown={(e) => { if (e.key === 'Enter') onClick?.(); }}
     className="flex items-center gap-3 transition-colors hover:bg-[color:var(--color-bg-subtle)]"
-    style={{ padding: '9px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', ...style }}
+    style={{ minHeight: 52, padding: '8px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', ...style }}
   >
     {children}
   </div>

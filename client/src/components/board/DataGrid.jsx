@@ -36,7 +36,7 @@ const CHECK_WIDTH = 40;
 // cell (the comments ⊕ now lives inside the Name cell, so it has no track).
 const ACTIONS_WIDTH = 48;
 const ADD_COLUMN_WIDTH = 44;
-const ROW_HEIGHT = 48;
+const ROW_HEIGHT = 40;
 
 // Accent colours offered for column headers (Monday-style column colouring).
 const COLUMN_HEADER_SWATCHES = [
@@ -568,6 +568,7 @@ const DataGrid = ({
                               task={task}
                               readOnly={readOnly || col.type === 'formula'}
                               onChange={(v) => onCellChange(task, col, v)}
+                              onUpdateColumn={readOnly ? undefined : (patch) => updateColumn(board._id, col._id, patch)}
                             />
                           </div>
                           {/* Monday-style "write a new update" ⊕ — sits right of

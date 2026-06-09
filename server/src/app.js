@@ -91,6 +91,7 @@ app.use('/api', require('./routes/calendarViews'));
 // F13 — authed board form management + per-user saved table views + chart widgets.
 app.use('/api', boardFormRouter);
 app.use('/api', boardBookingRouter);
+app.use('/api', require('./routes/bookingWorkflows'));
 app.use('/api', require('./routes/savedViews'));
 app.use('/api', require('./routes/charts'));
 app.use('/api', require('./routes/marketing'));

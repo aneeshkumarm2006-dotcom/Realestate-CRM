@@ -12,6 +12,7 @@
 export const cellWrapperStyle = {
   display: 'flex',
   alignItems: 'center',
+  justifyContent: 'center',
   width: '100%',
   height: '100%',
   padding: '4px 8px',
@@ -27,6 +28,7 @@ export const cellInputStyle = {
   padding: '4px 8px',
   fontSize: 13,
   fontFamily: 'inherit',
+  textAlign: 'center',
   color: 'var(--color-text-primary)',
   background: 'transparent',
   border: '1px solid transparent',

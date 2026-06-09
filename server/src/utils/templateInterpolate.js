@@ -68,8 +68,8 @@ const renderColumnValue = (col, value, users) => {
   if (value == null || value === '') return '';
   switch (col.type) {
     case 'status':
-    case 'dropdown':
       return optionLabel(col, value);
+    case 'dropdown':
     case 'tags': {
       const ids = Array.isArray(value) ? value : [value];
       return ids.map((id) => optionLabel(col, id)).filter(Boolean).join(', ');

@@ -1143,6 +1143,27 @@ const getActionCatalog = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/automations/draft — draft an automation from a plain-language
+ * request via Claude (tool use). Returns { draft } or { fallback: true } when no
+ * ANTHROPIC_API_KEY is configured / the call fails, so the client degrades to its
+ * local keyword heuristic. Never errors the request on AI failure.
+ */
+const draftAutomation = async (req, res) => {
+  try {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.json({ fallback: true });
+    const { draftWithClaude } = require('../services/automationDraftAI');
+    const draft = await draftWithClaude(text, apiKey);
+    return res.json({ draft });
+  } catch (err) {
+    console.error('draftAutomation error:', err.message);
+    return res.json({ fallback: true });
+  }
+};
+
 module.exports = {
   listAutomations,
   createAutomation,
@@ -1153,6 +1174,7 @@ module.exports = {
   getRunLog,
   getActionRunLog,
   getActionCatalog,
+  draftAutomation,
   // Exported for the dispatcher / date runner / unit tests.
   sanitizeTriggerConfig,
   findBoardColumn,

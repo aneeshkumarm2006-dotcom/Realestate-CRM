@@ -117,3 +117,9 @@ export const getConnections = async (orgId) => {
   const { data } = await api.get('/api/automations/connections', { params: { orgId } });
   return data.channels;
 };
+
+// "Describe it" — AI draft from plain language. Returns { draft } | { fallback }.
+export const draftAutomation = async (text) => {
+  const { data } = await api.post('/api/automations/draft', { text });
+  return data;
+};

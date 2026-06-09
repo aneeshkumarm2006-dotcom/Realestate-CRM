@@ -9,6 +9,7 @@ const {
   getRunLog,
   getActionRunLog,
   getActionCatalog,
+  draftAutomation,
 } = require('../controllers/automationController');
 const {
   listRecipes,
@@ -27,6 +28,9 @@ router.post('/boards/:boardId/automations', createAutomation);
 // F5 action catalogue — static, authenticated. Registered before the
 // `/automations/:id` param routes so the literal path isn't captured as an `:id`.
 router.get('/automations/action-catalog', getActionCatalog);
+
+// "Describe it" — AI draft of an automation from plain language (admin).
+router.post('/automations/draft', draftAutomation);
 
 // F6 recipe library — literal paths, registered before `/automations/:id` so
 // `recipes` / `from-recipe` aren't captured as an `:id`.
