@@ -1,14 +1,18 @@
 /* ============================================================
-   Booking admin (honey/amber) — link manager + editor with a
-   real-time live preview. WIRED to real BookingLink CRUD across
-   the org's boards (board-scoped on the backend).
+   Booking page — a single CRM-styled page (no Calendly clone):
+     • Top    — Booking Links manager + editor with a live preview
+                that renders the SAME component as the public page.
+     • Bottom — Workflows (reminder / alert emails) list + editor.
+   WIRED to real BookingLink + BookingWorkflow CRUD across the org.
    ============================================================ */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import PageWrapper from '../components/layout/PageWrapper';
 import Icon from '../premium/PremiumIcons';
 import { Toggle, Sk } from '../premium/PremiumShared';
-import PublicBooking from '../premium/PublicBooking';
+import BookingExperience from '../components/booking/BookingExperience';
+import { buildPreviewSlots } from '../components/booking/previewSlots';
+import WorkflowEditor from './booking/WorkflowEditor';
 import { L } from '../premium/premiumData';
 import * as bookingService from '../services/bookingService';
 import { getGroups } from '../services/taskService';
@@ -24,8 +28,8 @@ const ACCENTS = [
   { id: 'violet', c: '#7C3AED', c2: '#A78BFA' },
 ];
 const accentObj = (hex) => ACCENTS.find((a) => a.c.toLowerCase() === String(hex || '').toLowerCase()) || ACCENTS[0];
-const DAYS = { en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'], fr: ['L', 'M', 'M', 'J', 'V', 'S', 'D'] };
-// design day-pill index (0=Mon..6=Sun) → backend dayOfWeek (0=Sun..6=Sat)
+// Availability is edited in Mon-first order; map design index → backend dayOfWeek (0=Sun).
+const DAY_LABELS = { en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], fr: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] };
 const DOW_MAP = [1, 2, 3, 4, 5, 6, 0];
 
 const initials = (name) => (name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -74,12 +78,50 @@ function LinkCard({ link, members, lang, onToggle, onEdit, onOpen, onDelete }) {
   );
 }
 
+// ScaledPreview — renders its children at a fixed desktop width and scales the
+// whole thing down to fit the (narrower) preview column, so the editor preview
+// shows the true DESKTOP layout rather than the page's mobile/stacked fallback.
+function ScaledPreview({ designWidth = 1040, children }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [scale, setScale] = useState(0.5);
+  const [height, setHeight] = useState(420);
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return undefined;
+    const recompute = () => {
+      const s = outer.clientWidth / designWidth;
+      setScale(s);
+      setHeight(inner.scrollHeight * s);
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(outer);
+    ro.observe(inner);
+    recompute();
+    return () => ro.disconnect();
+  }, [designWidth]);
+
+  return (
+    <div ref={outerRef} style={{ position: 'relative', height, overflow: 'hidden' }}>
+      <div ref={innerRef} style={{ position: 'absolute', top: 0, left: 0, width: designWidth, transformOrigin: 'top left', transform: `scale(${scale})` }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function BookingEditor({ link, boards, members, lang, onClose, onSaved, onPreviewFull, toastError, toastSuccess }) {
   const fromWeekly = () => {
-    const days = [false, false, false, false, false, false, false];
-    (link?.weeklyHours || []).forEach((w) => { const i = DOW_MAP.indexOf(Number(w.dayOfWeek)); if (i >= 0) days[i] = true; });
-    if (!link) return [true, true, true, true, true, false, false];
-    return days;
+    if (!link) {
+      const d = [[], [], [], [], [], [], []];
+      [0, 1, 2, 3, 4].forEach((i) => { d[i] = [{ start: '09:00', end: '17:00' }]; });
+      return d;
+    }
+    const dr = [[], [], [], [], [], [], []];
+    (link.weeklyHours || []).forEach((w) => { const i = DOW_MAP.indexOf(Number(w.dayOfWeek)); if (i >= 0) dr[i].push({ start: w.start, end: w.end }); });
+    return dr;
   };
   const [cfg, setCfg] = useState(() => ({
     title: link ? link.title : (lang === 'fr' ? 'Visite privée' : 'Private property tour'),
@@ -91,10 +133,12 @@ function BookingEditor({ link, boards, members, lang, onClose, onSaved, onPrevie
     agents: link ? [...(link.agents || [])] : (members[0] ? [members[0]._id] : []),
     accent: accentObj(link?.branding?.accentColor).id,
     headline: link?.branding?.headline || (lang === 'fr' ? 'Réservez votre visite' : 'Book your tour'),
-    days: fromWeekly(),
-    start: link?.weeklyHours?.[0]?.start || '09:00',
-    end: link?.weeklyHours?.[0]?.end || '17:00',
-    assign: link?.assignMode === 'round_robin' ? 'robin' : 'fixed',
+    dayRanges: fromWeekly(),
+    bufferBefore: link?.bufferBefore || 0,
+    bufferAfter: link?.bufferAfter || 0,
+    minNoticeHours: link?.minNoticeHours ?? 2,
+    dateRangeDays: link?.dateRangeDays ?? 30,
+    assign: link?.assignMode === 'fixed' ? 'fixed' : 'robin',
   }));
   const [groups, setGroups] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -107,16 +151,36 @@ function BookingEditor({ link, boards, members, lang, onClose, onSaved, onPrevie
       setGroups(gs || []);
       setCfg((s) => (s.group && (gs || []).some((g) => g._id === s.group) ? s : { ...s, group: (gs || [])[0]?._id || '' }));
     }).catch(() => setGroups([]));
-  }, [cfg.board]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cfg.board]);
 
   const toggleAgent = (id) => set('agents', cfg.agents.includes(id) ? cfg.agents.filter((x) => x !== id) : [...cfg.agents, id]);
-  const previewCfg = { title: cfg.title, duration: cfg.durationMinutes, location: cfg.location, agent: members.find((m) => m._id === cfg.agents[0])?.name, accent: acc.c, accent2: acc.c2, logo: 'SI', org: 'Sommet Immobilier' };
+
+  // ---- availability editing helpers (per design-day ranges) ----
+  const setDayRanges = (i, ranges) => setCfg((s) => ({ ...s, dayRanges: s.dayRanges.map((r, j) => (j === i ? ranges : r)) }));
+  const toggleDay = (i) => setDayRanges(i, cfg.dayRanges[i].length ? [] : [{ start: '09:00', end: '17:00' }]);
+  const addRange = (i) => setDayRanges(i, [...cfg.dayRanges[i], { start: '09:00', end: '17:00' }]);
+  const removeRange = (i, k) => setDayRanges(i, cfg.dayRanges[i].filter((_, j) => j !== k));
+  const setRange = (i, k, key, val) => setDayRanges(i, cfg.dayRanges[i].map((r, j) => (j === k ? { ...r, [key]: val } : r)));
+
+  const weeklyHours = useMemo(() => {
+    const out = [];
+    cfg.dayRanges.forEach((ranges, i) => ranges.forEach((r) => { if (r.start && r.end) out.push({ dayOfWeek: DOW_MAP[i], start: r.start, end: r.end }); }));
+    return out;
+  }, [cfg.dayRanges]);
+
+  const previewConfig = {
+    title: cfg.title,
+    durationMinutes: cfg.durationMinutes,
+    location: cfg.location,
+    branding: { accentColor: acc.c, headline: cfg.headline },
+    questions: [],
+  };
+  const previewSlots = useMemo(() => buildPreviewSlots(weeklyHours, cfg.durationMinutes), [weeklyHours, cfg.durationMinutes]);
 
   const save = async () => {
     if (!cfg.board || !cfg.group) { toastError(L({ en: 'Pick a board and a group', fr: 'Choisissez un tableau et un groupe' }, lang)); return; }
     if (!cfg.title.trim()) { toastError(L({ en: 'Title is required', fr: 'Le titre est requis' }, lang)); return; }
-    const weeklyHours = cfg.days.map((on, i) => (on ? { dayOfWeek: DOW_MAP[i], start: cfg.start, end: cfg.end } : null)).filter(Boolean);
-    if (!weeklyHours.length) { toastError(L({ en: 'Pick at least one available day', fr: 'Choisissez au moins un jour' }, lang)); return; }
+    if (!weeklyHours.length) { toastError(L({ en: 'Add at least one available time', fr: 'Ajoutez au moins une plage horaire' }, lang)); return; }
     const payload = {
       title: cfg.title.trim(),
       group: cfg.group,
@@ -124,6 +188,10 @@ function BookingEditor({ link, boards, members, lang, onClose, onSaved, onPrevie
       location: cfg.location,
       timezone: cfg.timezone,
       weeklyHours,
+      bufferBefore: cfg.bufferBefore,
+      bufferAfter: cfg.bufferAfter,
+      minNoticeHours: cfg.minNoticeHours,
+      dateRangeDays: cfg.dateRangeDays,
       assignMode: cfg.assign === 'robin' ? 'round_robin' : 'fixed',
       agents: cfg.assign === 'robin' ? cfg.agents : cfg.agents.slice(0, 1),
       branding: { accentColor: acc.c, headline: cfg.headline },
@@ -172,26 +240,49 @@ function BookingEditor({ link, boards, members, lang, onClose, onSaved, onPrevie
           <div className="bk-section">
             <h3><span className="bs-ic"><Icon name="form" size={15} /></span>{L({ en: 'Event details', fr: 'Détails de l’événement' }, lang)}</h3>
             <div className="blank-field"><label>{L({ en: 'Title', fr: 'Titre' }, lang)}</label><input className="bf-input" value={cfg.title} onChange={(e) => set('title', e.target.value)} /></div>
-            <div className="bk-row">
-              <div className="blank-field"><label>{L({ en: 'Duration', fr: 'Durée' }, lang)}</label>
-                <div className="bf-control"><select className="bf-select" value={cfg.durationMinutes} onChange={(e) => set('durationMinutes', +e.target.value)}>{[15, 20, 30, 45, 60].map((d) => <option key={d} value={d}>{d} min</option>)}</select><span className="bf-caret"><Icon name="chevronDown" size={15} /></span></div></div>
-              <div className="blank-field"><label>{L({ en: 'Location', fr: 'Lieu' }, lang)}</label><input className="bf-input" value={cfg.location} onChange={(e) => set('location', e.target.value)} /></div>
+            <div className="blank-field"><label>{L({ en: 'Duration', fr: 'Durée' }, lang)}</label>
+              <div className="bf-control" style={{ maxWidth: 200 }}><select className="bf-select" value={cfg.durationMinutes} onChange={(e) => set('durationMinutes', +e.target.value)}>{[15, 20, 30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} min</option>)}</select><span className="bf-caret"><Icon name="chevronDown" size={15} /></span></div></div>
+
+            {/* Property address — shown when a visitor chooses an in-person visit. */}
+            <div className="blank-field"><label>{L({ en: 'Property address (for in-person visits)', fr: 'Adresse (visites en personne)' }, lang)}</label><input className="bf-input" value={cfg.location} onChange={(e) => set('location', e.target.value)} placeholder={L({ en: 'e.g. 1200 Rue Sherbrooke, Montréal', fr: 'ex. 1200 Rue Sherbrooke, Montréal' }, lang)} /></div>
+            <div className="bf-help" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: 'var(--book-tint)', padding: '10px 12px', borderRadius: 10, marginTop: 8 }}>
+              <Icon name="video" size={15} />{L({ en: 'Visitors choose in person or a WhatsApp video call when they book — for video, your agent calls the number they provide.', fr: 'Les visiteurs choisissent en personne ou un appel vidéo WhatsApp lors de la réservation — pour la vidéo, votre agent appelle le numéro fourni.' }, lang)}
             </div>
           </div>
 
           <div className="bk-section">
             <h3><span className="bs-ic"><Icon name="calendar" size={15} /></span>{L({ en: 'Availability', fr: 'Disponibilités' }, lang)}</h3>
-            <div className="bs-sub">{L({ en: 'Tap the days you take visits.', fr: 'Touchez les jours où vous recevez.' }, lang)}</div>
-            <div className="day-pills">
-              {DAYS[lang].map((d, i) => (
-                <button type="button" key={i} className={'day-pill' + (cfg.days[i] ? ' on' : '')} onClick={() => set('days', cfg.days.map((x, j) => (j === i ? !x : x)))}>{d}</button>
-              ))}
+            <div className="bs-sub">{L({ en: 'Set the hours you take visits — add several ranges per day if needed.', fr: 'Définissez vos heures — ajoutez plusieurs plages par jour au besoin.' }, lang)}</div>
+            <div className="avail-list">
+              {DAY_LABELS[lang].map((d, i) => {
+                const on = cfg.dayRanges[i].length > 0;
+                return (
+                  <div key={i} className="avail-day">
+                    <button type="button" className={'avail-toggle' + (on ? ' on' : '')} onClick={() => toggleDay(i)}>{d}</button>
+                    <div className="avail-ranges">
+                      {!on && <span className="avail-off">{L({ en: 'Unavailable', fr: 'Indisponible' }, lang)}</span>}
+                      {cfg.dayRanges[i].map((r, k) => (
+                        <div className="avail-range" key={k}>
+                          <input type="time" value={r.start} onChange={(e) => setRange(i, k, 'start', e.target.value)} />
+                          <span>–</span>
+                          <input type="time" value={r.end} onChange={(e) => setRange(i, k, 'end', e.target.value)} />
+                          <button type="button" className="link-act" onClick={() => removeRange(i, k)} title={L({ en: 'Remove', fr: 'Retirer' }, lang)}><Icon name="x" size={14} /></button>
+                        </div>
+                      ))}
+                      {on && <button type="button" className="avail-add" onClick={() => addRange(i)}><Icon name="plus" size={13} />{L({ en: 'Add time', fr: 'Ajouter' }, lang)}</button>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="time-range">
-              <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{L({ en: 'From', fr: 'De' }, lang)}</span>
-              <input className="bf-input" style={{ height: 40, width: 100 }} type="time" value={cfg.start} onChange={(e) => set('start', e.target.value)} />
-              <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{L({ en: 'to', fr: 'à' }, lang)}</span>
-              <input className="bf-input" style={{ height: 40, width: 100 }} type="time" value={cfg.end} onChange={(e) => set('end', e.target.value)} />
+
+            <div className="bk-row" style={{ marginTop: 16 }}>
+              <div className="blank-field"><label>{L({ en: 'Buffer before (min)', fr: 'Tampon avant (min)' }, lang)}</label><input className="bf-input" type="number" min="0" value={cfg.bufferBefore} onChange={(e) => set('bufferBefore', Math.max(0, +e.target.value || 0))} /></div>
+              <div className="blank-field"><label>{L({ en: 'Buffer after (min)', fr: 'Tampon après (min)' }, lang)}</label><input className="bf-input" type="number" min="0" value={cfg.bufferAfter} onChange={(e) => set('bufferAfter', Math.max(0, +e.target.value || 0))} /></div>
+            </div>
+            <div className="bk-row">
+              <div className="blank-field"><label>{L({ en: 'Min. notice (hours)', fr: 'Préavis min. (heures)' }, lang)}</label><input className="bf-input" type="number" min="0" value={cfg.minNoticeHours} onChange={(e) => set('minNoticeHours', Math.max(0, +e.target.value || 0))} /></div>
+              <div className="blank-field"><label>{L({ en: 'Bookable window (days)', fr: 'Fenêtre réservable (jours)' }, lang)}</label><input className="bf-input" type="number" min="1" value={cfg.dateRangeDays} onChange={(e) => set('dateRangeDays', Math.max(1, +e.target.value || 1))} /></div>
             </div>
           </div>
 
@@ -232,17 +323,71 @@ function BookingEditor({ link, boards, members, lang, onClose, onSaved, onPrevie
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
             <span className="preview-live"><i />{L({ en: 'LIVE PREVIEW', fr: 'APERÇU EN DIRECT' }, lang)}</span>
             <div style={{ flex: 1 }} />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPreviewFull(previewCfg)}><Icon name="eye" size={14} />{L({ en: 'Open full page', fr: 'Page complète' }, lang)}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPreviewFull({ config: previewConfig, slots: previewSlots })}><Icon name="eye" size={14} />{L({ en: 'Open full page', fr: 'Page complète' }, lang)}</button>
           </div>
-          <div className="preview-frame">
-            <div className="preview-bar">
-              <span className="pb-dot" style={{ background: '#F2754B' }} /><span className="pb-dot" style={{ background: '#E0982E' }} /><span className="pb-dot" style={{ background: '#16A34A' }} />
-              <span className="pb-url">{L({ en: 'your booking page', fr: 'votre page de réservation' }, lang)}</span>
-            </div>
-            <PublicBooking config={previewCfg} compact lang={lang} key={cfg.accent + cfg.durationMinutes} />
+          <div className="bk-live-frame" key={cfg.accent + cfg.durationMinutes}>
+            <ScaledPreview>
+              <BookingExperience config={previewConfig} slots={previewSlots} lang={lang} preview />
+            </ScaledPreview>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- Workflows section (bottom of the booking page) ----
+const triggerLabel = (w, lang) => {
+  if (w.triggerType === 'on_booking') return L({ en: 'Immediately when a visit is booked', fr: 'Dès qu’une visite est réservée' }, lang);
+  const m = Number(w.beforeMinutes) || 0;
+  if (m % 60 === 0) return L({ en: `${m / 60} hour(s) before the visit`, fr: `${m / 60} heure(s) avant la visite` }, lang);
+  return L({ en: `${m} minutes before the visit`, fr: `${m} minutes avant la visite` }, lang);
+};
+const wfActionLabel = (type, lang) =>
+  type === 'email_host' ? L({ en: 'Email the agent', fr: 'Courriel à l’agent' }, lang)
+    : type === 'email_other' ? L({ en: 'Email someone else', fr: 'Courriel à un tiers' }, lang)
+      : L({ en: 'Email the invitee', fr: 'Courriel à l’invité' }, lang);
+const appliesLabel = (w, lang) => {
+  if (!w.links || w.links.length === 0) return L({ en: 'All booking links', fr: 'Tous les liens' }, lang);
+  const first = w.links[0]?.title || L({ en: 'Booking link', fr: 'Lien' }, lang);
+  return w.links.length > 1 ? `${first} +${w.links.length - 1}` : first;
+};
+
+function WorkflowsSection({ workflows, loading, lang, onNew, onEdit, onDelete }) {
+  return (
+    <div className="wf-block">
+      <div className="page-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginTop: 36 }}>
+        <div>
+          <span className="page-eyebrow dm-book"><span className="pe-ic"><Icon name="zap" size={13} /></span>{L({ en: 'Automation', fr: 'Automatisation' }, lang)}</span>
+          <h2 className="page-title" style={{ fontSize: 24 }}>{L({ en: 'Workflows', fr: 'Flux de travail' }, lang)}</h2>
+          <p className="page-sub">{L({ en: 'Reminder and alert emails that run automatically around each booking.', fr: 'Courriels de rappel et d’alerte envoyés automatiquement autour de chaque réservation.' }, lang)}</p>
+        </div>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onNew}><Icon name="plus" size={15} />{L({ en: 'New workflow', fr: 'Nouveau flux' }, lang)}</button>
+      </div>
+
+      {loading ? (
+        <div style={{ color: 'var(--muted)', fontSize: 14, padding: '14px 2px' }}>{L({ en: 'Loading workflows…', fr: 'Chargement…' }, lang)}</div>
+      ) : workflows.length === 0 ? (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '40px 24px', gap: 6 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 16, display: 'grid', placeItems: 'center', background: 'var(--book-tint)', color: 'var(--book-ink)', marginBottom: 8 }}><Icon name="mail" size={24} /></div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17 }}>{L({ en: 'No workflows yet', fr: 'Aucun flux' }, lang)}</div>
+          <div style={{ color: 'var(--text-2)', fontSize: 14, maxWidth: 380 }}>{L({ en: 'Add a reminder so leads and agents get an email before each visit, or an alert the moment one is booked.', fr: 'Ajoutez un rappel pour que prospects et agents reçoivent un courriel avant chaque visite, ou une alerte dès la réservation.' }, lang)}</div>
+          <button type="button" className="btn btn-primary" style={{ marginTop: 12, background: 'var(--book)' }} onClick={onNew}><Icon name="plus" size={15} />{L({ en: 'New workflow', fr: 'Nouveau flux' }, lang)}</button>
+        </div>
+      ) : (
+        <div className="wf-list">
+          {workflows.map((w) => (
+            <div className="wf-item" key={w._id} role="button" tabIndex={0} onClick={() => onEdit(w)} style={w.enabled === false ? { opacity: 0.6 } : undefined}>
+              <span className="bs-ic" style={{ flex: '0 0 auto' }}><Icon name="mail" size={16} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="wf-name">{w.name}</div>
+                <div className="wf-meta">{appliesLabel(w, lang)} · {triggerLabel(w, lang)} · {(w.actions || []).map((a) => wfActionLabel(a.type, lang)).join(', ') || L({ en: 'No actions', fr: 'Aucune action' }, lang)}</div>
+              </div>
+              <button type="button" className="link-act" onClick={(e) => { e.stopPropagation(); onDelete(w); }} title={L({ en: 'Delete', fr: 'Supprimer' }, lang)}><Icon name="trash" size={15} /></button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -262,9 +407,12 @@ export default function BookingPremium() {
   const [links, setLinks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [view, setView] = useState('list');
+  const [workflows, setWorkflows] = useState([]);
+  const [wfLoading, setWfLoading] = useState(true);
+  const [view, setView] = useState('list'); // 'list' | 'edit' | 'workflow'
   const [editing, setEditing] = useState(null);
-  const [full, setFull] = useState(null);
+  const [editingWf, setEditingWf] = useState(null);
+  const [full, setFull] = useState(null); // { config, slots } for the full-page preview overlay
 
   const load = useCallback(async () => {
     if (!currentOrg?._id) return;
@@ -280,13 +428,23 @@ export default function BookingPremium() {
     }
   }, [currentOrg?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const loadWorkflows = useCallback(async () => {
+    if (!currentOrg?._id) return;
+    setWfLoading(true);
+    try { setWorkflows(await bookingService.listBookingWorkflows(currentOrg._id)); }
+    catch { setWorkflows([]); }
+    finally { setWfLoading(false); }
+  }, [currentOrg?._id]);
+
   useEffect(() => {
     if (currentOrg?._id && (!members || members.length === 0)) fetchMembers(currentOrg._id).catch(() => {});
     load();
+    loadWorkflows();
   }, [currentOrg?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openEdit = (l) => { setEditing(l); setView('edit'); };
-  const previewFor = (l) => ({ title: l.title, duration: l.durationMinutes, location: l.location, agent: members.find((m) => m._id === (l.agents || [])[0])?.name, accent: accentObj(l.branding?.accentColor).c, accent2: accentObj(l.branding?.accentColor).c2, logo: 'SI', org: 'Sommet Immobilier' });
+  const openWf = (w) => { setEditingWf(w); setView('workflow'); };
+  const eventTypes = useMemo(() => links.map((l) => ({ _id: l._id, title: l.title })), [links]);
 
   const toggleActive = async (l, v) => {
     setLinks((s) => s.map((x) => (x._id === l._id ? { ...x, active: v } : x)));
@@ -297,26 +455,52 @@ export default function BookingPremium() {
     try { await bookingService.deleteBookingLink(l._id); setLinks((s) => s.filter((x) => x._id !== l._id)); }
     catch (err) { toastError(err?.response?.data?.error || L({ en: 'Could not delete', fr: 'Impossible de supprimer' }, lang)); }
   };
+  const previewFor = (l) => ({
+    config: {
+      title: l.title, durationMinutes: l.durationMinutes, location: l.location,
+      branding: { accentColor: accentObj(l.branding?.accentColor).c, headline: l.branding?.headline }, questions: l.questions || [],
+    },
+    slots: buildPreviewSlots(l.weeklyHours || [], l.durationMinutes),
+  });
+  const removeWf = async (w) => {
+    if (!window.confirm(L({ en: `Delete workflow “${w.name}”?`, fr: `Supprimer le flux « ${w.name} » ?` }, lang))) return;
+    try { await bookingService.deleteBookingWorkflow(w._id); setWorkflows((s) => s.filter((x) => x._id !== w._id)); } catch { loadWorkflows(); }
+  };
 
   const overlay = full && (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setFull(null); }}>
-      <div className="sheet" style={{ maxWidth: 880, overflow: 'hidden' }}><button type="button" className="sheet-close" onClick={() => setFull(null)} style={{ zIndex: 5 }}><Icon name="x" size={18} /></button><PublicBooking config={full} lang={lang} /></div>
+      <div className="sheet" style={{ maxWidth: 1080, overflow: 'hidden', background: 'transparent', boxShadow: 'none' }}>
+        <button type="button" className="sheet-close" onClick={() => setFull(null)} style={{ zIndex: 5 }}><Icon name="x" size={18} /></button>
+        <BookingExperience config={full.config} slots={full.slots} lang={lang} preview />
+      </div>
     </div>
   );
 
   if (view === 'edit') {
     return (
       <PageWrapper>
+        <PreviewStyles />
         <BookingEditor link={editing} boards={boards} members={members} lang={lang}
           onClose={() => setView('list')} onSaved={() => { setView('list'); load(); }}
-          onPreviewFull={(cfg) => setFull(cfg)} toastError={toastError} toastSuccess={toastSuccess} />
+          onPreviewFull={(p) => setFull(p)} toastError={toastError} toastSuccess={toastSuccess} />
         {overlay}
+      </PageWrapper>
+    );
+  }
+
+  if (view === 'workflow') {
+    return (
+      <PageWrapper>
+        <WorkflowEditor workflow={editingWf} eventTypes={eventTypes} orgId={currentOrg?._id} lang={lang}
+          onClose={() => setView('list')} onSaved={() => { setView('list'); loadWorkflows(); }}
+          toastError={toastError} toastSuccess={toastSuccess} />
       </PageWrapper>
     );
   }
 
   return (
     <PageWrapper>
+      <PreviewStyles />
       <div className="page book">
         <div className="page-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
@@ -355,8 +539,36 @@ export default function BookingPremium() {
           </div>
         )}
 
+        {/* Bottom section — Workflows */}
+        <WorkflowsSection workflows={workflows} loading={wfLoading} lang={lang}
+          onNew={() => openWf(null)} onEdit={openWf} onDelete={removeWf} />
+
         {overlay}
       </div>
     </PageWrapper>
   );
 }
+
+// Styling for the new availability editor, embedded live preview, and workflow list.
+const PreviewStyles = () => (
+  <style>{`
+.avail-list{ display:flex; flex-direction:column; gap:8px; }
+.avail-day{ display:flex; align-items:flex-start; gap:12px; }
+.avail-toggle{ width:54px; height:36px; flex:0 0 auto; border-radius:9px; border:1px solid var(--border); background:var(--surface); font-size:12.5px; font-weight:700; color:var(--text-2); cursor:pointer; }
+.avail-toggle.on{ background:var(--book-tint); border-color:var(--book); color:var(--book-ink); }
+.avail-ranges{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-top:2px; min-height:36px; }
+.avail-off{ font-size:13px; color:var(--muted); }
+.avail-range{ display:flex; align-items:center; gap:6px; }
+.avail-range input[type=time]{ height:36px; border:1px solid var(--border); border-radius:8px; padding:0 8px; font-size:13px; font-family:var(--font-body); color:var(--text); background:var(--surface); }
+.avail-add{ display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:600; color:var(--book-ink); background:none; border:none; cursor:pointer; }
+/* Embedded live preview: the true DESKTOP layout, scaled to fit the pane (via ScaledPreview). */
+.bk-live-frame{ border:1px solid var(--border); border-radius:16px; overflow:hidden; background:#F4F2ED; }
+.bk-live-frame .pubook{ min-height:0; padding:48px 22px 26px; }
+.bk-live-frame .pubook .stage{ max-width:100%; }
+.wf-list{ display:flex; flex-direction:column; gap:10px; }
+.wf-item{ display:flex; align-items:center; gap:12px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:14px; cursor:pointer; transition:.15s var(--ease); }
+.wf-item:hover{ border-color:var(--book); box-shadow:0 4px 16px -8px var(--book); }
+.wf-item .wf-name{ font-weight:700; font-size:14.5px; }
+.wf-item .wf-meta{ font-size:12.5px; color:var(--text-2); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  `}</style>
+);

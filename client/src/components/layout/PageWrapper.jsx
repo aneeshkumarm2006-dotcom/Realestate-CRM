@@ -248,8 +248,8 @@ const OrgSidebar = () => {
                 <SidebarLink
                   icon={CalendarClock}
                   label={t('bookingPremium.nav')}
-                  active={false}
-                  onClick={() => window.open('/booking-app', '_blank', 'noopener')}
+                  active={pathname === '/booking'}
+                  onClick={() => navigate('/booking')}
                 />
               )}
             </nav>

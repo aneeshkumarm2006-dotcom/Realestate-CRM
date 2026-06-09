@@ -41,6 +41,11 @@ const loadBoardAdmin = async (boardId, userId) => {
   return { board, org };
 };
 
+// Human-readable "where" for a booking — depends on the meeting type the
+// visitor chose: a WhatsApp-video note for virtual, else the link's address.
+const locationLabel = (link, meetingType) =>
+  meetingType === 'virtual' ? 'WhatsApp video call' : (link.location || '');
+
 const boardColumns = (board) => (Array.isArray(board.columns) ? board.columns : []);
 const colById = (board, id) => (id ? boardColumns(board).find((c) => asId(c._id) === asId(id)) : null);
 const firstColOfType = (board, types) => boardColumns(board).find((c) => types.includes(c.type)) || null;
@@ -276,7 +281,7 @@ const renderBookingPublic = async (req, res) => {
     return res.json({
       slug: link.slug,
       title: link.title,
-      location: link.location,
+      location: link.location || '', // property address (shown when visitor picks in-person)
       durationMinutes: link.durationMinutes,
       timezone: link.timezone,
       questions: link.questions || [],
@@ -315,8 +320,10 @@ const submitBooking = async (req, res) => {
     const name = String(visitor.name || '').trim();
     const email = String(visitor.email || '').trim();
     const phone = String(visitor.phone || '').trim();
+    const meetingType = body.meetingType === 'virtual' ? 'virtual' : 'in_person';
     if (!name) return res.status(400).json({ error: 'Your name is required' });
     if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'A valid email is required' });
+    if (meetingType === 'virtual' && !phone) return res.status(400).json({ error: 'A phone number is required for a WhatsApp video visit' });
     if (!body.slotStart) return res.status(400).json({ error: 'Please choose a time slot' });
 
     // Re-validate the chosen slot against fresh availability + bookings.
@@ -357,7 +364,8 @@ const submitBooking = async (req, res) => {
     }
     if (personCol && agentId) columnValues[asId(personCol._id)] = [asId(agentId)];
 
-    const note = [`Visit booked for ${slotStart.toISOString()}`, link.location ? `Location: ${link.location}` : '', ...(Array.isArray(body.answers) ? body.answers.map((a) => `${a.label}: ${a.value}`) : [])]
+    const whereText = locationLabel(link, meetingType);
+    const note = [`Visit booked for ${slotStart.toISOString()}`, `Type: ${meetingType === 'virtual' ? 'WhatsApp video' : 'In person'}`, whereText ? `Location: ${whereText}` : '', ...(Array.isArray(body.answers) ? body.answers.map((a) => `${a.label}: ${a.value}`) : [])]
       .filter(Boolean)
       .join('\n');
 
@@ -378,6 +386,7 @@ const submitBooking = async (req, res) => {
       slotEnd,
       timezone: link.timezone,
       visitor: { name, email, phone },
+      meetingType,
       answers: Array.isArray(body.answers) ? body.answers.map((a) => ({ label: String(a.label || ''), value: String(a.value || '') })) : [],
       leadId: task._id,
       agentId,
@@ -395,7 +404,8 @@ const submitBooking = async (req, res) => {
       ok: true,
       booking: { slotStart: booking.slotStart, slotEnd: booking.slotEnd, timezone: booking.timezone },
       title: link.title,
-      location: link.location,
+      meetingType,
+      location: whereText,
       cancelUrl: `${PUBLIC_BASE_URL()}/book/${link.slug}?cancel=${booking.cancelToken}`,
       icsUrl: `${API_BASE_URL()}/book/ics/${booking.cancelToken}`,
     });
@@ -408,6 +418,11 @@ const submitBooking = async (req, res) => {
 const sendBookingEmails = async ({ link, board, booking, task, agentId }) => {
   const User = require('../models/User');
   const when = booking.slotStart.toLocaleString('en-US', { timeZone: link.timezone, dateStyle: 'full', timeStyle: 'short' });
+  const isVirtual = booking.meetingType === 'virtual';
+  const where = locationLabel(link, booking.meetingType);
+  const whereLine = where
+    ? `<strong>Where:</strong> ${where}${isVirtual && booking.visitor.phone ? ` — we'll call you on WhatsApp at ${booking.visitor.phone}` : ''}<br/>`
+    : '';
   const account = await resolveSenderAccount({ workspaceId: board.organisation, candidateUserIds: [agentId, link.createdBy].filter(Boolean).map(asId) });
   const calUrl = `${API_BASE_URL()}/book/ics/${booking.cancelToken}`;
   const cancelUrl = `${PUBLIC_BASE_URL()}/book/${link.slug}?cancel=${booking.cancelToken}`;
@@ -416,14 +431,14 @@ const sendBookingEmails = async ({ link, board, booking, task, agentId }) => {
   const visitorHtml = `
     <p>Hi ${booking.visitor.name || 'there'},</p>
     <p>Your visit to <strong>${link.title}</strong> is confirmed.</p>
-    <p><strong>When:</strong> ${when}<br/>${link.location ? `<strong>Where:</strong> ${link.location}<br/>` : ''}</p>
+    <p><strong>When:</strong> ${when}<br/>${whereLine}</p>
     <p><a href="${calUrl}">Add to calendar</a> · <a href="${cancelUrl}">Cancel or reschedule</a></p>`;
   await sendEmailForTask({
     taskId: task._id,
     to: booking.visitor.email,
     subject: `Visit confirmed — ${link.title}`,
     bodyHtml: visitorHtml,
-    body: `Your visit to ${link.title} is confirmed for ${when}. ${link.location || ''}\nCancel/reschedule: ${cancelUrl}`,
+    body: `Your visit to ${link.title} is confirmed for ${when}. ${where}${isVirtual && booking.visitor.phone ? ` (WhatsApp video — ${booking.visitor.phone})` : ''}\nCancel/reschedule: ${cancelUrl}`,
     account,
     sentBy: asId(link.createdBy),
   });
@@ -451,13 +466,14 @@ const getBookingIcs = async (req, res) => {
     const booking = await Booking.findOne({ cancelToken: req.params.token }).populate('link', 'title location timezone').lean();
     if (!booking) return res.status(404).send('Not found');
     const link = booking.link || {};
+    const where = locationLabel(link, booking.meetingType);
     const ics = buildIcs({
       uid: `${booking._id}@macan-crm`,
       start: booking.slotStart,
       end: booking.slotEnd,
       title: `Visit — ${link.title || 'Property'}`,
-      description: link.location ? `Location: ${link.location}` : '',
-      location: link.location || '',
+      description: where ? `Location: ${where}` : '',
+      location: where,
       attendeeEmail: booking.visitor?.email || '',
       status: booking.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED',
     });

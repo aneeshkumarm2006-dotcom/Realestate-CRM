@@ -1395,6 +1395,11 @@
     "when": "Quand",
     "where": "Où",
     "detailsHint": "En continuant, vous confirmez les détails de la visite ci-dessus. Vous pouvez reprogrammer à tout moment depuis votre courriel de confirmation.",
+    "previewSubmit": "Réserver (aperçu)",
+    "virtualPhoneHint": "Votre agent vous appellera en vidéo WhatsApp à ce numéro.",
+    "howToMeet": "Comment souhaitez-vous vous rencontrer ?",
+    "inPerson": "En personne",
+    "whatsappVideo": "Appel vidéo WhatsApp",
     "cancel": "Annuler"
   },
   "sequences": {

@@ -21,6 +21,9 @@ const bookingSchema = new mongoose.Schema(
       phone: { type: String, default: '' },
     },
     answers: { type: [{ _id: false, label: String, value: String }], default: [] },
+    // How the visitor chose to meet — picked by the visitor on the booking page
+    // (NOT predefined on the link). Virtual = WhatsApp video at visitor.phone.
+    meetingType: { type: String, enum: ['in_person', 'virtual'], default: 'in_person' },
     status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed', index: true },
     leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
     agentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

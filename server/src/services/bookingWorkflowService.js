@@ -50,7 +50,7 @@ const executeWorkflow = async (workflow, booking) => {
     'Invitee Full Name': booking.visitor?.name || '',
     'Event Name': link.title || '',
     'Event Time': fmtEventTime(booking),
-    Location: link.location || '',
+    Location: (booking.meetingType === 'virtual' ? 'WhatsApp video call' : link.location) || '',
     'Invitee Email': booking.visitor?.email || '',
     'Invitee Phone Number': booking.visitor?.phone || '',
     'Agent First Name': agent ? (agent.name || '').split(/\s+/)[0] : '',

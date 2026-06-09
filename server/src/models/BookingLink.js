@@ -55,6 +55,9 @@ const bookingLinkSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true }, // building / property name
     slug: { type: String, unique: true, index: true },
     durationMinutes: { type: Number, default: 30 },
+    // The property address, shown when a visitor chooses an in-person visit.
+    // The in-person vs virtual (WhatsApp video) choice is made by the visitor at
+    // booking time and stored on the Booking — it is NOT predefined here.
     location: { type: String, default: '' },
     timezone: { type: String, default: 'America/Toronto' },
     weeklyHours: { type: [weeklyHoursSchema], default: () => DEFAULT_WEEKLY.map((w) => ({ ...w })) },

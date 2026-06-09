@@ -31,9 +31,6 @@ import AutomationFormsPage from './pages/AutomationFormsPage';
 import AutomationsHubPremium from './pages/AutomationsHubPremium';
 import IntegrationsPremium from './pages/IntegrationsPremium';
 import BookingPremium from './pages/BookingPremium';
-import SchedulingPage from './pages/booking/SchedulingPage';
-import WorkflowsPage from './pages/booking/WorkflowsPage';
-import EditWorkflowPage from './pages/booking/EditWorkflowPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import LeadIntakePage from './pages/LeadIntakePage';
 import MyTasksPage from './pages/MyTasksPage';
@@ -193,12 +190,11 @@ function App() {
               <Route path="/automations/forms" element={<AutomationFormsPage />} />
               {/* Premium Design — Integrations / Connections marketplace (teal) */}
               <Route path="/integrations" element={<IntegrationsPremium />} />
-              {/* Premium Design — Booking links manager + live preview (amber) */}
+              {/* Booking — links manager + live preview + workflows, one page (amber) */}
               <Route path="/booking" element={<BookingPremium />} />
-              {/* Calendly-style standalone Booking app (opens in its own tab) */}
-              <Route path="/booking-app" element={<SchedulingPage />} />
-              <Route path="/booking-app/workflows" element={<WorkflowsPage />} />
-              <Route path="/booking-app/workflows/edit" element={<EditWorkflowPage />} />
+              {/* Retired Calendly-style standalone app → fold into /booking */}
+              <Route path="/booking-app" element={<Navigate to="/booking" replace />} />
+              <Route path="/booking-app/*" element={<Navigate to="/booking" replace />} />
               <Route path="/boards/:id/automations" element={<AutomationsPage />} />
               <Route path="/boards/:id/integrations" element={<IntegrationsPage />} />
               {/* F9 — Automated Lead Agent: per-board intake policy (admin-only) */}

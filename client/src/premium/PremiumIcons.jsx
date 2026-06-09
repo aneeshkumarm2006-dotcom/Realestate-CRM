@@ -55,6 +55,7 @@ const Icon = ({ name, size = 18, stroke = 2, style, className }) => {
     wand: <><path d="m15 4 5 5L9 20l-5 1 1-5z" /><path d="M14 5 19 10" /><path d="M18 2v3M21 4h-3M20.5 7.5 19 9" /></>,
     plug: <><path d="M9 2v6M15 2v6" /><path d="M6 8h12v3a6 6 0 0 1-12 0z" /><path d="M12 17v5" /></>,
     copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></>,
+    video: <><rect x="2" y="6" width="14" height="12" rx="2" /><path d="m16 10 6-3v10l-6-3z" /></>,
     arrowRight: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
     arrowLeft: <><path d="M19 12H5M11 18l-6-6 6-6" /></>,
     chevronLeft: <><path d="m15 6-6 6 6 6" /></>,

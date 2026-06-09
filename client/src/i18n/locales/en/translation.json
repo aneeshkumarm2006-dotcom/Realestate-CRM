@@ -1395,6 +1395,11 @@
     "when": "When",
     "where": "Where",
     "detailsHint": "By proceeding, you confirm the visit details above. You can reschedule any time from your confirmation email.",
+    "previewSubmit": "Schedule (preview)",
+    "virtualPhoneHint": "Your agent will call you on WhatsApp video at this number.",
+    "howToMeet": "How would you like to meet?",
+    "inPerson": "In person",
+    "whatsappVideo": "WhatsApp video call",
     "cancel": "Cancel"
   },
   "sequences": {
