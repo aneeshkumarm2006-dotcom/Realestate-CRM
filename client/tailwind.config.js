@@ -7,25 +7,32 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['Bricolage Grotesque', 'sans-serif'],
-        body: ['DM Sans', 'sans-serif'],
+        // Monday's product typeface — one family, weight carries hierarchy.
+        display: ['Figtree', 'system-ui', 'sans-serif'],
+        body: ['Figtree', 'system-ui', 'sans-serif'],
       },
       colors: {
         accent: {
-          DEFAULT: '#2563EB',
-          hover: '#1D4ED8',
-          light: '#EFF6FF',
-          text: '#1E40AF',
+          DEFAULT: '#0073EA',
+          hover: '#0060B9',
+          light: '#E5F0FD',
+          text: '#0073EA',
         },
-        base: '#F5F4F0',
+        base: '#F6F7FB',
         surface: '#FFFFFF',
-        subtle: '#EEECEA',
+        subtle: '#F0F1F5',
       },
       boxShadow: {
-        card: '0 1px 4px rgba(26,26,26,0.07), 0 0 0 1px #E2E0DB',
+        card: '0 1px 3px rgba(29,30,38,0.06), 0 0 0 1px #E6E9EF',
+        soft: '0 4px 14px -4px rgba(29,30,38,0.12), 0 0 0 1px rgba(29,30,38,0.05)',
+        pop: '0 12px 32px -8px rgba(29,30,38,0.20), 0 0 0 1px rgba(29,30,38,0.07)',
+        accent: '0 4px 14px -3px rgba(0,115,234,0.40)',
       },
       borderRadius: {
         xl2: '20px',
+      },
+      transitionTimingFunction: {
+        premium: 'cubic-bezier(.22,.61,.36,1)',
       },
     },
   },

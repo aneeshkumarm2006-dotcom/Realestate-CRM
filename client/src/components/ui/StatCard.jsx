@@ -53,6 +53,10 @@ const useCountUp = (target, durationMs = ANIMATION_DURATION_MS) => {
   return display;
 };
 
+/**
+ * Optional `trend` prop: { dir: 'up' | 'down', value: string }
+ * renders a colored delta chip next to the sub-label.
+ */
 const StatCard = ({
   icon: Icon,
   label,
@@ -60,80 +64,109 @@ const StatCard = ({
   subLabel,
   color = 'blue',
   suffix,
+  trend,
   className = '',
 }) => {
-  const background = COLOR_VARS[color] || color;
+  const accent = COLOR_VARS[color] || color;
   const numeric = typeof value === 'number' ? value : Number(value);
   const isNumeric = Number.isFinite(numeric);
   const animated = useCountUp(isNumeric ? numeric : 0);
 
+  const trendUp = trend?.dir !== 'down';
+
   return (
     <div
       className={[
-        'relative overflow-hidden w-full',
-        'transition-transform duration-150 ease-in-out',
+        'surface-card lift press relative overflow-hidden w-full group',
         className,
       ].join(' ')}
       style={{
-        background,
-        borderRadius: 'var(--radius-lg)',
-        padding: '20px 24px',
-        minHeight: 120,
-        color: '#FFFFFF',
+        padding: '18px 20px',
+        minHeight: 116,
       }}
     >
-      {/* Decorative circle — 150px, 12% white opacity, top-right */}
-      <div
+      {/* Hairline accent stripe down the left edge — the card's tint */}
+      <span
         aria-hidden="true"
-        className="pointer-events-none absolute"
-        style={{
-          width: 150,
-          height: 150,
-          top: -40,
-          right: -40,
-          borderRadius: '9999px',
-          background: 'rgba(255, 255, 255, 0.12)',
-        }}
+        className="pointer-events-none absolute left-0 top-0 bottom-0"
+        style={{ width: 3, background: accent, opacity: 0.9 }}
       />
 
-      <div className="relative z-10 flex items-start justify-between">
+      <div className="flex items-start justify-between">
+        <div className="min-w-0">
+          <p
+            className="font-body font-semibold uppercase truncate"
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.06em',
+              color: 'var(--color-text-secondary)',
+            }}
+          >
+            {label}
+          </p>
+          <p
+            className="font-display font-extrabold leading-none mt-2.5"
+            style={{
+              fontSize: 34,
+              color: 'var(--color-text-primary)',
+              letterSpacing: '-0.02em',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {isNumeric ? animated : value}
+            {suffix ? (
+              <span
+                className="ml-0.5 font-bold"
+                style={{ fontSize: 18, color: 'var(--color-text-secondary)' }}
+              >
+                {suffix}
+              </span>
+            ) : null}
+          </p>
+        </div>
+
+        {/* Colored icon tile */}
         {Icon && (
-          <Icon
-            size={22}
-            color="#FFFFFF"
-            strokeWidth={2}
-            aria-hidden="true"
-          />
+          <span
+            className="inline-flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 'var(--radius-md)',
+              background: `color-mix(in srgb, ${accent} 12%, #fff)`,
+              color: accent,
+            }}
+          >
+            <Icon size={20} strokeWidth={2.2} aria-hidden="true" />
+          </span>
         )}
       </div>
 
-      <div className="relative z-10 mt-1">
-        <p
-          className="font-body font-medium uppercase"
-          style={{
-            fontSize: 12,
-            letterSpacing: '0.04em',
-            color: 'rgba(255,255,255,0.8)',
-          }}
-        >
-          {label}
-        </p>
-        <p
-          className="font-display font-extrabold leading-none mt-2"
-          style={{ fontSize: 36, color: '#FFFFFF' }}
-        >
-          {isNumeric ? animated : value}
-          {suffix ? <span className="ml-0.5">{suffix}</span> : null}
-        </p>
-        {subLabel && (
-          <p
-            className="font-body mt-1.5"
-            style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}
-          >
-            {subLabel}
-          </p>
-        )}
-      </div>
+      {(subLabel || trend) && (
+        <div className="flex items-center gap-2 mt-3">
+          {trend && (
+            <span
+              className="inline-flex items-center gap-0.5 font-semibold"
+              style={{
+                fontSize: 12,
+                color: trendUp
+                  ? 'var(--color-status-done)'
+                  : 'var(--color-status-stuck)',
+              }}
+            >
+              {trendUp ? '▲' : '▼'} {trend.value}
+            </span>
+          )}
+          {subLabel && (
+            <p
+              className="font-body truncate"
+              style={{ fontSize: 12, color: 'var(--color-text-muted)' }}
+            >
+              {subLabel}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 };

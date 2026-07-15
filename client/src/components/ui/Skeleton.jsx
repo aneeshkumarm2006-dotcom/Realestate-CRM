@@ -57,52 +57,48 @@ export const SkeletonText = ({ width = '100%', height = 12, style }) => (
 /*  STAT CARD SKELETON                                                 */
 /* ------------------------------------------------------------------ */
 
-const STAT_CARD_COLORS = [
-  'rgba(37, 99, 235, 0.12)',   // blue
-  'rgba(22, 163, 74, 0.12)',   // green
-  'rgba(234, 88, 12, 0.12)',   // orange
-  'rgba(124, 58, 237, 0.12)',  // purple
+const STAT_CARD_ACCENTS = [
+  'var(--color-card-blue)',
+  'var(--color-card-green)',
+  'var(--color-card-orange)',
+  'var(--color-card-purple)',
 ];
 
 export const SkeletonStatCard = ({ index = 0 }) => (
   <div
+    className="surface-card"
     style={{
-      background: STAT_CARD_COLORS[index % STAT_CARD_COLORS.length],
-      borderRadius: 'var(--radius-lg)',
-      padding: '20px 24px',
-      minHeight: 120,
+      padding: '18px 20px',
+      minHeight: 116,
       position: 'relative',
       overflow: 'hidden',
     }}
   >
-    {/* Decorative circle */}
-    <div
+    {/* Accent stripe — mirrors the real card's left edge */}
+    <span
       aria-hidden="true"
       style={{
         position: 'absolute',
-        width: 150,
-        height: 150,
-        top: -40,
-        right: -40,
-        borderRadius: 9999,
-        background: 'rgba(200, 200, 200, 0.12)',
-      }}
-    />
-    <SkeletonCircle size={22} style={{ opacity: 0.5 }} />
-    <SkeletonBlock
-      width={80}
-      height={10}
-      style={{ marginTop: 12, opacity: 0.4 }}
-    />
-    <SkeletonBlock
-      width={56}
-      height={28}
-      style={{
-        marginTop: 10,
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 3,
         opacity: 0.5,
-        borderRadius: 'var(--radius-md)',
+        background: STAT_CARD_ACCENTS[index % STAT_CARD_ACCENTS.length],
       }}
     />
+    <div className="flex items-start justify-between">
+      <div>
+        <SkeletonBlock width={72} height={10} style={{ opacity: 0.5 }} />
+        <SkeletonBlock
+          width={64}
+          height={28}
+          style={{ marginTop: 12, borderRadius: 'var(--radius-sm)' }}
+        />
+      </div>
+      <SkeletonBlock width={40} height={40} borderRadius="var(--radius-md)" />
+    </div>
+    <SkeletonBlock width={88} height={10} style={{ marginTop: 16, opacity: 0.4 }} />
   </div>
 );
 

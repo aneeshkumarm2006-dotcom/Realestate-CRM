@@ -20,12 +20,14 @@ const VARIANT_STYLES = {
     color: '#FFFFFF',
     border: 'none',
     fontWeight: 600,
+    boxShadow: '0 1px 2px rgba(29,30,38,.12)',
   },
   secondary: {
-    background: 'transparent',
+    background: 'var(--color-bg-surface)',
     color: 'var(--color-text-primary)',
-    border: '1.5px solid var(--color-border-strong)',
-    fontWeight: 500,
+    border: '1px solid var(--color-border-strong)',
+    fontWeight: 600,
+    boxShadow: '0 1px 2px rgba(29,30,38,.04)',
   },
   ghost: {
     background: 'transparent',
@@ -34,10 +36,11 @@ const VARIANT_STYLES = {
     fontWeight: 600,
   },
   danger: {
-    background: '#DC2626',
+    background: 'var(--color-status-stuck-solid)',
     color: '#FFFFFF',
     border: 'none',
     fontWeight: 600,
+    boxShadow: '0 1px 2px rgba(29,30,38,.12)',
   },
 };
 
@@ -84,9 +87,10 @@ const Button = forwardRef(function Button(
       disabled={disabled}
       className={[
         'inline-flex items-center justify-center gap-2 font-body whitespace-nowrap select-none',
-        'transition-colors duration-150 ease-in-out',
+        'transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(.22,.61,.36,1)]',
+        'active:scale-[.97]',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)]',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
         !disabled && hoverClass,
         className,
       ]

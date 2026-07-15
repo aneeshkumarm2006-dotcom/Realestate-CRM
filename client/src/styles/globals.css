@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,63 +9,68 @@
      COLORS — Section 2
      ========================================================== */
 
-  /* Backgrounds */
-  --color-bg-base:      #F5F4F0;   /* Page background — warm off-white */
+  /* Backgrounds — cool, crisp Monday neutrals */
+  --color-bg-base:      #F6F7FB;   /* Page background — cool light grey (Monday) */
   --color-bg-surface:   #FFFFFF;   /* Cards, panels, nav */
   --color-bg-elevated:  #FFFFFF;   /* Popovers, dropdown menus, floating panels */
-  --color-bg-subtle:    #EEECEA;   /* Hover rows, muted sections */
-  --color-bg-input:     #F9F8F6;   /* Input fields */
+  --color-bg-subtle:    #F0F1F5;   /* Hover rows, muted sections */
+  --color-bg-input:     #F7F8FA;   /* Input fields */
 
-  /* Text */
-  --color-text-primary:   #1A1A1A; /* Headlines, body */
-  --color-text-secondary: #6B6B6B; /* Subtitles, meta, labels */
-  --color-text-muted:     #A0A0A0; /* Placeholders, disabled */
+  /* Text — Monday ink ramp */
+  --color-text-primary:   #323338; /* Headlines, body */
+  --color-text-secondary: #676879; /* Subtitles, meta, labels */
+  --color-text-muted:     #9699A6; /* Placeholders, disabled */
   --color-text-inverse:   #FFFFFF; /* Text on dark/colored backgrounds */
 
-  /* Borders */
-  --color-border:         #E2E0DB; /* Default border */
-  --color-border-strong:  #C8C5BE; /* Focused inputs, active rows */
+  /* Borders — cool hairlines */
+  --color-border:         #E6E9EF; /* Default border */
+  --color-border-strong:  #C3C6D4; /* Focused inputs, active rows */
 
-  /* Primary Accent — Electric Blue */
-  --color-accent:         #2563EB; /* CTAs, active nav, links */
-  --color-accent-hover:   #1D4ED8; /* Hover state */
-  --color-accent-light:   #EFF6FF; /* Accent backgrounds, badges */
-  --color-accent-text:    #1E40AF; /* Blue text on light bg */
+  /* Primary Accent — Monday Blue */
+  --color-accent:         #0073EA; /* CTAs, active nav, links */
+  --color-accent-hover:   #0060B9; /* Hover state */
+  --color-accent-light:   #E5F0FD; /* Accent backgrounds, badges */
+  --color-accent-text:    #0073EA; /* Blue text on light bg */
+  --color-accent-rgb:     0, 115, 234; /* for rgba() glows */
 
-  /* Status Colors */
-  --color-status-done:          #16A34A; /* Done — Green */
-  --color-status-done-bg:       #F0FDF4;
-  --color-status-working:       #D97706; /* Working on it — Amber */
-  --color-status-working-bg:    #FFFBEB;
-  --color-status-stuck:         #DC2626; /* Stuck — Red */
-  --color-status-stuck-bg:      #FEF2F2;
-  --color-status-notstarted:    #6B7280; /* Not Started — Grey */
-  --color-status-notstarted-bg: #F3F4F6;
+  /* Status Colors — Monday canonical hues, readable pastel pills */
+  --color-status-done:          #00854D; /* Done — Green (text) */
+  --color-status-done-solid:    #00C875; /* Done — fill */
+  --color-status-done-bg:       #E6F8F0;
+  --color-status-working:       #C77700; /* Working on it — Amber (text) */
+  --color-status-working-solid: #FDAB3D; /* Working — fill */
+  --color-status-working-bg:    #FFF4E3;
+  --color-status-stuck:         #D32F45; /* Stuck — Red (text) */
+  --color-status-stuck-solid:   #E2445C; /* Stuck — fill */
+  --color-status-stuck-bg:      #FCEBED;
+  --color-status-notstarted:    #676879; /* Not Started — Grey (text) */
+  --color-status-notstarted-solid: #C4C7D4; /* Not Started — fill */
+  --color-status-notstarted-bg: #F0F1F5;
 
   /* Priority Colors */
-  --color-priority-critical:  #DC2626; /* Critical — Red */
-  --color-priority-high:      #EA580C; /* High — Orange */
-  --color-priority-medium:    #D97706; /* Medium — Amber */
-  --color-priority-low:       #6B7280; /* Low — Grey */
+  --color-priority-critical:  #E2445C; /* Critical — Red */
+  --color-priority-high:      #FF642E; /* High — Orange */
+  --color-priority-medium:    #FDAB3D; /* Medium — Amber */
+  --color-priority-low:       #9699A6; /* Low — Grey */
 
-  /* Stat Card Colors (dashboard) */
-  --color-card-blue:    #2563EB;
-  --color-card-green:   #16A34A;
-  --color-card-orange:  #EA580C;
-  --color-card-purple:  #7C3AED;
+  /* Stat Card Colors (dashboard) — Monday palette */
+  --color-card-blue:    #0073EA;
+  --color-card-green:   #00C875;
+  --color-card-orange:  #FF642E;
+  --color-card-purple:  #A25DDC;
 
   /* Utility */
-  --color-shadow:    rgba(26, 26, 26, 0.06);
-  --color-shadow-md: rgba(26, 26, 26, 0.10);
-  --color-overlay:   rgba(26, 26, 26, 0.40);
+  --color-shadow:    rgba(29, 30, 38, 0.06);
+  --color-shadow-md: rgba(29, 30, 38, 0.10);
+  --color-overlay:   rgba(29, 30, 38, 0.45);
 
   /* ==========================================================
      TYPOGRAPHY — Section 3
      ========================================================== */
 
-  /* Font families */
-  --font-display: 'Bricolage Grotesque', sans-serif;
-  --font-body:    'DM Sans', sans-serif;
+  /* Font families — Figtree (Monday's product typeface) */
+  --font-display: 'Figtree', system-ui, -apple-system, sans-serif;
+  --font-body:    'Figtree', system-ui, -apple-system, sans-serif;
 
   /* Type scale */
   --text-display:   2rem;      /* 32px */
@@ -114,10 +119,20 @@
   --radius-xl:   20px;
   --radius-full: 9999px;
 
-  --shadow-sm:   0 1px 3px var(--color-shadow), 0 1px 2px var(--color-shadow);
-  --shadow-md:   0 4px 12px var(--color-shadow-md);
-  --shadow-lg:   0 8px 24px var(--color-shadow-md);
-  --shadow-card: 0 1px 4px rgba(26,26,26,0.07), 0 0 0 1px var(--color-border);
+  --shadow-sm:   0 1px 2px rgba(29,30,38,.05), 0 0 0 1px rgba(29,30,38,.045);
+  --shadow-md:   0 4px 14px -4px rgba(29,30,38,.12), 0 0 0 1px rgba(29,30,38,.05);
+  --shadow-lg:   0 18px 40px -12px rgba(29,30,38,.22), 0 0 0 1px rgba(29,30,38,.05);
+  --shadow-pop:  0 12px 32px -8px rgba(29,30,38,.20), 0 0 0 1px rgba(29,30,38,.07);
+  --shadow-card: 0 1px 3px rgba(29,30,38,.06), 0 0 0 1px var(--color-border);
+  /* Accent glow for primary CTAs + focus */
+  --shadow-accent: 0 4px 14px -3px rgba(var(--color-accent-rgb), .40);
+
+  /* Motion — premium easing + hover lift */
+  --ease:      cubic-bezier(.22, .61, .36, 1);
+  --ease-out:  cubic-bezier(.16, 1, .3, 1);
+  --dur-fast:  120ms;
+  --dur:       180ms;
+  --dur-slow:  280ms;
 }
 
 /* Base defaults */
@@ -391,5 +406,60 @@ li.macan-task-highlight {
     animation: none;
     box-shadow: 0 0 0 3px var(--color-accent);
     background-color: var(--color-accent-light);
+  }
+}
+
+/* ==========================================================
+   PREMIUM PRIMITIVES — shared polish utilities
+   Opt-in classes so any surface can pick up the elevated
+   shadow + hover-lift + crisp focus the premium pages use.
+   ========================================================== */
+
+/* Surface card — hairline + soft shadow, lifts on hover */
+.surface-card {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
+}
+.surface-card.is-interactive {
+  cursor: pointer;
+}
+.surface-card.is-interactive:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Generic hover lift for any element (boards, tiles, list rows) */
+.lift {
+  transition: box-shadow var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
+}
+.lift:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Subtle press feedback for clickable cards/buttons */
+.press:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* Crisp accent focus ring (cards, custom controls) */
+.ring-accent:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg-surface),
+              0 0 0 4px var(--color-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-card,
+  .surface-card.is-interactive:hover,
+  .lift,
+  .lift:hover,
+  .press:active {
+    transition: none;
+    transform: none;
   }
 }
