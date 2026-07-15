@@ -4,7 +4,16 @@ const passport = require('./config/passport');
 
 const app = express();
 
-// CORS — allow the frontend client
+// F14 — public API lead ingest, mounted BEFORE the global CORS layer below:
+// external customer websites POST leads here from the BROWSER, so the route
+// carries its own permissive CORS (credentials:false — auth is the API key).
+// The global origin-restricted cors() ends OPTIONS preflights itself, so it
+// must never see this route's. Everything else about the route (rate limiter,
+// 256KB body caps, key auth) lives in routes/leadConnections.js.
+const { publicLeadRouter, boardLeadRouter } = require('./routes/leadConnections');
+app.use(publicLeadRouter);
+
+// CORS — allow the frontend client (every route mounted after this point)
 app.use(
   cors({
     origin: process.env.CLIENT_URL,
@@ -28,6 +37,9 @@ app.use(
 //   • POST /api/whatsapp/inbound | /status    (F11 — Twilio signature)
 //   • GET  /f/:slug                           (F13 public form render)
 //   • POST /f/:slug/submit                    (F13 form submit — rate-limited)
+//   • POST /api/leads/ingest                  (F14 API lead ingest — key + rate
+//     limit; mounted ABOVE the global cors() with its own permissive CORS so
+//     customers' websites can call it from the browser)
 //
 // Mounted BEFORE the global `express.json()` below: routes that need a body
 // carry their OWN parser (the F7 inbound route caps at 256KB; the F8 inbound
@@ -59,6 +71,7 @@ app.use(publicWhatsAppRouter);
 // F13 — public form render + submit. No auth (the submit route carries its own
 // rate limiter + 256KB body parser); render is read-only config JSON.
 app.use(publicFormRouter);
+// (F14's publicLeadRouter is mounted at the very top, ABOVE the global cors().)
 // Phase 4b — public visit booking render/slots/submit/cancel + .ics. No auth;
 // submit/cancel carry their own rate limiter + body parser.
 app.use(publicBookingRouter);
@@ -90,6 +103,8 @@ app.use('/api/boards', require('./routes/boards'));
 app.use('/api', require('./routes/calendarViews'));
 // F13 — authed board form management + per-user saved table views + chart widgets.
 app.use('/api', boardFormRouter);
+// F14 — authed board-scoped lead-connection (API key) management.
+app.use('/api', boardLeadRouter);
 app.use('/api', boardBookingRouter);
 app.use('/api', require('./routes/bookingWorkflows'));
 app.use('/api', require('./routes/savedViews'));

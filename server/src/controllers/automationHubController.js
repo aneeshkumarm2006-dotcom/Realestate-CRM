@@ -7,6 +7,7 @@ const EmailAccount = require('../models/EmailAccount');
 const SmsConfig = require('../models/SmsConfig');
 const WhatsAppConfig = require('../models/WhatsAppConfig');
 const WebhookEndpoint = require('../models/WebhookEndpoint');
+const LeadConnection = require('../models/LeadConnection');
 
 /**
  * automationHubController — account-wide ("hub") views over every automation in
@@ -250,11 +251,16 @@ const getConnections = async (req, res) => {
     ]);
 
     const boardIds = boards.map((b) => b._id);
-    const endpoints = boardIds.length
-      ? await WebhookEndpoint.find({ boardId: { $in: boardIds }, enabled: true })
-          .select('boardId direction')
-          .lean()
-      : [];
+    const [endpoints, leadConnections] = boardIds.length
+      ? await Promise.all([
+          WebhookEndpoint.find({ boardId: { $in: boardIds }, enabled: true })
+            .select('boardId direction')
+            .lean(),
+          LeadConnection.find({ boardId: { $in: boardIds }, enabled: true })
+            .select('boardId')
+            .lean(),
+        ])
+      : [[], []];
 
     const activeEmail = emailAccounts.filter((a) => a.status === 'active');
     const hasGmail = activeEmail.some((a) => a.provider === 'gmail');
@@ -294,6 +300,12 @@ const getConnections = async (req, res) => {
           connected: endpoints.length > 0,
           count: endpoints.length,
           boards: webhookBoards,
+        },
+        // F14 — "Lead Intake API" keys (enabled only), surfaced so the
+        // Integrations page can show the card as connected.
+        leadApi: {
+          connected: leadConnections.length > 0,
+          count: leadConnections.length,
         },
         calendar: {
           // Calendar events ride the Gmail OAuth (same Google account); the

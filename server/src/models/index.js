@@ -34,3 +34,5 @@ require('./Form');
 require('./Submission');
 require('./SavedTableView');
 require('./ChartWidget');
+require('./LeadConnection');
+require('./LeadIngestLog');

@@ -13,6 +13,7 @@ import { Sk } from '../premium/PremiumShared';
 import { L } from '../premium/premiumData';
 import { getConnections } from '../services/automationService';
 import IntegrationsTab from '../components/board/IntegrationsTab';
+import ApiConnectSection from '../components/board/ApiConnectSection';
 import useOrgStore from '../store/orgStore';
 import useBoardStore from '../store/boardStore';
 import '../premium/premium.css';
@@ -26,6 +27,7 @@ const PROVIDERS = [
   { id: 'twilio', name: 'Twilio SMS', mono: 'T', color: '#F22F46', cat: 'comm', channel: 'sms', desc: { en: 'Text leads and send visit reminders by SMS.', fr: 'Textez les prospects et envoyez des rappels de visite par SMS.' } },
   { id: 'whatsapp', name: 'WhatsApp Business', mono: 'W', color: '#25D366', cat: 'comm', channel: 'whatsapp', desc: { en: 'Reach clients on WhatsApp with approved templates.', fr: 'Joignez les clients sur WhatsApp avec des modèles approuvés.' } },
   { id: 'webhooks', name: 'Webhooks', mono: '{}', color: '#4F46E5', cat: 'dev', channel: 'webhooks', desc: { en: 'Push and receive events — inbound and outbound.', fr: 'Envoyez et recevez des événements — entrants et sortants.' } },
+  { id: 'leadapi', name: 'Lead Intake API', mono: '</>', color: '#0EA5E9', cat: 'dev', channel: 'leadapi', desc: { en: 'Connect your own website form — every submission becomes a lead, columns build themselves.', fr: 'Connectez votre propre formulaire web — chaque envoi devient un prospect, les colonnes se créent d’elles-mêmes.' } },
   { id: 'ics', name: 'Calendar / .ics', mono: '31', color: '#0E9F8E', cat: 'cal', channel: 'calendar', desc: { en: 'Add booked visits to any calendar with .ics feeds.', fr: 'Ajoutez les visites à tout calendrier via des flux .ics.' } },
   { id: 'zapier', name: 'Zapier', mono: 'Z', color: '#FF4F00', cat: 'dev', soon: true, desc: { en: 'Connect 6,000+ apps with no-code automations.', fr: 'Reliez plus de 6 000 applis sans code.' } },
   { id: 'slack', name: 'Slack', mono: 'S', color: '#611f69', cat: 'comm', soon: true, desc: { en: 'Get deal alerts in your team channels.', fr: 'Recevez les alertes dans vos canaux d’équipe.' } },
@@ -50,6 +52,7 @@ const resolveStatus = (p, channels) => {
   if (p.channel === 'sms') return channels.sms?.connected ? { st: 'connected', account: channels.sms.defaultFrom } : { st: 'connect' };
   if (p.channel === 'whatsapp') return channels.whatsapp?.connected ? { st: 'connected', account: channels.whatsapp.sender } : { st: 'connect' };
   if (p.channel === 'webhooks') return channels.webhooks?.connected ? { st: 'connected', account: `${channels.webhooks.count} endpoints` } : { st: 'connect' };
+  if (p.channel === 'leadapi') return channels.leadApi?.connected ? { st: 'connected', account: `${channels.leadApi.count} keys` } : { st: 'connect' };
   if (p.channel === 'calendar') return channels.calendar?.connected ? { st: 'connected', account: 'via Google' } : { st: 'connect' };
   return { st: 'connect' };
 };
@@ -118,6 +121,8 @@ export default function IntegrationsPremium() {
   const [error, setError] = useState(false);
   const [webhookOpen, setWebhookOpen] = useState(false);
   const [whBoardId, setWhBoardId] = useState('');
+  const [leadApiOpen, setLeadApiOpen] = useState(false);
+  const [laBoardId, setLaBoardId] = useState('');
 
   const load = useCallback(async () => {
     if (!currentOrg?._id) return;
@@ -135,11 +140,21 @@ export default function IntegrationsPremium() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (currentOrg?._id && boards.length === 0) fetchBoards(currentOrg._id).catch(() => {}); }, [currentOrg?._id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!whBoardId && boards[0]) setWhBoardId(boards[0]._id); }, [boards, whBoardId]);
+  useEffect(() => { if (!laBoardId && boards[0]) setLaBoardId(boards[0]._id); }, [boards, laBoardId]);
 
   const filtered = PROVIDERS.filter((p) => (cat === 'all' || p.cat === cat) && (q === '' || p.name.toLowerCase().includes(q.toLowerCase())));
-  // Webhooks are board-scoped: open the in-page manager. Everything else → Settings.
-  const openManage = (p) => (p.channel === 'webhooks' ? setWebhookOpen(true) : navigate(manageLinkFor(p, channels)));
-  const openConnect = (p) => (p.channel === 'webhooks' ? setWebhookOpen(true) : setDrawer(p));
+  // Webhooks + the Lead Intake API are board-scoped: open the in-page manager
+  // sheet. Everything else → Settings.
+  const openManage = (p) => {
+    if (p.channel === 'webhooks') return setWebhookOpen(true);
+    if (p.channel === 'leadapi') return setLeadApiOpen(true);
+    return navigate(manageLinkFor(p, channels));
+  };
+  const openConnect = (p) => {
+    if (p.channel === 'webhooks') return setWebhookOpen(true);
+    if (p.channel === 'leadapi') return setLeadApiOpen(true);
+    return setDrawer(p);
+  };
 
   return (
     <PageWrapper>
@@ -233,6 +248,34 @@ export default function IntegrationsPremium() {
                 {whBoardId && getBoardById(whBoardId)
                   ? <IntegrationsTab boardId={whBoardId} board={getBoardById(whBoardId)} />
                   : <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{L({ en: 'Pick a board to manage its webhooks.', fr: 'Choisissez un tableau pour gérer ses webhooks.' }, lang)}</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {leadApiOpen && (
+          <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setLeadApiOpen(false); }}>
+            <div className="sheet wide" style={{ maxWidth: 920, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="sheet-head">
+                <div className="sh-eyebrow" style={{ color: 'var(--integ)' }}><Icon name="key" size={14} />{L({ en: 'Lead Intake API', fr: 'API d’entrée de prospects' }, lang)}</div>
+                <h2>{L({ en: 'Connect your website form', fr: 'Connectez votre formulaire web' }, lang)}</h2>
+                <div className="sh-sub">{L({ en: 'Create an API key, point your form at the endpoint — the first submission defines the columns, and new fields keep adding columns automatically.', fr: 'Créez une clé API et pointez votre formulaire vers le point de terminaison — le premier envoi définit les colonnes, et les nouveaux champs en ajoutent automatiquement.' }, lang)}</div>
+                <button type="button" className="sheet-close" onClick={() => setLeadApiOpen(false)} aria-label="Close"><Icon name="x" size={18} /></button>
+              </div>
+              <div className="sheet-body" style={{ overflowY: 'auto' }}>
+                <div className="blank-field" style={{ maxWidth: 360, marginBottom: 16 }}>
+                  <label>{L({ en: 'Board receiving the leads', fr: 'Tableau recevant les prospects' }, lang)}</label>
+                  <div className="bf-control">
+                    <select className="bf-select" value={laBoardId} onChange={(e) => setLaBoardId(e.target.value)}>
+                      {boards.length === 0 && <option value="">{L({ en: 'No boards yet', fr: 'Aucun tableau' }, lang)}</option>}
+                      {boards.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+                    </select>
+                    <span className="bf-caret"><Icon name="chevronDown" size={16} /></span>
+                  </div>
+                </div>
+                {laBoardId
+                  ? <ApiConnectSection boardId={laBoardId} />
+                  : <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{L({ en: 'Pick a board to manage its API keys.', fr: 'Choisissez un tableau pour gérer ses clés API.' }, lang)}</div>}
               </div>
             </div>
           </div>

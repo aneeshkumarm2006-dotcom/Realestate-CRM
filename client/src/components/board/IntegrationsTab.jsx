@@ -18,6 +18,7 @@ import {
 import Button from '../ui/Button';
 import { Toggle } from './automationFields';
 import WebhookMappingEditor from './WebhookMappingEditor';
+import ApiConnectSection from './ApiConnectSection';
 import * as webhookService from '../../services/webhookService';
 import * as formService from '../../services/formService';
 
@@ -359,6 +360,9 @@ const IntegrationsTab = ({ boardId, board }) => {
 
       {/* Forms (F13) */}
       <FormsSection boardId={boardId} />
+
+      {/* Connect an external form via API key (F14) */}
+      <ApiConnectSection boardId={boardId} />
 
       {/* Inbound */}
       <section className="flex flex-col gap-3">

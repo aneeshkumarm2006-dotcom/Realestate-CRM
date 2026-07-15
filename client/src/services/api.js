@@ -18,6 +18,9 @@ const PUBLIC_PATHS = [
   /\/api\/whatsapp\/(inbound|status)/,
   // F13 public form render + submit — hit by logged-out visitors / embeds.
   /\/f\//,
+  // F14 public API lead ingest — server-to-server, but keep the interceptor
+  // honest if it's ever hit from the client (no Bearer token attached).
+  /\/api\/leads\/ingest/,
 ];
 
 const isPublicPath = (url = '') => PUBLIC_PATHS.some((re) => re.test(url));
